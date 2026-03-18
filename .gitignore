@@ -1,0 +1,37 @@
+# Build
+target/
+build/
+*.jar
+*.war
+*.ear
+*.class
+
+# Maven
+pom.xml.tag
+pom.xml.releaseBackup
+.mvn/timing.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Quarkus
+.quarkus/
+
+# Logs
+*.log
+logs/
+
+# Local config (secrets)
+application-local.yml
+application-local.yaml
+.env
+.env.local

@@ -1,0 +1,29 @@
+# AR Bootstrap — multi-tenant backend
+quarkus:
+  application:
+    name: invoice-genie-ar
+  http:
+    port: 8080
+  datasource:
+    db-kind: postgresql
+    username: ar
+    password: ar
+    jdbc:
+      url: jdbc:postgresql://localhost:5432/invoicegenie
+      max-size: 32
+  hibernate-orm:
+    database:
+      generation: none
+    log:
+      sql: false
+  jdbc:
+    max-size: 32
+
+# Kafka (optional — disable if not used)
+mp.messaging.outgoing.invoice-issued:
+  connector: smallrye-kafka
+  topic: ar.invoice.issued
+  # value.serializer: org.apache.kafka.common.serialization.StringSerializer
+
+# RLS: set per-request in filter before using connection
+# app.current_tenant_id is set by TenantFilter or a dedicated DbTenantInterceptor

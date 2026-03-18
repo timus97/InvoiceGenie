@@ -28,8 +28,106 @@ mvn test
 # Run persistence adapter tests only
 mvn -pl ar-adapter-persistence test
 
-# Run domain tests only (when added)
+# Run domain lifecycle tests only
 mvn -pl ar-domain test
+```
+
+### Running the Application
+
+```bash
+# Build all modules
+mvn clean install -DskipTests
+
+# Start dev server (requires PostgreSQL)
+mvn -pl ar-bootstrap quarkus:dev
+
+# Start with SQLite dev profile (no Postgres)
+mvn -pl ar-bootstrap -Dquarkus.profile=sqlite quarkus:dev
+
+# Once running, access:
+# API: http://localhost:8080/api/v1/invoices
+# Swagger UI: http://localhost:8080/q/swagger-ui/
+# OpenAPI JSON: http://localhost:8080/q/openapi
+```
+
+### API Testing with cURL / Postman
+
+**Headers required for all requests:**
+```
+Content-Type: application/json
+X-Tenant-Id: <uuid>   (or set via TenantContext in real usage)
+Idempotency-Key: <unique-key>  (optional, for POST)
+```
+
+**Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/invoices` | Create + issue invoice |
+| GET | `/api/v1/invoices/{id}` | Get single invoice |
+| GET | `/api/v1/invoices?limit=20&cursor=...&status=ISSUED` | List with pagination/filter |
+| POST | `/api/v1/invoices/{id}/issue` | Issue (DRAFT→ISSUED) |
+| POST | `/api/v1/invoices/{id}/overdue?today=2026-01-01` | Mark overdue |
+| POST | `/api/v1/invoices/{id}/writeoff` body: `{"reason":"bad debt"}` | Write off |
+| POST | `/api/v1/invoices/{id}/payment` body: `{"fullyPaid":true}` | Apply payment |
+| PATCH | `/api/v1/invoices/{id}/due-date` body: `{"dueDate":"2026-05-01"}` | Update due date |
+| DELETE | `/api/v1/invoices/{id}` | 405 (use write-off) |
+
+**Test Scenarios:**
+
+1. **Happy Path — Issue & Pay**
+   ```bash
+   # Create (auto-issues)
+   curl -X POST http://localhost:8080/api/v1/invoices \
+     -H "Content-Type: application/json" -H "X-Tenant-Id: <uuid>" \
+     -d '{"invoiceNumber":"INV-1","customerRef":"C1","currencyCode":"USD","dueDate":"2026-04-30","lines":[{"description":"Svc","amount":100}]}'
+   # Response: 201, {"id":"..."}
+   
+   # Apply full payment → status PAID
+   curl -X POST http://localhost:8080/api/v1/invoices/{id}/payment \
+     -H "Content-Type: application/json" -H "X-Tenant-Id: <uuid>" \
+     -d '{"fullyPaid":true}'
+   ```
+
+2. **Overdue → Write-off**
+   ```bash
+   # Create with past due date
+   curl -X POST http://localhost:8080/api/v1/invoices \
+     -H "Content-Type: application/json" -H "X-Tenant-Id: <uuid>" \
+     -d '{"invoiceNumber":"INV-2","customerRef":"C2","currencyCode":"USD","dueDate":"2020-01-01","lines":[{"description":"Old","amount":50}]}'
+   # Already ISSUED; mark overdue
+   curl -X POST "http://localhost:8080/api/v1/invoices/{id}/overdue?today=2026-01-01" \
+     -H "X-Tenant-Id: <uuid>"
+   # Write off
+   curl -X POST http://localhost:8080/api/v1/invoices/{id}/writeoff \
+     -H "Content-Type: application/json" -H "X-Tenant-Id: <uuid>" \
+     -d '{"reason":"Uncollectible"}'
+   # Status: WRITTEN_OFF
+   ```
+
+3. **Validation Errors**
+   - Missing lines → 400 `VALIDATION_ERROR`
+   - `dueDate` before `issueDate` → 400
+   - Issue already ISSUED → 409 `STATE_ERROR`
+
+4. **Pagination**
+   ```bash
+   curl "http://localhost:8080/api/v1/invoices?limit=5&status=ISSUED" -H "X-Tenant-Id: <uuid>"
+   # Response: {items:[...], nextCursor:"...", total:5}
+   # Next page: append &cursor=<nextCursor>
+   ```
+
+### Running the Test Script
+
+```bash
+# Make executable
+chmod +x scripts/test-api.sh
+
+# Run against local dev server
+./scripts/test-api.sh http://localhost:8080
+
+# With custom tenant
+TENANT_ID=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee ./scripts/test-api.sh
 ```
 
 **Design Docs:**

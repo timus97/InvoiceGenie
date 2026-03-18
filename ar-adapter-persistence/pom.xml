@@ -25,5 +25,9 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-jdbc-postgresql</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-jdbc-sqlite</artifactId>
+        </dependency>
     </dependencies>
 </project>

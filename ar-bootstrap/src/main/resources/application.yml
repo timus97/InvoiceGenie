@@ -27,3 +27,15 @@ mp.messaging.outgoing.invoice-issued:
 
 # RLS: set per-request in filter before using connection
 # app.current_tenant_id is set by TenantFilter or a dedicated DbTenantInterceptor
+
+# Profile: sqlite (e.g. Docker without PostgreSQL: -Dquarkus.profile=sqlite)
+---
+quarkus:
+  profile: sqlite
+  datasource:
+    db-kind: sqlite
+    jdbc:
+      url: jdbc:sqlite:file:./data/invoicegenie.db
+  hibernate-orm:
+    database:
+      generation: create-or-update

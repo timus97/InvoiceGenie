@@ -3,8 +3,9 @@ package com.invoicegenie.ar.adapter.persistence.repository;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
-import com.invoicegenie.ar.domain.model.invoice.InvoiceStatus;
 import com.invoicegenie.ar.adapter.persistence.entity.InvoiceEntity;
+import com.invoicegenie.ar.adapter.persistence.entity.InvoiceLineEntity;
+import com.invoicegenie.ar.adapter.persistence.mapper.InvoiceMapper;
 import com.invoicegenie.shared.domain.TenantId;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -13,7 +14,6 @@ import jakarta.persistence.PersistenceContext;
 import jakarta.transaction.Transactional;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 /**
  * Driven adapter: implements InvoiceRepository port. All queries include tenant_id.
@@ -24,19 +24,23 @@ public class InvoiceRepositoryAdapter implements InvoiceRepository {
     @PersistenceContext
     EntityManager em;
 
+    private final InvoiceMapper mapper = new InvoiceMapper();
+
     @Override
     @Transactional
     public void save(TenantId tenantId, Invoice invoice) {
-        InvoiceEntity e = new InvoiceEntity();
-        e.setId(invoice.getId().getValue());
-        e.setTenantId(tenantId.getValue());
-        e.setCustomerRef(invoice.getCustomerRef());
-        e.setCurrencyCode(invoice.getCurrencyCode());
-        e.setDueDate(invoice.getDueDate());
-        e.setCreatedAt(invoice.getCreatedAt());
-        e.setStatus(invoice.getStatus().name());
-        e.setTotalAmount(invoice.getTotal().getAmount());
-        em.merge(e);
+        InvoiceEntity entity = mapper.toEntity(tenantId, invoice);
+        em.merge(entity);
+
+        // Replace line items for this invoice
+        em.createQuery("DELETE FROM InvoiceLineEntity l WHERE l.tenantId = :tenantId AND l.invoiceId = :invoiceId")
+                .setParameter("tenantId", tenantId.getValue())
+                .setParameter("invoiceId", invoice.getId().getValue())
+                .executeUpdate();
+
+        for (InvoiceLineEntity lineEntity : mapper.toLineEntities(tenantId, invoice)) {
+            em.persist(lineEntity);
+        }
     }
 
     @Override
@@ -45,7 +49,13 @@ public class InvoiceRepositoryAdapter implements InvoiceRepository {
         if (e == null || !e.getTenantId().equals(tenantId.getValue())) {
             return Optional.empty();
         }
-        return Optional.of(toDomain(e));
+        List<InvoiceLineEntity> lines = em.createQuery(
+                        "SELECT l FROM InvoiceLineEntity l WHERE l.tenantId = :tenantId AND l.invoiceId = :invoiceId ORDER BY l.sequence",
+                        InvoiceLineEntity.class)
+                .setParameter("tenantId", tenantId.getValue())
+                .setParameter("invoiceId", id.getValue())
+                .getResultList();
+        return Optional.of(mapper.toDomain(e, lines));
     }
 
     @Override
@@ -64,22 +74,12 @@ public class InvoiceRepositoryAdapter implements InvoiceRepository {
         }
         List<InvoiceEntity> list = query.getResultList();
         boolean hasMore = list.size() > limit;
-        List<Invoice> items = list.stream().limit(limit).map(this::toDomain).toList();
+        List<Invoice> items = list.stream().limit(limit)
+                .map(e -> mapper.toDomain(e, List.of()))
+                .toList();
         Optional<PageCursor> next = hasMore && !items.isEmpty()
                 ? Optional.of(new PageCursor(items.get(items.size() - 1).getCreatedAt(), items.get(items.size() - 1).getId()))
                 : Optional.empty();
         return new Page(items, next);
-    }
-
-    private Invoice toDomain(InvoiceEntity e) {
-        return new Invoice(
-                InvoiceId.of(e.getId()),
-                e.getCustomerRef(),
-                e.getCurrencyCode(),
-                e.getDueDate(),
-                e.getCreatedAt(),
-                List.of(),
-                InvoiceStatus.valueOf(e.getStatus())
-        );
     }
 }

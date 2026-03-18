@@ -29,6 +29,7 @@ public class InvoiceResource {
     @POST
     public Response create(InvoiceCreateDto dto) {
         var command = new IssueInvoiceUseCase.IssueInvoiceCommand(
+                dto.invoiceNumber(),
                 dto.customerRef(),
                 dto.currencyCode(),
                 dto.dueDate(),
@@ -41,7 +42,7 @@ public class InvoiceResource {
         return Response.created(URI.create("/api/v1/invoices/" + id.getValue())).entity(new InvoiceIdDto(id.getValue().toString())).build();
     }
 
-    public record InvoiceCreateDto(String customerRef, String currencyCode, java.time.Instant dueDate, List<LineDto> lines) {
+    public record InvoiceCreateDto(String invoiceNumber, String customerRef, String currencyCode, java.time.LocalDate dueDate, List<LineDto> lines) {
         public record LineDto(String description, java.math.BigDecimal amount) {}
     }
 

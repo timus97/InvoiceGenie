@@ -4,7 +4,7 @@ import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.shared.domain.TenantId;
 
 import java.math.BigDecimal;
-import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -19,11 +19,13 @@ public interface IssueInvoiceUseCase {
     InvoiceId issue(TenantId tenantId, IssueInvoiceCommand command);
 
     record IssueInvoiceCommand(
+            String invoiceNumber,
             String customerRef,
             String currencyCode,
-            Instant dueDate,
+            LocalDate dueDate,
             List<LineItem> lines
     ) {
         public record LineItem(String description, BigDecimal amount) {}
     }
 }
+

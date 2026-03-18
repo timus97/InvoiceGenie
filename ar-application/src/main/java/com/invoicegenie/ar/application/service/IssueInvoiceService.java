@@ -7,7 +7,6 @@ import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceLine;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
-import com.invoicegenie.ar.domain.model.invoice.InvoiceStatus;
 import com.invoicegenie.ar.domain.event.InvoiceIssued;
 import com.invoicegenie.shared.domain.Money;
 import com.invoicegenie.shared.domain.TenantId;
@@ -41,11 +40,12 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
                     return new InvoiceLine(i + 1, item.description(), Money.of(item.amount(), command.currencyCode()));
                 })
                 .toList();
-        Invoice invoice = new Invoice(id, command.customerRef(), command.currencyCode(), command.dueDate(), lines, InvoiceStatus.DRAFT);
+        Invoice invoice = new Invoice(id, command.invoiceNumber(), command.customerRef(), command.currencyCode(),
+                command.dueDate(), command.dueDate(), lines);
         invoice.issue();
         invoiceRepository.save(tenantId, invoice);
 
-        eventPublisher.publish(new InvoiceIssued(tenantId, id, command.customerRef(), invoice.getTotal(), command.dueDate(), null));
+        eventPublisher.publish(new InvoiceIssued(tenantId, id, command.customerRef(), invoice.getTotal(), command.dueDate().atStartOfDay(java.time.ZoneOffset.UTC).toInstant(), null));
         return id;
     }
 }

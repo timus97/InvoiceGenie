@@ -19,6 +19,19 @@ mvn -pl ar-bootstrap quarkus:dev
 mvn -pl ar-bootstrap -Dquarkus.profile=sqlite quarkus:dev
 ```
 
+## Testing
+
+```bash
+# Run all tests
+mvn test
+
+# Run persistence adapter tests only
+mvn -pl ar-adapter-persistence test
+
+# Run domain tests only (when added)
+mvn -pl ar-domain test
+```
+
 **Design Docs:**
 - [docs/AR_BACKEND_DESIGN.md](docs/AR_BACKEND_DESIGN.md) — architecture, bounded contexts, package structure, tenant isolation, scale notes.
 - [docs/SCHEMA.md](docs/SCHEMA.md) — full SQL schema documentation, ER diagram, design decisions.

@@ -59,7 +59,7 @@ public class InvoiceRepositoryAdapter implements InvoiceRepository {
     }
 
     @Override
-    public Page<Invoice> findByTenant(TenantId tenantId, int limit, PageCursor cursor) {
+    public Page findByTenant(TenantId tenantId, int limit, PageCursor cursor) {
         String jpql = "SELECT e FROM InvoiceEntity e WHERE e.tenantId = :tenantId";
         if (cursor != null) {
             jpql += " AND (e.createdAt < :createdAt OR (e.createdAt = :createdAt AND e.id < :id))";

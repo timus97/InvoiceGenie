@@ -44,7 +44,7 @@
                             <goal>build</goal>
                         </goals>
                     </execution>
-                </plugins>
+                </executions>
             </plugin>
         </plugins>
     </build>

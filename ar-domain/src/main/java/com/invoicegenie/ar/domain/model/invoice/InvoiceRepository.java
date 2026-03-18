@@ -17,7 +17,7 @@ public interface InvoiceRepository {
     /**
      * Cursor-based page. Cursor is (createdAt, id) of last item from previous page.
      */
-    Page<Invoice> findByTenant(TenantId tenantId, int limit, PageCursor cursor);
+    Page findByTenant(TenantId tenantId, int limit, PageCursor cursor);
 
     record PageCursor(java.time.Instant createdAt, InvoiceId id) {}
     record Page(java.util.List<Invoice> items, Optional<PageCursor> nextCursor) {}

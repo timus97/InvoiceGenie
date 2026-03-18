@@ -6,6 +6,31 @@
 
 ---
 
+## 1. Invoice Lifecycle Engine
+
+The invoice lifecycle is enforced in the domain via a dedicated `InvoiceLifecycleEngine` with explicit allowed transitions.
+States: `DRAFT`, `ISSUED`, `PARTIALLY_PAID`, `PAID`, `OVERDUE`, `WRITTEN_OFF`.
+
+**Rules:**
+- `DRAFT → ISSUED`
+- `ISSUED → PARTIALLY_PAID | PAID | OVERDUE`
+- `PARTIALLY_PAID → PAID | OVERDUE`
+- `OVERDUE → PARTIALLY_PAID | PAID | WRITTEN_OFF`
+- `PAID`, `WRITTEN_OFF` are terminal
+
+**Edge Cases Handled:**
+- No lines: cannot issue
+- `dueDate < issueDate` rejected
+- `markOverdue(today)` requires `today > dueDate`
+- `writeOff(reason)` requires non-blank reason and OVERDUE status
+- `writtenOffAt` set only for `WRITTEN_OFF`
+
+---
+
+## 2. High-Level Architecture (Textual Diagram)
+
+---
+
 ## 1. High-Level Architecture (Textual Diagram)
 
 ```

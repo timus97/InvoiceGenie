@@ -62,8 +62,8 @@ public class InvoiceEntity {
     @Column(name = "issued_at")
     private Instant issuedAt;
 
-    @Column(name = "cancelled_at")
-    private Instant cancelledAt;
+    @Column(name = "written_off_at")
+    private Instant writtenOffAt;
 
     @Column(name = "version", nullable = false)
     private long version;
@@ -196,12 +196,12 @@ public class InvoiceEntity {
         this.issuedAt = issuedAt;
     }
 
-    public Instant getCancelledAt() {
-        return cancelledAt;
+    public Instant getWrittenOffAt() {
+        return writtenOffAt;
     }
 
-    public void setCancelledAt(Instant cancelledAt) {
-        this.cancelledAt = cancelledAt;
+    public void setWrittenOffAt(Instant writtenOffAt) {
+        this.writtenOffAt = writtenOffAt;
     }
 
     public long getVersion() {

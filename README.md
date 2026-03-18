@@ -81,11 +81,15 @@ mvn -pl ar-domain test
 
 ```
 DRAFT → ISSUED → PARTIALLY_PAID → PAID
-  ↓         ↓           ↓              ↓
-  └───── CANCELLED ←─────┘              ↓
-            ↓                           ↓
-        VOID (hard delete not allowed)
+                ↓
+              OVERDUE → WRITTEN_OFF
 ```
+
+### Invoice Lifecycle Engine
+
+- Lifecycle enforced in domain (`InvoiceLifecycleEngine`).
+- Terminal states: `PAID`, `WRITTEN_OFF`.
+- Overdue only when `today > dueDate`, write-off requires reason.
 
 ### Payment Allocation Rules
 

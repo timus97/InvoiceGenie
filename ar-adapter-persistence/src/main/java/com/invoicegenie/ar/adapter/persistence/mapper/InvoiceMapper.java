@@ -32,7 +32,7 @@ public final class InvoiceMapper {
         e.setCreatedAt(invoice.getCreatedAt());
         e.setUpdatedAt(invoice.getUpdatedAt());
         e.setIssuedAt(invoice.getIssuedAt());
-        e.setCancelledAt(invoice.getCancelledAt());
+        e.setWrittenOffAt(invoice.getWrittenOffAt());
         e.setVersion(invoice.getVersion());
         e.setStatus(invoice.getStatus());
         e.setSubtotal(invoice.getSubtotal().getAmount());
@@ -93,7 +93,7 @@ public final class InvoiceMapper {
                 e.getTerms(),
                 e.getStatus() == null ? InvoiceStatus.DRAFT : e.getStatus(),
                 e.getIssuedAt(),
-                e.getCancelledAt(),
+                e.getWrittenOffAt(),
                 lines
         );
     }

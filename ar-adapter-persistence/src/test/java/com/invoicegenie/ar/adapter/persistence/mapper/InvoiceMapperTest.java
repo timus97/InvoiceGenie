@@ -31,6 +31,8 @@ class InvoiceMapperTest {
         Invoice invoice = new Invoice(invoiceId, "INV-001", "CUST-1", "USD",
                 LocalDate.of(2026, 3, 1), LocalDate.of(2026, 3, 31), List.of(line));
         invoice.issue();
+        invoice.markOverdue(LocalDate.of(2026, 4, 10));
+        invoice.writeOff("bad debt");
 
         InvoiceMapper mapper = new InvoiceMapper();
         InvoiceEntity entity = mapper.toEntity(tenantId, invoice);

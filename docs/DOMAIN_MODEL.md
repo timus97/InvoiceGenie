@@ -41,16 +41,17 @@ Invoice (root)
 - `currencyCode` immutable; all lines must match
 - At least 1 line required to `issue()`
 - `getTotal() = subtotal + taxTotal` (discount already in line totals)
-- Status transitions: `DRAFT → ISSUED → (PARTIALLY_PAID|PAID|OVERDUE)`, any → `CANCELLED|VOID`
+- Status transitions: `DRAFT → ISSUED → (PARTIALLY_PAID|PAID|OVERDUE)`, `OVERDUE → WRITTEN_OFF`
 - Lines are read-only after `ISSUED` (use credit memo for corrections)
+- `writtenOffAt` present only when status is `WRITTEN_OFF`
 
 **Business logic in Invoice:**
 - `addLine(line)`, `removeLine(seq)` — only in DRAFT
 - `setDueDate(date)`, `setPeriod(start,end)`, `setNotesAndTerms(...)` — only in DRAFT
 - `issue()` — DRAFT → ISSUED, sets issuedAt
-- `cancel()` — DRAFT/ISSUED only
-- `voidInvoice()` — terminal state
-- `isOpen()`, `isOverdue(today)` — read-only queries
+- `markOverdue(today)` — ISSUED/PARTIALLY_PAID → OVERDUE when past due
+- `writeOff(reason)` — OVERDUE → WRITTEN_OFF terminal state
+- `isOpen()`, `isOverdue(today)`, `isWrittenOff()` — read-only queries
 - `applyPaymentStatus(fullyPaid)` — called by application layer after allocations
 
 ---
@@ -177,7 +178,7 @@ Domain services contain logic that spans aggregates or doesn't belong to any sin
 |-------|----------|-----------|
 | Invoice line totals | `InvoiceLine` constructor | Self-contained value object |
 | Invoice totals sum | `Invoice.getTotal()` | Root owns children |
-| Issue/cancel invoice | `Invoice.issue()`, `.cancel()` | State transition invariant |
+| Invoice lifecycle | `Invoice.issue()`, `.markOverdue()`, `.writeOff()` | State transition invariant |
 | Payment allocation | `Payment.allocate()` | Payment owns allocations |
 | Allocation cross-check | `AllocationDomainService` | Spans 2 aggregates |
 | Credit limit check | Application layer | Needs external balance query |

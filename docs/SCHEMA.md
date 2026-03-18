@@ -101,7 +101,7 @@ CREATE TABLE ar_invoice (
     period_end          DATE,
 
     status              VARCHAR(32) NOT NULL DEFAULT 'DRAFT',
-        -- DRAFT, ISSUED, PARTIALLY_PAID, PAID, OVERDUE, VOID, CANCELLED
+        -- DRAFT, ISSUED, PARTIALLY_PAID, PAID, OVERDUE, WRITTEN_OFF
 
     subtotal            NUMERIC(19,2) NOT NULL DEFAULT 0,
     tax_total           NUMERIC(19,2) NOT NULL DEFAULT 0,
@@ -116,7 +116,7 @@ CREATE TABLE ar_invoice (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     issued_at           TIMESTAMPTZ,
-    cancelled_at        TIMESTAMPTZ,
+    written_off_at      TIMESTAMPTZ,
 
     PRIMARY KEY (tenant_id, id),
     UNIQUE (tenant_id, invoice_number),

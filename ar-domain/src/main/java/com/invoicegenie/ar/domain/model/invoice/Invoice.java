@@ -20,8 +20,8 @@ import java.util.Objects;
  * <ul>
  *   <li>Invoice number is immutable business key (tenant-scoped unique)</li>
  *   <li>Lines: at least one required to issue; each line amount = qty * unit_price - discount + tax</li>
- *   <li>Totals: subtotal = sum(line totals); total = subtotal - discount_total + tax_total</li>
- *   <li>Status transitions: DRAFT → ISSUED → (PARTIALLY_PAID|PAID|OVERDUE), any → CANCELLED/VOID</li>
+ *   <li>Totals: subtotal = sum(line totals); total = subtotal + tax_total (discount already applied per line)</li>
+ *   <li>Status transitions: DRAFT → ISSUED → (PARTIALLY_PAID|PAID|OVERDUE), OVERDUE → WRITTEN_OFF</li>
  *   <li>Cannot modify lines after ISSUED (create credit memo for corrections)</li>
  *   <li>amountDue is managed by application layer based on allocations (not stored here)</li>
  * </ul>
@@ -44,9 +44,11 @@ public final class Invoice {
     private String terms;
     private InvoiceStatus status;
     private Instant issuedAt;
-    private Instant cancelledAt;
+    private Instant writtenOffAt;
 
     private final List<InvoiceLine> lines = new ArrayList<>();
+
+    private static final InvoiceLifecycleEngine LIFECYCLE = new InvoiceLifecycleEngine();
 
     /** For new invoice creation (DRAFT). */
     public Invoice(InvoiceId id, String invoiceNumber, String customerRef, String currencyCode,
@@ -54,6 +56,9 @@ public final class Invoice {
         this(id, invoiceNumber, customerRef, currencyCode, issueDate, dueDate, null, null,
                 Instant.now(), Instant.now(), 1L, null, null, InvoiceStatus.DRAFT, null, null,
                 lines != null ? lines : List.of());
+        if (dueDate.isBefore(issueDate)) {
+            throw new IllegalArgumentException("dueDate cannot be before issueDate");
+        }
     }
 
     /** For reconstitution from persistence. */
@@ -61,7 +66,7 @@ public final class Invoice {
                    LocalDate issueDate, LocalDate dueDate, LocalDate periodStart, LocalDate periodEnd,
                    Instant createdAt, Instant updatedAt, long version,
                    String notes, String terms, InvoiceStatus status,
-                   Instant issuedAt, Instant cancelledAt,
+                   Instant issuedAt, Instant writtenOffAt,
                    List<InvoiceLine> lines) {
         this.id = Objects.requireNonNull(id);
         this.invoiceNumber = Objects.requireNonNull(invoiceNumber);
@@ -70,6 +75,9 @@ public final class Invoice {
         if (currencyCode.length() != 3) throw new IllegalArgumentException("currency must be ISO 4217");
         this.issueDate = Objects.requireNonNull(issueDate);
         this.dueDate = Objects.requireNonNull(dueDate);
+        if (dueDate.isBefore(issueDate)) {
+            throw new IllegalArgumentException("dueDate cannot be before issueDate");
+        }
         this.periodStart = periodStart;
         this.periodEnd = periodEnd;
         this.createdAt = Objects.requireNonNull(createdAt);
@@ -79,11 +87,18 @@ public final class Invoice {
         this.terms = terms;
         this.status = status == null ? InvoiceStatus.DRAFT : status;
         this.issuedAt = issuedAt;
-        this.cancelledAt = cancelledAt;
+        this.writtenOffAt = writtenOffAt;
+        if (this.status != InvoiceStatus.WRITTEN_OFF) {
+            this.writtenOffAt = null;
+        }
+        if (this.status == InvoiceStatus.ISSUED && this.issuedAt == null) {
+            this.issuedAt = Instant.now();
+        }
         if (lines != null) {
             for (InvoiceLine l : lines) requireSameCurrency(l.getAmount());
             this.lines.addAll(lines);
         }
+        validateState();
     }
 
     // ==================== Accessors ====================
@@ -103,7 +118,7 @@ public final class Invoice {
     public String getTerms() { return terms; }
     public InvoiceStatus getStatus() { return status; }
     public Instant getIssuedAt() { return issuedAt; }
-    public Instant getCancelledAt() { return cancelledAt; }
+    public Instant getWrittenOffAt() { return writtenOffAt; }
 
     public List<InvoiceLine> getLines() { return Collections.unmodifiableList(lines); }
 
@@ -144,8 +159,9 @@ public final class Invoice {
         int nextSeq = lines.stream().mapToInt(InvoiceLine::getSequence).max().orElse(0) + 1;
         if (line.getSequence() != nextSeq) {
             // allow caller to set sequence; but ensure no duplicate
-            if (lines.stream().anyMatch(l -> l.getSequence() == line.getSequence()))
+            if (lines.stream().anyMatch(l -> l.getSequence() == line.getSequence())) {
                 throw new IllegalArgumentException("duplicate line sequence: " + line.getSequence());
+            }
         }
         lines.add(line);
         touch();
@@ -156,7 +172,10 @@ public final class Invoice {
      */
     public void removeLine(int sequence) {
         assertDraft();
-        lines.removeIf(l -> l.getSequence() == sequence);
+        boolean removed = lines.removeIf(l -> l.getSequence() == sequence);
+        if (!removed) {
+            throw new IllegalArgumentException("Line not found: " + sequence);
+        }
         touch();
     }
 
@@ -165,6 +184,9 @@ public final class Invoice {
      */
     public void setDueDate(LocalDate dueDate) {
         assertDraft();
+        if (dueDate.isBefore(issueDate)) {
+            throw new IllegalArgumentException("dueDate cannot be before issueDate");
+        }
         this.dueDate = Objects.requireNonNull(dueDate);
         touch();
     }
@@ -174,6 +196,9 @@ public final class Invoice {
      */
     public void setPeriod(LocalDate start, LocalDate end) {
         assertDraft();
+        if (start != null && end != null && end.isBefore(start)) {
+            throw new IllegalArgumentException("Period end cannot be before start");
+        }
         this.periodStart = start;
         this.periodEnd = end;
         touch();
@@ -193,35 +218,35 @@ public final class Invoice {
      * Issues the invoice. Transitions DRAFT → ISSUED. Emits InvoiceIssued event (via application layer).
      */
     public void issue() {
-        if (status != InvoiceStatus.DRAFT)
-            throw new IllegalStateException("Only DRAFT invoices can be issued");
-        if (lines.isEmpty())
+        if (lines.isEmpty()) {
             throw new IllegalStateException("Invoice must have at least one line");
-        this.status = InvoiceStatus.ISSUED;
-        this.issuedAt = Instant.now();
-        touch();
+        }
+        transitionTo(LIFECYCLE.issue());
     }
 
     /**
-     * Marks as cancelled. Only from DRAFT or ISSUED (before any payment).
-     * Application layer should validate no allocations exist.
+     * Marks invoice as overdue (ISSUED/PARTIALLY_PAID → OVERDUE).
      */
-    public void cancel() {
-        if (status != InvoiceStatus.DRAFT && status != InvoiceStatus.ISSUED)
-            throw new IllegalStateException("Cannot cancel invoice in status: " + status);
-        this.status = InvoiceStatus.CANCELLED;
-        this.cancelledAt = Instant.now();
-        touch();
+    public void markOverdue(LocalDate today) {
+        if (!dueDate.isBefore(today)) {
+            throw new IllegalStateException("Invoice is not overdue");
+        }
+        transitionTo(LIFECYCLE.markOverdue());
     }
 
     /**
-     * Marks as void. Hard stop; no further operations.
+     * Marks as written-off (terminal). Only allowed from OVERDUE.
      */
-    public void voidInvoice() {
-        if (status == InvoiceStatus.CANCELLED || status == InvoiceStatus.VOID)
-            throw new IllegalStateException("Already cancelled/void");
-        this.status = InvoiceStatus.VOID;
-        touch();
+    public void writeOff(String reason) {
+        if (reason == null || reason.isBlank()) {
+            throw new IllegalArgumentException("write-off reason is required");
+        }
+        this.writtenOffAt = Instant.now();
+        transitionTo(LIFECYCLE.writeOff());
+    }
+
+    public boolean isWrittenOff() {
+        return status == InvoiceStatus.WRITTEN_OFF;
     }
 
     /**
@@ -231,11 +256,21 @@ public final class Invoice {
         return status == InvoiceStatus.ISSUED || status == InvoiceStatus.PARTIALLY_PAID || status == InvoiceStatus.OVERDUE;
     }
 
+    public boolean canIssue() {
+        return status == InvoiceStatus.DRAFT && !lines.isEmpty();
+    }
+
+    public boolean canWriteOff() {
+        return status == InvoiceStatus.OVERDUE;
+    }
+
     /**
      * Checks if invoice is overdue based on dueDate.
      */
     public boolean isOverdue(LocalDate today) {
-        if (status != InvoiceStatus.ISSUED && status != InvoiceStatus.PARTIALLY_PAID) return false;
+        if (status != InvoiceStatus.ISSUED && status != InvoiceStatus.PARTIALLY_PAID && status != InvoiceStatus.OVERDUE) {
+            return false;
+        }
         return dueDate.isBefore(today);
     }
 
@@ -244,10 +279,15 @@ public final class Invoice {
      * Called by application layer after allocations change.
      */
     public void applyPaymentStatus(boolean fullyPaid) {
-        if (status == InvoiceStatus.ISSUED || status == InvoiceStatus.PARTIALLY_PAID) {
-            this.status = fullyPaid ? InvoiceStatus.PAID : InvoiceStatus.PARTIALLY_PAID;
-            touch();
+        if (fullyPaid) {
+            transitionTo(LIFECYCLE.markPaid());
+            return;
         }
+        transitionTo(LIFECYCLE.markPartiallyPaid());
+    }
+
+    public boolean canReceivePayments() {
+        return isOpen() && !isWrittenOff();
     }
 
     // ==================== Helpers ====================
@@ -257,6 +297,24 @@ public final class Invoice {
             throw new IllegalStateException("Invoice is not DRAFT: " + status);
     }
 
+    private void transitionTo(InvoiceStatus targetStatus) {
+        InvoiceStatus from = this.status;
+        LIFECYCLE.assertTransitionAllowed(from, targetStatus);
+        this.status = targetStatus;
+        if (targetStatus == InvoiceStatus.ISSUED && issuedAt == null) {
+            this.issuedAt = Instant.now();
+        }
+        if (targetStatus != InvoiceStatus.WRITTEN_OFF) {
+            this.writtenOffAt = null;
+        }
+        touch();
+    }
+
+    private void transitionTo(InvoiceLifecycleEngine.Transition transition) {
+        transitionTo(transition.target());
+    }
+
+
     private void requireSameCurrency(Money m) {
         if (!currencyCode.equals(m.getCurrencyCode()))
             throw new IllegalArgumentException("Currency mismatch: " + currencyCode + " vs " + m.getCurrencyCode());
@@ -265,6 +323,22 @@ public final class Invoice {
     private void touch() {
         this.updatedAt = Instant.now();
         this.version++;
+        validateState();
+    }
+
+    private void validateState() {
+        if (status == InvoiceStatus.ISSUED && issuedAt == null) {
+            throw new IllegalStateException("Issued invoice must have issuedAt");
+        }
+        if (status == InvoiceStatus.WRITTEN_OFF && writtenOffAt == null) {
+            throw new IllegalStateException("Written-off invoice must have writtenOffAt");
+        }
+        if (writtenOffAt != null && status != InvoiceStatus.WRITTEN_OFF) {
+            throw new IllegalStateException("Written-off timestamp only allowed for WRITTEN_OFF status");
+        }
+        if (status == InvoiceStatus.DRAFT && issuedAt != null) {
+            throw new IllegalStateException("Draft invoice cannot have issuedAt");
+        }
     }
 
     @Override

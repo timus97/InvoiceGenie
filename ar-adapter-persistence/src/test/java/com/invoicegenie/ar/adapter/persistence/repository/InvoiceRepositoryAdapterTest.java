@@ -41,6 +41,8 @@ class InvoiceRepositoryAdapterTest {
         InvoiceLine line = new InvoiceLine(1, "Design", Money.of("100.00", "USD"));
         Invoice invoice = new Invoice(invoiceId, "INV-100", "CUST-1", "USD",
                 LocalDate.of(2026, 3, 1), LocalDate.of(2026, 3, 31), List.of(line));
+        invoice.issue();
+        invoice.markOverdue(LocalDate.of(2026, 4, 10));
 
         adapter.save(tenantId, invoice);
 

@@ -86,7 +86,7 @@ CREATE TABLE ar_invoice (
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     issued_at               TIMESTAMPTZ,
-    cancelled_at            TIMESTAMPTZ,
+    written_off_at          TIMESTAMPTZ,
 
     PRIMARY KEY (tenant_id, id),
     UNIQUE (tenant_id, invoice_number),

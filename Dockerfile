@@ -1,6 +1,5 @@
 FROM swe-arena-base
 
-
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         openjdk-21-jdk \
@@ -9,10 +8,10 @@ RUN apt-get update && \
         libsqlite3-dev \
         ca-certificates \
         curl \
+        jq \
         locales \
         && rm -rf /var/lib/apt/lists/* \
         && update-ca-certificates
-
 
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 ENV PATH=$JAVA_HOME/bin:$PATH
@@ -28,3 +27,13 @@ RUN git init && \
     git fetch --depth 1 origin ${COMMIT_HASH} && \
     git checkout FETCH_HEAD && \
     git remote remove origin
+
+# Build the project
+RUN mvn -pl ar-bootstrap -am package -DskipTests -q
+
+# Expose both profiles' ports
+EXPOSE 8080 8081
+
+# Default: run with SQLite profile on port 8081
+ENV QUARKUS_PROFILE=sqlite
+CMD ["java", "-jar", "ar-bootstrap/target/quarkus-app/quarkus-run.jar"]

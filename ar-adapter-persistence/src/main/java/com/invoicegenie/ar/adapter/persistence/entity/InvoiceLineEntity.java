@@ -5,7 +5,9 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.IdClass;
 import jakarta.persistence.Table;
+import java.io.Serializable;
 import java.math.BigDecimal;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -70,5 +72,62 @@ public class InvoiceLineEntity {
     public BigDecimal getLineTotal() { return lineTotal; }
     public void setLineTotal(BigDecimal lineTotal) { this.lineTotal = lineTotal; }
 
-    public record InvoiceLineKey(UUID tenantId, UUID invoiceId, int sequence) {}
+    public static class InvoiceLineKey implements Serializable {
+        private static final long serialVersionUID = 1L;
+        private UUID tenantId;
+        private UUID invoiceId;
+        private int sequence;
+
+        public InvoiceLineKey() {
+        }
+
+        public InvoiceLineKey(UUID tenantId, UUID invoiceId, int sequence) {
+            this.tenantId = tenantId;
+            this.invoiceId = invoiceId;
+            this.sequence = sequence;
+        }
+
+        public UUID getTenantId() {
+            return tenantId;
+        }
+
+        public void setTenantId(UUID tenantId) {
+            this.tenantId = tenantId;
+        }
+
+        public UUID getInvoiceId() {
+            return invoiceId;
+        }
+
+        public void setInvoiceId(UUID invoiceId) {
+            this.invoiceId = invoiceId;
+        }
+
+        public int getSequence() {
+            return sequence;
+        }
+
+        public void setSequence(int sequence) {
+            this.sequence = sequence;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            InvoiceLineKey that = (InvoiceLineKey) o;
+            return sequence == that.sequence
+                && Objects.equals(tenantId, that.tenantId)
+                && Objects.equals(invoiceId, that.invoiceId);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(tenantId, invoiceId, sequence);
+        }
+    }
 }

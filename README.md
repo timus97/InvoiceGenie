@@ -16,6 +16,7 @@ mvn clean install
 mvn -pl ar-bootstrap quarkus:dev
 
 # Run with SQLite (dev fallback, no Postgres)
+# Note: sqlite profile listens on port 8081
 mvn -pl ar-bootstrap -Dquarkus.profile=sqlite quarkus:dev
 ```
 
@@ -38,16 +39,30 @@ mvn -pl ar-domain test
 # Build all modules
 mvn clean install -DskipTests
 
+# (Recommended before dev) Compile dependencies for hot reload
+mvn -pl ar-bootstrap -am compile -DskipTests
+
 # Start dev server (requires PostgreSQL)
 mvn -pl ar-bootstrap quarkus:dev
 
 # Start with SQLite dev profile (no Postgres)
+# Note: sqlite profile listens on port 8081
 mvn -pl ar-bootstrap -Dquarkus.profile=sqlite quarkus:dev
 
 # Once running, access:
-# API: http://localhost:8080/api/v1/invoices
+# API (PostgreSQL profile): http://localhost:8080/api/v1/invoices
 # Swagger UI: http://localhost:8080/q/swagger-ui/
 # OpenAPI JSON: http://localhost:8080/q/openapi
+# API (SQLite profile): http://localhost:8081/api/v1/invoices
+# Swagger UI (SQLite): http://localhost:8081/q/swagger-ui/
+# OpenAPI JSON (SQLite): http://localhost:8081/q/openapi
+```
+
+### SQLite Dev Profile Notes
+
+```bash
+# Ensure the sqlite data directory exists (used by jdbc:sqlite:./data/invoicegenie.db)
+mkdir -p ar-bootstrap/data
 ```
 
 ### API Testing with cURL / Postman

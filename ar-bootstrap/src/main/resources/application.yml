@@ -4,6 +4,7 @@ quarkus:
     name: invoice-genie-ar
   http:
     port: 8080
+    host: 0.0.0.0
   datasource:
     db-kind: postgresql
     username: ar
@@ -16,8 +17,18 @@ quarkus:
       generation: none
     log:
       sql: false
-  jdbc:
-    max-size: 32
+
+"%sqlite":
+  quarkus:
+    http:
+      port: 8081
+    datasource:
+      db-kind: sqlite
+      jdbc:
+        url: jdbc:sqlite:./data/invoicegenie.db
+    hibernate-orm:
+      database:
+        generation: update
 
 # Kafka (optional — disable if not used)
 mp.messaging.outgoing.invoice-issued:
@@ -28,14 +39,3 @@ mp.messaging.outgoing.invoice-issued:
 # RLS: set per-request in filter before using connection
 # app.current_tenant_id is set by TenantFilter or a dedicated DbTenantInterceptor
 
-# Profile: sqlite (e.g. Docker without PostgreSQL: -Dquarkus.profile=sqlite)
----
-quarkus:
-  profile: sqlite
-  datasource:
-    db-kind: sqlite
-    jdbc:
-      url: jdbc:sqlite:file:./data/invoicegenie.db
-  hibernate-orm:
-    database:
-      generation: create-or-update

@@ -1,0 +1,261 @@
+{
+  "info": {
+    "name": "InvoiceGenie AR API",
+    "description": "Postman collection for InvoiceGenie AR backend.\n\nAuth/Tenancy:\n- Tenant is required on every call: header `X-Tenant-Id: {{tenantId}}`.\n- Optional idempotency: `Idempotency-Key: {{idempotencyKey}}` on create.\n\nBase URL:\n- Default: {{baseUrl}} (e.g. http://localhost:8080)\n- SQLite profile runs on 8081 in application.yml.\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Ensure we always have an idempotency key available",
+          "if (!pm.environment.get('idempotencyKey')) {",
+          "  pm.environment.set('idempotencyKey', pm.variables.replaceIn('{{$guid}}'));",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Invoices",
+      "item": [
+        {
+          "name": "Create + Issue Invoice",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" },
+              { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/invoices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "invoices"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invoiceNumber\": \"INV-{{randomInt}}\",\n  \"customerRef\": \"CUST-001\",\n  \"currencyCode\": \"USD\",\n  \"dueDate\": \"2026-12-31\",\n  \"lines\": [\n    { \"sequence\": 1, \"description\": \"Consulting\", \"amount\": 1250.00 },\n    { \"sequence\": 2, \"description\": \"License\", \"amount\": 250.00 }\n  ]\n}\n"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) {}",
+                  "if (json && json.id) {",
+                  "  pm.environment.set('invoiceId', json.id);",
+                  "}",
+                  "const loc = pm.response.headers.get('Location');",
+                  "if (loc) {",
+                  "  const m = loc.match(/\\/api\\/v1\\/invoices\\/([0-9a-fA-F-]{36})$/);",
+                  "  if (m && m[1]) pm.environment.set('invoiceId', m[1]);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Invoice by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/invoices/{{invoiceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "invoices", "{{invoiceId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Invoices (page)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/invoices?limit={{limit}}&cursor={{cursor}}&status={{status}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "invoices"],
+              "query": [
+                { "key": "limit", "value": "{{limit}}" },
+                { "key": "cursor", "value": "{{cursor}}" },
+                { "key": "status", "value": "{{status}}" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) {}",
+                  "if (json && json.nextCursor) {",
+                  "  pm.environment.set('cursor', json.nextCursor);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Issue Invoice (DRAFT → ISSUED)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/invoices/{{invoiceId}}/issue",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "invoices", "{{invoiceId}}", "issue"]
+            }
+          }
+        },
+        {
+          "name": "Mark Overdue",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/invoices/{{invoiceId}}/overdue?today={{today}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "invoices", "{{invoiceId}}", "overdue"],
+              "query": [
+                { "key": "today", "value": "{{today}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Write Off Invoice",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/invoices/{{invoiceId}}/writeoff",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "invoices", "{{invoiceId}}", "writeoff"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Customer dispute resolved by credit\"\n}\n"
+            }
+          }
+        },
+        {
+          "name": "Apply Payment Status",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/invoices/{{invoiceId}}/payment",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "invoices", "{{invoiceId}}", "payment"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullyPaid\": true\n}\n"
+            }
+          }
+        },
+        {
+          "name": "Update Due Date (DRAFT only)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/invoices/{{invoiceId}}/due-date",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "invoices", "{{invoiceId}}", "due-date"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dueDate\": \"2027-01-31\"\n}\n"
+            }
+          }
+        },
+        {
+          "name": "Delete Invoice (should be 405)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/invoices/{{invoiceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "invoices", "{{invoiceId}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('405 Method Not Allowed', function () {",
+                  "  pm.response.to.have.status(405);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "tenantId", "value": "00000000-0000-0000-0000-000000000001" },
+    { "key": "invoiceId", "value": "" },
+    { "key": "idempotencyKey", "value": "" },
+    { "key": "limit", "value": "20" },
+    { "key": "cursor", "value": "" },
+    { "key": "status", "value": "" },
+    { "key": "today", "value": "" }
+  ]
+}
+

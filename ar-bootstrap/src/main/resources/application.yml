@@ -17,6 +17,10 @@ quarkus:
       generation: none
     log:
       sql: false
+  index-dependency:
+    ar-adapter-api:
+      group-id: com.invoicegenie
+      artifact-id: ar-adapter-api
 
 "%sqlite":
   quarkus:
@@ -30,6 +34,10 @@ quarkus:
     hibernate-orm:
       database:
         generation: update
+    index-dependency:
+      ar-adapter-api:
+        group-id: com.invoicegenie
+        artifact-id: ar-adapter-api
 
 # Kafka (optional — disable if not used)
 mp.messaging.outgoing.invoice-issued:

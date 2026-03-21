@@ -1,0 +1,2 @@
+# Shell scripts must use LF so bash/WSL/Git Bash run them reliably
+*.sh text eol=lf

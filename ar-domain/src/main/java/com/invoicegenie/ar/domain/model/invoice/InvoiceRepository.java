@@ -19,6 +19,11 @@ public interface InvoiceRepository {
      */
     Page findByTenant(TenantId tenantId, int limit, PageCursor cursor);
 
+    /**
+     * Finds open invoices (ISSUED, PARTIALLY_PAID, OVERDUE) for a customer.
+     */
+    java.util.List<Invoice> findOpenByTenantAndCustomer(TenantId tenantId, com.invoicegenie.ar.domain.model.customer.CustomerId customerId);
+
     record PageCursor(java.time.Instant createdAt, InvoiceId id) {}
     record Page(java.util.List<Invoice> items, Optional<PageCursor> nextCursor) {}
 }

@@ -13,12 +13,54 @@
           "// Ensure we always have an idempotency key available",
           "if (!pm.environment.get('idempotencyKey')) {",
           "  pm.environment.set('idempotencyKey', pm.variables.replaceIn('{{$guid}}'));",
-          "}"
+          "}",
+          "// Generate random values",
+          "pm.environment.set('randomInt', Math.floor(Math.random() * 1000000));"
         ]
       }
     }
   ],
   "item": [
+    {
+      "name": "Health & Info",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/q/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["q", "health"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OpenAPI Spec",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/q/openapi",
+              "host": ["{{baseUrl}}"],
+              "path": ["q", "openapi"]
+            }
+          }
+        }
+      ]
+    },
     {
       "name": "Invoices",
       "item": [
@@ -54,6 +96,7 @@
                   "try { json = pm.response.json(); } catch (e) {}",
                   "if (json && json.id) {",
                   "  pm.environment.set('invoiceId', json.id);",
+                  "  pm.environment.set('invoiceAmount', json.total);",
                   "}",
                   "const loc = pm.response.headers.get('Location');",
                   "if (loc) {",
@@ -245,17 +288,464 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Payment Allocation - FIFO",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/{{paymentId}}/allocate/fifo",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments", "{{paymentId}}", "allocate", "fifo"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"allocatedBy\": \"{{tenantId}}\",\n  \"version\": 1\n}\n"
+            }
+          }
+        },
+        {
+          "name": "Payment Allocation - Manual",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/{{paymentId}}/allocate/manual",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments", "{{paymentId}}", "allocate", "manual"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"allocatedBy\": \"{{tenantId}}\",\n  \"version\": 1,\n  \"allocations\": [\n    {\n      \"invoiceId\": \"{{invoiceId}}\",\n      \"amount\": 100.00,\n      \"notes\": \"Manual allocation\"\n    }\n  ]\n}\n"
+            }
+          }
+        },
+        {
+          "name": "Get Payment Allocations",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/{{paymentId}}/allocations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments", "{{paymentId}}", "allocations"]
+            }
+          }
+        },
+        {
+          "name": "Get Invoice Allocations",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/invoices/{{invoiceId}}/allocations",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments", "invoices", "{{invoiceId}}", "allocations"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Ledger",
+      "item": [
+        {
+          "name": "List Accounts",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ledger/accounts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "ledger", "accounts"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Account Balance",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ledger/balance/{{account}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "ledger", "balance", "{{account}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Transaction",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ledger/transactions/{{transactionId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "ledger", "transactions", "{{transactionId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Entries by Reference",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ledger/reference/INVOICE/{{invoiceId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "ledger", "reference", "INVOICE", "{{invoiceId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cheques",
+      "item": [
+        {
+          "name": "Create Cheque (RECEIVED)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cheques",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "cheques"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"chequeNumber\": \"CHQ-{{randomInt}}\",\n  \"customerId\": \"{{tenantId}}\",\n  \"amount\": 1000.00,\n  \"currencyCode\": \"USD\",\n  \"bankName\": \"Test Bank\",\n  \"bankBranch\": \"Main Branch\",\n  \"chequeDate\": \"2026-03-20\",\n  \"notes\": \"Test cheque\"\n}\n"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) {}",
+                  "if (json && json.id) {",
+                  "  pm.environment.set('chequeId', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deposit Cheque (RECEIVED → DEPOSITED)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cheques/{{chequeId}}/deposit",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "cheques", "{{chequeId}}", "deposit"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Clear Cheque (DEPOSITED → CLEARED)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cheques/{{chequeId}}/clear",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "cheques", "{{chequeId}}", "clear"]
+            }
+          }
+        },
+        {
+          "name": "Bounce Cheque (DEPOSITED → BOUNCED)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cheques/{{chequeId}}/bounce",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "cheques", "{{chequeId}}", "bounce"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Insufficient funds\"\n}\n"
+            }
+          }
+        },
+        {
+          "name": "Get Cheque by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cheques/{{chequeId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "cheques", "{{chequeId}}"]
+            }
+          }
+        },
+        {
+          "name": "List Cheques",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cheques?status={{chequeStatus}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "cheques"],
+              "query": [
+                { "key": "status", "value": "{{chequeStatus}}" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Aging Reports",
+      "item": [
+        {
+          "name": "Generate Aging Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/aging?asOfDate={{asOfDate}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "aging"],
+              "query": [
+                { "key": "asOfDate", "value": "{{asOfDate}}" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Aging Buckets",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/aging/buckets",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "aging", "buckets"]
+            }
+          }
+        },
+        {
+          "name": "Calculate Early Payment Discount",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/aging/discount/calculate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "aging", "discount", "calculate"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 1000.00,\n  \"currencyCode\": \"USD\",\n  \"dueDate\": \"2026-04-30\"\n}\n"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Credit Notes",
+      "item": [
+        {
+          "name": "Generate Credit Note (Early Payment)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-notes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "credit-notes"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{tenantId}}\",\n  \"discountAmount\": 20.00,\n  \"currencyCode\": \"USD\",\n  \"referenceInvoiceId\": \"{{invoiceId}}\"\n}\n"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "});",
+                  "let json = {};",
+                  "try { json = pm.response.json(); } catch (e) {}",
+                  "if (json && json.id) {",
+                  "  pm.environment.set('creditNoteId', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Credit Note by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-notes/{{creditNoteId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "credit-notes", "{{creditNoteId}}"]
+            }
+          }
+        },
+        {
+          "name": "Apply Credit Note to Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-notes/{{creditNoteId}}/apply",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "credit-notes", "{{creditNoteId}}", "apply"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentId\": \"{{paymentId}}\"\n}\n"
+            }
+          }
+        },
+        {
+          "name": "List Credit Notes",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/credit-notes?status={{creditNoteStatus}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "credit-notes"],
+              "query": [
+                { "key": "status", "value": "{{creditNoteStatus}}" }
+              ]
+            }
+          }
+        }
+      ]
     }
   ],
   "variable": [
     { "key": "baseUrl", "value": "http://localhost:8080" },
     { "key": "tenantId", "value": "00000000-0000-0000-0000-000000000001" },
     { "key": "invoiceId", "value": "" },
+    { "key": "paymentId", "value": "" },
+    { "key": "chequeId", "value": "" },
+    { "key": "creditNoteId", "value": "" },
     { "key": "idempotencyKey", "value": "" },
     { "key": "limit", "value": "20" },
     { "key": "cursor", "value": "" },
     { "key": "status", "value": "" },
-    { "key": "today", "value": "" }
+    { "key": "today", "value": "" },
+    { "key": "asOfDate", "value": "" },
+    { "key": "account", "value": "AR" },
+    { "key": "transactionId", "value": "" },
+    { "key": "randomInt", "value": "" },
+    { "key": "chequeStatus", "value": "" },
+    { "key": "creditNoteStatus", "value": "" }
   ]
 }
 

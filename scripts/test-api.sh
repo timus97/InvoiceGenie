@@ -1,7 +1,9 @@
+
 #!/bin/bash
 # InvoiceGenie API Test Script
 # Usage: ./scripts/test-api.sh [base_url]
 # Requires: curl; optional: jq (otherwise python3 or sed-based JSON field extraction is used)
+# Default port 8080 works for both PostgreSQL (default) and SQLite profiles
 
 set -e
 
@@ -235,6 +237,158 @@ test_endpoint "NotFound" "GET" "/api/v1/invoices/00000000-0000-0000-0000-0000000
 echo ""
 echo "=== 18. 405 Delete ==="
 test_endpoint "Delete" "DELETE" "/api/v1/invoices/$INVOICE_ID" "" "405"
+
+echo ""
+echo "=== 19. Payment Allocation - FIFO Auto-Allocate (404 without payment) ==="
+test_endpoint "FIFO Allocate" "POST" "/api/v1/payments/00000000-0000-0000-0000-000000000000/allocate/fifo" '{"allocatedBy":"00000000-0000-0000-0000-000000000001"}' "404"
+
+echo ""
+echo "=== 20. Payment Allocation - Manual Allocate (404 without payment) ==="
+test_endpoint "Manual Allocate" "POST" "/api/v1/payments/00000000-0000-0000-0000-000000000000/allocate/manual" '{"allocatedBy":"00000000-0000-0000-0000-000000000001","allocations":[{"invoiceId":"00000000-0000-0000-0000-000000000000","amount":100.00,"notes":"test"}]}' "404"
+
+echo ""
+echo "=== 21. Payment Allocation - Get Allocations (404 without payment) ==="
+test_endpoint "Get Allocations" "GET" "/api/v1/payments/00000000-0000-0000-0000-000000000000/allocations" "" "404"
+
+echo ""
+echo "=== 22. Payment Allocation - Get Invoice Allocations ==="
+test_endpoint "Get Invoice Allocations" "GET" "/api/v1/payments/invoices/$INVOICE_ID/allocations" "" "200"
+
+echo ""
+echo "=== 23. Ledger - List Accounts ==="
+test_endpoint "List Accounts" "GET" "/api/v1/ledger/accounts" "" "200"
+
+echo ""
+echo "=== 24. Ledger - Get Account Balance ==="
+test_endpoint "Get AR Balance" "GET" "/api/v1/ledger/balance/AR" "" "200"
+
+echo ""
+echo "=== 25. Ledger - Get Transaction (404 without transaction) ==="
+test_endpoint "Get Transaction" "GET" "/api/v1/ledger/transactions/00000000-0000-0000-0000-000000000000" "" "404"
+
+echo ""
+echo "=== 26. Ledger - Get By Reference ==="
+test_endpoint "Get By Reference" "GET" "/api/v1/ledger/reference/INVOICE/$INVOICE_ID" "" "200"
+
+echo ""
+echo "=== 27. Cheque - Create (RECEIVED state) ==="
+CHEQUE_CREATE='{
+  "chequeNumber": "CHQ-'$(date +%s)'",
+  "customerId": "11111111-1111-1111-1111-111111111111",
+  "amount": 1000.00,
+  "currencyCode": "USD",
+  "bankName": "Test Bank",
+  "bankBranch": "Main Branch",
+  "chequeDate": "2026-03-20",
+  "notes": "Test cheque"
+}'
+CHEQUE_CREATE_RESP=$(curl -s -w "%{http_code}" -X POST \
+    -H "Content-Type: application/json" \
+    -H "X-Tenant-Id: $TENANT_ID" \
+    -d "$CHEQUE_CREATE" \
+    "$BASE_URL/api/v1/cheques")
+CHEQUE_CREATE_CODE="${CHEQUE_CREATE_RESP: -3}"
+CHEQUE_CREATE_JSON="${CHEQUE_CREATE_RESP%???}"
+echo -n "[Create Cheque] POST /api/v1/cheques ... "
+if [[ "$CHEQUE_CREATE_CODE" == "201" ]]; then
+    echo -e "${GREEN}PASS${NC} ($CHEQUE_CREATE_CODE)"
+    PASS=$((PASS + 1))
+    CHEQUE_ID=$(json_get_id "$CHEQUE_CREATE_JSON")
+else
+    echo -e "${RED}FAIL${NC} (expected 201, got $CHEQUE_CREATE_CODE)"
+    pretty_json "$CHEQUE_CREATE_JSON"
+    FAIL=$((FAIL + 1))
+    CHEQUE_ID=""
+fi
+
+echo ""
+echo "=== 28. Cheque - Deposit (RECEIVED → DEPOSITED) ==="
+test_endpoint "Deposit Cheque" "POST" "/api/v1/cheques/$CHEQUE_ID/deposit" "" "200"
+
+echo ""
+echo "=== 29. Cheque - Clear (DEPOSITED → CLEARED) ==="
+test_endpoint "Clear Cheque" "POST" "/api/v1/cheques/$CHEQUE_ID/clear" "" "200"
+
+echo ""
+echo "=== 30. Cheque - Get by ID ==="
+test_endpoint "Get Cheque" "GET" "/api/v1/cheques/$CHEQUE_ID" "" "200"
+
+echo ""
+echo "=== 31. Cheque - List ==="
+test_endpoint "List Cheques" "GET" "/api/v1/cheques" "" "200"
+
+echo ""
+echo "=== 32. Cheque - Create for Bounce Test ==="
+CHEQUE_BOUNCE_CREATE='{
+  "chequeNumber": "CHQ-BOUNCE-'$(date +%s)'",
+  "customerId": "11111111-1111-1111-1111-111111111111",
+  "amount": 500.00,
+  "currencyCode": "USD",
+  "bankName": "Test Bank",
+  "bankBranch": "Main Branch",
+  "chequeDate": "2026-03-20",
+  "notes": "Cheque for bounce test"
+}'
+CHEQUE_BOUNCE_RESP=$(curl -s -w "%{http_code}" -X POST \
+    -H "Content-Type: application/json" \
+    -H "X-Tenant-Id: $TENANT_ID" \
+    -d "$CHEQUE_BOUNCE_CREATE" \
+    "$BASE_URL/api/v1/cheques")
+CHEQUE_BOUNCE_CODE="${CHEQUE_BOUNCE_RESP: -3}"
+CHEQUE_BOUNCE_JSON="${CHEQUE_BOUNCE_RESP%???}"
+if [[ "$CHEQUE_BOUNCE_CODE" == "201" ]]; then
+    CHEQUE_BOUNCE_ID=$(json_get_id "$CHEQUE_BOUNCE_JSON")
+    echo -e "${GREEN}PASS${NC} (201)"
+    PASS=$((PASS + 1))
+else
+    echo -e "${RED}FAIL${NC} (expected 201, got $CHEQUE_BOUNCE_CODE)"
+    FAIL=$((FAIL + 1))
+    CHEQUE_BOUNCE_ID=""
+fi
+
+echo ""
+echo "=== 33. Cheque - Deposit for Bounce Test ==="
+if [ -n "$CHEQUE_BOUNCE_ID" ]; then
+    test_endpoint "Deposit Bounce Cheque" "POST" "/api/v1/cheques/$CHEQUE_BOUNCE_ID/deposit" "" "200"
+else
+    echo -e "${YELLOW}SKIP${NC} (no cheque ID)"
+fi
+
+echo ""
+echo "=== 34. Cheque - Bounce (DEPOSITED → BOUNCED) ==="
+if [ -n "$CHEQUE_BOUNCE_ID" ]; then
+    test_endpoint "Bounce Cheque" "POST" "/api/v1/cheques/$CHEQUE_BOUNCE_ID/bounce" '{"reason":"Insufficient funds"}' "200"
+else
+    echo -e "${YELLOW}SKIP${NC} (no cheque ID)"
+fi
+
+echo ""
+echo "=== 35. Cheque - Get Bounced Cheque ==="
+if [ -n "$CHEQUE_BOUNCE_ID" ]; then
+    test_endpoint "Get Bounced Cheque" "GET" "/api/v1/cheques/$CHEQUE_BOUNCE_ID" "" "200"
+else
+    echo -e "${YELLOW}SKIP${NC} (no cheque ID)"
+fi
+
+echo ""
+echo "=== 36. Aging - Get Aging Report ==="
+test_endpoint "Aging Report" "GET" "/api/v1/aging" "" "200"
+
+echo ""
+echo "=== 37. Aging - Get Buckets ==="
+test_endpoint "Aging Buckets" "GET" "/api/v1/aging/buckets" "" "200"
+
+echo ""
+echo "=== 38. Aging - Calculate Discount ==="
+test_endpoint "Calculate Discount" "POST" "/api/v1/aging/discount/calculate" '{"amount": 1000.00, "currencyCode": "USD", "dueDate": "2026-04-30"}' "200"
+
+echo ""
+echo "=== 39. Credit Notes - Generate ==="
+test_endpoint "Generate Credit Note" "POST" "/api/v1/credit-notes" '{"customerId": "11111111-1111-1111-1111-111111111111", "discountAmount": 20.00, "currencyCode": "USD"}' "201"
+
+echo ""
+echo "=== 40. Credit Notes - List ==="
+test_endpoint "List Credit Notes" "GET" "/api/v1/credit-notes" "" "200"
 
 echo ""
 echo "=========================================="

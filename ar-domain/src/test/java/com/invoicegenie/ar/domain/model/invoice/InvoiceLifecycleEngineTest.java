@@ -15,14 +15,15 @@ class InvoiceLifecycleEngineTest {
         assertDoesNotThrow(() -> engine.assertTransitionAllowed(InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.PAID));
         assertDoesNotThrow(() -> engine.assertTransitionAllowed(InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE));
         assertDoesNotThrow(() -> engine.assertTransitionAllowed(InvoiceStatus.OVERDUE, InvoiceStatus.WRITTEN_OFF));
+        assertDoesNotThrow(() -> engine.assertTransitionAllowed(InvoiceStatus.PAID, InvoiceStatus.ISSUED)); // reopen on cheque bounce
     }
 
     @Test
     void rejectsInvalidTransitions() {
         InvoiceLifecycleEngine engine = new InvoiceLifecycleEngine();
         assertThrows(IllegalStateException.class, () -> engine.assertTransitionAllowed(InvoiceStatus.DRAFT, InvoiceStatus.PAID));
-        assertThrows(IllegalStateException.class, () -> engine.assertTransitionAllowed(InvoiceStatus.PAID, InvoiceStatus.ISSUED));
         assertThrows(IllegalStateException.class, () -> engine.assertTransitionAllowed(InvoiceStatus.WRITTEN_OFF, InvoiceStatus.PAID));
+        assertThrows(IllegalStateException.class, () -> engine.assertTransitionAllowed(InvoiceStatus.ISSUED, InvoiceStatus.WRITTEN_OFF)); // can only write off from OVERDUE
     }
 
     @Test

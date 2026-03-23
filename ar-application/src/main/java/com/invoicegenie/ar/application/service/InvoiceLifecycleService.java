@@ -49,4 +49,10 @@ public class InvoiceLifecycleService implements InvoiceLifecycleUseCase {
         return invoiceRepository.findByTenantAndId(tenantId, invoiceId)
                 .map(inv -> { inv.setDueDate(newDueDate); invoiceRepository.save(tenantId, inv); return inv; });
     }
+
+    @Override
+    public Optional<Invoice> reopen(TenantId tenantId, InvoiceId invoiceId, String reason) {
+        return invoiceRepository.findByTenantAndId(tenantId, invoiceId)
+                .map(inv -> { inv.reopen(reason); invoiceRepository.save(tenantId, inv); return inv; });
+    }
 }

@@ -88,6 +88,172 @@ Idempotency-Key: <unique-key>  (optional, for POST)
 | PATCH | `/api/v1/invoices/{id}/due-date` body: `{"dueDate":"2026-05-01"}` | Update due date |
 | DELETE | `/api/v1/invoices/{id}` | 405 (use write-off) |
 
+### Payment Allocation
+
+One payment can be allocated to multiple invoices. Supports FIFO auto-allocation and manual allocation.
+
+**Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/payments/{id}/allocate/fifo` | Auto-allocate to oldest invoices first |
+| POST | `/api/v1/payments/{id}/allocate/manual` | Manual allocation to specific invoices |
+| GET | `/api/v1/payments/{id}/allocations` | Get all allocations for a payment |
+| GET | `/api/v1/payments/invoices/{id}/allocations` | Get all allocations for an invoice |
+
+**Features:**
+- **FIFO Auto-Allocation**: Allocates to oldest open invoices first (by dueDate, then issueDate)
+- **Manual Allocation**: Specify exact amounts per invoice
+- **Idempotency**: Use `Idempotency-Key` header to prevent duplicate allocations
+- **Concurrency Safe**: Optimistic locking via payment version
+- **Multi-Invoice**: One payment can cover multiple invoices
+
+**Example - Manual Allocation:**
+```bash
+curl -X POST http://localhost:8080/api/v1/payments/{paymentId}/allocate/manual \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: <uuid>" \
+  -H "Idempotency-Key: unique-key-123" \
+  -d '{
+    "allocatedBy": "user-uuid",
+    "allocations": [
+      {"invoiceId": "inv-1-uuid", "amount": 100.00, "notes": "Partial payment"},
+      {"invoiceId": "inv-2-uuid", "amount": 50.00, "notes": "Remaining balance"}
+    ]
+  }'
+```
+
+**Test Scenarios:**
+
+### Double-Entry Ledger
+
+Built-in double-entry accounting system with validation (debits = credits).
+
+**Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/ledger/accounts` | List all available accounts |
+| GET | `/api/v1/ledger/balance/{account}` | Get balance for an account |
+| GET | `/api/v1/ledger/transactions/{id}` | Get all entries for a transaction |
+| GET | `/api/v1/ledger/reference/{type}/{id}` | Get entries for invoice/payment |
+
+**Accounts:**
+
+| Account | Type | Description |
+|---------|------|-------------|
+| AR | Asset | Accounts Receivable - money owed by customers |
+| REVENUE | Revenue | Sales revenue |
+| BANK | Asset | Bank account balance |
+| EXPENSE | Expense | Operating expenses |
+
+**Journal Entries (Automatic):**
+
+| Event | Debit | Credit |
+|-------|-------|--------|
+| Invoice Issued | AR | Revenue |
+| Payment Received | Bank | AR |
+| Write-off | Expense | AR |
+
+**Features:**
+- **Double-Entry**: Every transaction has equal debits and credits
+- **Validation**: Automatic balance checking
+- **Audit Trail**: Full transaction history with references
+
+**Example - Check Account Balance:**
+```bash
+curl -X GET http://localhost:8080/api/v1/ledger/balance/AR \
+  -H "X-Tenant-Id: <uuid>"
+```
+
+### Cheque Processing
+
+Cheque payment system with full lifecycle management and bounce handling.
+
+**State Transitions:**
+```
+RECEIVED → DEPOSITED → CLEARED
+                    ↘
+                  BOUNCED
+```
+
+**Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/cheques` | Create cheque (RECEIVED state) |
+| POST | `/api/v1/cheques/{id}/deposit` | Deposit cheque to bank (RECEIVED → DEPOSITED) |
+| POST | `/api/v1/cheques/{id}/clear` | Clear cheque (DEPOSITED → CLEARED) |
+| POST | `/api/v1/cheques/{id}/bounce` | Bounce cheque (DEPOSITED → BOUNCED) |
+| GET | `/api/v1/cheques/{id}` | Get cheque details |
+| GET | `/api/v1/cheques?status=DEPOSITED` | List cheques by status |
+
+**Example - Create Cheque:**
+```bash
+curl -X POST http://localhost:8080/api/v1/cheques \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: <uuid>" \
+  -d '{
+    "chequeNumber": "CHQ-001",
+    "customerId": "<customer-uuid>",
+    "amount": 1000.00,
+    "currencyCode": "USD",
+    "bankName": "Test Bank",
+    "bankBranch": "Main Branch",
+    "chequeDate": "2026-03-20",
+    "notes": "Payment for invoice"
+  }'
+```
+
+**Example - Bounce Cheque:**
+```bash
+curl -X POST http://localhost:8080/api/v1/cheques/{id}/bounce \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: <uuid>" \
+  -d '{"reason": "Insufficient funds"}'
+```
+
+**Bounce Handling:**
+- Creates reverse ledger entries: Debit AR, Credit Bank
+- Reopens affected invoices (PAID → ISSUED)
+- Cheque enters terminal BOUNCED state
+
+### Aging Reports & Early Payment Discount
+
+Aging engine for AR analysis with early payment discount (2%).
+
+**Aging Buckets:**
+| Bucket | Description | Discount Eligible |
+|--------|-------------|-------------------|
+| 0-30 days | Current | Yes (2% discount) |
+| 31-60 days | 1-2 months overdue | No |
+| 61-90 days | 2-3 months overdue | No |
+| 90+ days | Severely overdue | No |
+
+**Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/aging` | Generate aging report |
+| GET | `/api/v1/aging/buckets` | Get bucket labels |
+| POST | `/api/v1/aging/discount/calculate` | Calculate 2% early payment discount |
+| POST | `/api/v1/credit-notes` | Generate credit note |
+| POST | `/api/v1/credit-notes/{id}/apply` | Apply credit note to payment |
+
+**Early Payment Discount:**
+- 2% discount for invoices paid within 30 days
+- Generates credit note for the discount amount
+- Credit note can be applied to short payments
+
+### Data Persistence
+
+Use Docker Compose for PostgreSQL with persistent volume:
+```bash
+docker-compose up -d
+```
+
+This ensures data survives container restarts.
+
 **Test Scenarios:**
 
 1. **Happy Path — Issue & Pay**
@@ -143,6 +309,118 @@ chmod +x scripts/test-api.sh
 
 # With custom tenant
 TENANT_ID=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee ./scripts/test-api.sh
+```
+
+### Complete Test Flow (Manual)
+
+**1. Start the Application**
+```bash
+# Using Docker Compose (recommended for persistence)
+docker-compose up -d
+
+# Or using SQLite profile
+mvn -pl ar-bootstrap -Dquarkus.profile=sqlite quarkus:dev
+```
+
+**2. Health Check**
+```bash
+curl -X GET http://localhost:8080/q/health \
+  -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001"
+```
+
+**3. Invoice Workflow**
+```bash
+# Create + Issue Invoice
+curl -X POST http://localhost:8080/api/v1/invoices \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001" \
+  -d '{"invoiceNumber":"INV-001","customerRef":"CUST-001","currencyCode":"USD","dueDate":"2026-12-31","lines":[{"description":"Consulting","amount":1000.00}]}'
+
+# Response: {"id":"...", "status":"ISSUED", ...}
+# Save the invoiceId from response
+
+# Apply Payment
+curl -X POST http://localhost:8080/api/v1/invoices/{invoiceId}/payment \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001" \
+  -d '{"fullyPaid":true}'
+```
+
+**4. Payment Allocation**
+```bash
+# FIFO Auto-Allocation
+curl -X POST http://localhost:8080/api/v1/payments/{paymentId}/allocate/fifo \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001" \
+  -d '{"allocatedBy":"00000000-0000-0000-0000-000000000001","version":1}'
+
+# Manual Allocation
+curl -X POST http://localhost:8080/api/v1/payments/{paymentId}/allocate/manual \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001" \
+  -d '{"allocatedBy":"...","version":1,"allocations":[{"invoiceId":"...","amount":500.00}]}'
+```
+
+**5. Ledger Operations**
+```bash
+# List Accounts
+curl -X GET http://localhost:8080/api/v1/ledger/accounts \
+  -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001"
+
+# Get Account Balance
+curl -X GET http://localhost:8080/api/v1/ledger/balance/AR \
+  -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001"
+```
+
+**6. Cheque Processing**
+```bash
+# Create Cheque (RECEIVED)
+curl -X POST http://localhost:8080/api/v1/cheques \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001" \
+  -d '{"chequeNumber":"CHQ-001","customerId":"...","amount":1000.00,"currencyCode":"USD","bankName":"Test Bank","chequeDate":"2026-03-20"}'
+
+# Deposit Cheque (RECEIVED → DEPOSITED)
+curl -X POST http://localhost:8080/api/v1/cheques/{chequeId}/deposit \
+  -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001"
+
+# Clear Cheque (DEPOSITED → CLEARED)
+curl -X POST http://localhost:8080/api/v1/cheques/{chequeId}/clear \
+  -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001"
+
+# Bounce Cheque (DEPOSITED → BOUNCED)
+curl -X POST http://localhost:8080/api/v1/cheques/{chequeId}/bounce \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001" \
+  -d '{"reason":"Insufficient funds"}'
+```
+
+**7. Aging Reports**
+```bash
+# Generate Aging Report
+curl -X GET "http://localhost:8080/api/v1/aging?asOfDate=2026-03-21" \
+  -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001"
+
+# Calculate Early Payment Discount
+curl -X POST http://localhost:8080/api/v1/aging/discount/calculate \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001" \
+  -d '{"amount":1000.00,"currencyCode":"USD","dueDate":"2026-04-30"}'
+```
+
+**8. Credit Notes**
+```bash
+# Generate Credit Note (2% early payment discount)
+curl -X POST http://localhost:8080/api/v1/credit-notes \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001" \
+  -d '{"customerId":"...","discountAmount":20.00,"currencyCode":"USD","referenceInvoiceId":"..."}'
+
+# Apply Credit Note to Payment
+curl -X POST http://localhost:8080/api/v1/credit-notes/{creditNoteId}/apply \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001" \
+  -d '{"paymentId":"..."}'
 ```
 
 **Design Docs:**

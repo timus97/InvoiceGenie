@@ -27,7 +27,7 @@ public final class InvoiceLifecycleEngine {
                 InvoiceStatus.PAID,
                 InvoiceStatus.WRITTEN_OFF
         ));
-        allowedTransitions.put(InvoiceStatus.PAID, EnumSet.noneOf(InvoiceStatus.class));
+        allowedTransitions.put(InvoiceStatus.PAID, EnumSet.of(InvoiceStatus.ISSUED)); // reopen on cheque bounce
         allowedTransitions.put(InvoiceStatus.WRITTEN_OFF, EnumSet.noneOf(InvoiceStatus.class));
     }
 
@@ -49,6 +49,10 @@ public final class InvoiceLifecycleEngine {
 
     public Transition writeOff() {
         return new Transition(InvoiceStatus.WRITTEN_OFF, "write-off");
+    }
+
+    public Transition reopen() {
+        return new Transition(InvoiceStatus.ISSUED, "reopen");
     }
 
     public void assertTransitionAllowed(InvoiceStatus from, InvoiceStatus to) {

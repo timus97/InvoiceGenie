@@ -21,16 +21,62 @@ quarkus:
     ar-adapter-api:
       group-id: com.invoicegenie
       artifact-id: ar-adapter-api
+  log:
+    level: INFO
+    category:
+      "com.invoicegenie":
+        level: DEBUG
+      "org.jboss.resteasy.reactive.server.handlers":
+        level: DEBUG
+      "io.quarkus.arc":
+        level: INFO
+    console:
+      enable: true
+      format: "%d{HH:mm:ss.SSS} [%t] %-5p %c{2} - %s%e%n"
+    file:
+      enable: true
+      path: logs/invoicegenie.log
+      format: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%t] %-5p %c{2} - %s%e%n"
+      rotation:
+        max-file-size: 10M
+        max-backup-index: 5
 
 "%sqlite":
   quarkus:
     http:
-      port: 8081
+      port: 8080
       host: 0.0.0.0
     datasource:
-      db-kind: sqlite
+      db-kind: h2
       jdbc:
-        url: jdbc:sqlite:./data/invoicegenie.db
+        url: jdbc:h2:mem:testdb
+        driver: org.h2.Driver
+        username: sa
+        password: ""
+    hibernate-orm:
+      database:
+        generation: update
+    index-dependency:
+      ar-adapter-api:
+        group-id: com.invoicegenie
+        artifact-id: ar-adapter-api
+      ar-application:
+        group-id: com.invoicegenie
+        artifact-id: ar-application
+
+# Test profile - uses H2 in-memory database
+"%test":
+  quarkus:
+    http:
+      port: 8080
+      host: 0.0.0.0
+    datasource:
+      db-kind: h2
+      jdbc:
+        url: jdbc:h2:mem:testdb
+        driver: org.h2.Driver
+        username: sa
+        password: ""
     hibernate-orm:
       database:
         generation: update

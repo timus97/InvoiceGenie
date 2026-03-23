@@ -31,9 +31,8 @@ RUN git init && \
 # Build the project
 RUN mvn -pl ar-bootstrap -am package -DskipTests -q
 
-# Expose both profiles' ports
-EXPOSE 8080 8081
+# Expose port
+EXPOSE 8080
 
-# Default: run with SQLite profile on port 8081
-ENV QUARKUS_PROFILE=sqlite
+# Default: run with default profile (PostgreSQL)
 CMD ["java", "-jar", "ar-bootstrap/target/quarkus-app/quarkus-run.jar"]

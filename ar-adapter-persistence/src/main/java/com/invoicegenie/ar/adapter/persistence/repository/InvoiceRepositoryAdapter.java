@@ -1,8 +1,10 @@
 package com.invoicegenie.ar.adapter.persistence.repository;
 
+import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
+import com.invoicegenie.ar.domain.model.invoice.InvoiceStatus;
 import com.invoicegenie.ar.adapter.persistence.entity.InvoiceEntity;
 import com.invoicegenie.ar.adapter.persistence.entity.InvoiceLineEntity;
 import com.invoicegenie.ar.adapter.persistence.mapper.InvoiceMapper;
@@ -81,5 +83,30 @@ public class InvoiceRepositoryAdapter implements InvoiceRepository {
                 ? Optional.of(new PageCursor(items.get(items.size() - 1).getCreatedAt(), items.get(items.size() - 1).getId()))
                 : Optional.empty();
         return new Page(items, next);
+    }
+
+    @Override
+    public List<Invoice> findOpenByTenantAndCustomer(TenantId tenantId, CustomerId customerId) {
+        // Query by customerRef which stores the customer identifier
+        List<InvoiceEntity> entities = em.createQuery(
+                        "SELECT e FROM InvoiceEntity e WHERE e.tenantId = :tenantId AND e.customerRef = :customerRef " +
+                                "AND e.status IN (:openStatuses) ORDER BY e.dueDate ASC, e.createdAt ASC",
+                        InvoiceEntity.class)
+                .setParameter("tenantId", tenantId.getValue())
+                .setParameter("customerRef", customerId.getValue().toString())
+                .setParameter("openStatuses", List.of(InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE))
+                .getResultList();
+        
+        return entities.stream()
+                .map(e -> {
+                    List<InvoiceLineEntity> lines = em.createQuery(
+                                    "SELECT l FROM InvoiceLineEntity l WHERE l.tenantId = :tenantId AND l.invoiceId = :invoiceId ORDER BY l.sequence",
+                                    InvoiceLineEntity.class)
+                            .setParameter("tenantId", tenantId.getValue())
+                            .setParameter("invoiceId", e.getId())
+                            .getResultList();
+                    return mapper.toDomain(e, lines);
+                })
+                .toList();
     }
 }

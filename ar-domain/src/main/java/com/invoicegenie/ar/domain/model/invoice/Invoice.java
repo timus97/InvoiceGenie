@@ -147,6 +147,19 @@ public final class Invoice {
         return getSubtotal().add(getTaxTotal());
     }
 
+    /**
+     * Returns the outstanding balance (amount due) for this invoice.
+     * In the domain model, this is the total amount; actual balance is calculated
+     * by the application layer based on allocations.
+     * For simplicity, we return the total here; the PaymentAllocationService
+     * will calculate the actual balance due based on allocations.
+     */
+    public Money getBalanceDue() {
+        // This is a simplified version; in production, balance would be calculated
+        // based on allocations. For now, return total.
+        return getTotal();
+    }
+
     // ==================== Business Logic ====================
 
     /**
@@ -288,6 +301,20 @@ public final class Invoice {
 
     public boolean canReceivePayments() {
         return isOpen() && !isWrittenOff();
+    }
+
+    /**
+     * Reopen invoice after payment reversal (e.g., cheque bounce).
+     * Only allowed from PAID or PARTIALLY_PAID status.
+     */
+    public void reopen(String reason) {
+        if (status != InvoiceStatus.PAID && status != InvoiceStatus.PARTIALLY_PAID) {
+            throw new IllegalStateException("Can only reopen PAID or PARTIALLY_PAID invoices, current: " + status);
+        }
+        transitionTo(LIFECYCLE.reopen());
+        if (reason != null && !reason.isBlank()) {
+            this.notes = (this.notes != null ? this.notes + "\n" : "") + "[REOPENED] " + reason;
+        }
     }
 
     // ==================== Helpers ====================

@@ -21,4 +21,10 @@ public interface InvoiceLifecycleUseCase {
     Optional<Invoice> applyPayment(TenantId tenantId, InvoiceId invoiceId, boolean fullyPaid);
 
     Optional<Invoice> updateDueDate(TenantId tenantId, InvoiceId invoiceId, LocalDate newDueDate);
+
+    /**
+     * Reopen invoice after payment reversal (e.g., cheque bounce).
+     * Reverts status from PAID/PARTIALLY_PAID back to ISSUED.
+     */
+    Optional<Invoice> reopen(TenantId tenantId, InvoiceId invoiceId, String reason);
 }

@@ -342,6 +342,84 @@ CREATE TABLE ar_exchange_rate (
 CREATE INDEX idx_exrate_tenant_currencies_date ON ar_exchange_rate(tenant_id, from_currency, to_currency, effective_date DESC);
 
 -- ============================================================================
+-- CHEQUE (Cheque processing)
+-- ============================================================================
+CREATE TABLE ar_cheque (
+    id                  UUID NOT NULL DEFAULT gen_random_uuid(),
+    tenant_id           UUID NOT NULL REFERENCES ar_tenant(id),
+
+    cheque_number       VARCHAR(64) NOT NULL,
+    customer_id         UUID NOT NULL,
+
+    amount              NUMERIC(19,2) NOT NULL,
+    currency            CHAR(3) NOT NULL,
+
+    bank_name           VARCHAR(255) NOT NULL,
+    bank_branch         VARCHAR(255),
+
+    cheque_date         DATE NOT NULL,
+    received_date       DATE NOT NULL DEFAULT CURRENT_DATE,
+    deposited_date      DATE,
+    cleared_date        DATE,
+    bounced_date        DATE,
+    bounce_reason       TEXT,
+
+    status              VARCHAR(32) NOT NULL DEFAULT 'RECEIVED',
+
+    payment_id          UUID,
+    notes               TEXT,
+
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (tenant_id, id),
+    FOREIGN KEY (tenant_id, customer_id) REFERENCES ar_customer(tenant_id, id),
+    UNIQUE (tenant_id, cheque_number)
+);
+
+CREATE INDEX idx_cheque_tenant_customer ON ar_cheque(tenant_id, customer_id);
+CREATE INDEX idx_cheque_tenant_status ON ar_cheque(tenant_id, status);
+CREATE INDEX idx_cheque_tenant_number ON ar_cheque(tenant_id, cheque_number);
+
+-- ============================================================================
+-- CREDIT NOTE (Discounts and adjustments)
+-- ============================================================================
+CREATE TABLE ar_credit_note (
+    id                  UUID NOT NULL DEFAULT gen_random_uuid(),
+    tenant_id           UUID NOT NULL REFERENCES ar_tenant(id),
+
+    credit_note_number  VARCHAR(64) NOT NULL,
+    customer_id         UUID NOT NULL,
+
+    amount              NUMERIC(19,2) NOT NULL,
+    currency            CHAR(3) NOT NULL,
+
+    type                VARCHAR(32) NOT NULL DEFAULT 'ADJUSTMENT',
+    reference_invoice_id UUID,
+
+    description         TEXT,
+    status              VARCHAR(32) NOT NULL DEFAULT 'ISSUED',
+
+    issue_date          DATE NOT NULL DEFAULT CURRENT_DATE,
+    applied_date        DATE,
+    expiry_date         DATE,
+    applied_to_payment_id UUID,
+
+    notes               TEXT,
+
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (tenant_id, id),
+    FOREIGN KEY (tenant_id, customer_id) REFERENCES ar_customer(tenant_id, id),
+    UNIQUE (tenant_id, credit_note_number)
+);
+
+CREATE INDEX idx_credit_note_tenant_customer ON ar_credit_note(tenant_id, customer_id);
+CREATE INDEX idx_credit_note_tenant_status ON ar_credit_note(tenant_id, status);
+CREATE INDEX idx_credit_note_tenant_available ON ar_credit_note(tenant_id, customer_id, status) WHERE status = 'ISSUED';
+
+-- ============================================================================
 -- OUTBOX (Transactional Outbox for Domain Events)
 -- ============================================================================
 CREATE TABLE ar_outbox (
@@ -356,15 +434,21 @@ CREATE TABLE ar_outbox (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     published_at        TIMESTAMPTZ,
     status              VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+    retry_count         INTEGER NOT NULL DEFAULT 0,
+    last_error          TEXT,
 
     PRIMARY KEY (tenant_id, id)
 );
 
 CREATE INDEX idx_outbox_tenant_status ON ar_outbox(tenant_id, status, created_at);
+CREATE INDEX idx_outbox_status_created ON ar_outbox(status, created_at);
 
 -- ============================================================================
 -- ROW LEVEL SECURITY (RLS)
 -- ============================================================================
+
+ALTER TABLE ar_cheque ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ar_credit_note ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE ar_customer ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ar_invoice ENABLE ROW LEVEL SECURITY;
@@ -409,4 +493,10 @@ CREATE POLICY tenant_isolation_exrate ON ar_exchange_rate
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
 
 CREATE POLICY tenant_isolation_outbox ON ar_outbox
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+CREATE POLICY tenant_isolation_cheque ON ar_cheque
+    USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);
+
+CREATE POLICY tenant_isolation_credit_note ON ar_credit_note
     USING (tenant_id = current_setting('app.current_tenant_id', true)::uuid);

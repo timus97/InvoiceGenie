@@ -148,8 +148,11 @@ public final class Customer {
      * Unblocks the customer.
      */
     public void unblock() {
-        assertActive(); // no-op if already active
-        // already active — no change
+        if (status == CustomerStatus.DELETED) {
+            throw new IllegalStateException("Cannot unblock deleted customer");
+        }
+        this.status = CustomerStatus.ACTIVE;
+        touch();
     }
 
     /**
@@ -165,6 +168,70 @@ public final class Customer {
      */
     public boolean canBeInvoiced() {
         return status == CustomerStatus.ACTIVE;
+    }
+
+    /**
+     * Checks if customer can be invoiced for a specific amount.
+     * Validates both status and credit limit (if set).
+     * 
+     * @param outstandingBalance Current outstanding balance for this customer
+     * @param invoiceAmount Amount of the new invoice
+     * @return true if customer can receive this invoice
+     */
+    public boolean canBeInvoicedForAmount(java.math.BigDecimal outstandingBalance, java.math.BigDecimal invoiceAmount) {
+        if (!canBeInvoiced()) {
+            return false;
+        }
+        if (creditLimit == null) {
+            return true; // No credit limit means unlimited
+        }
+        java.math.BigDecimal newBalance = outstandingBalance.add(invoiceAmount);
+        return newBalance.compareTo(creditLimit) <= 0;
+    }
+
+    /**
+     * Checks if customer has exceeded their credit limit.
+     * 
+     * @param outstandingBalance Current outstanding balance
+     * @return true if over credit limit
+     */
+    public boolean isOverCreditLimit(java.math.BigDecimal outstandingBalance) {
+        if (creditLimit == null) {
+            return false;
+        }
+        return outstandingBalance.compareTo(creditLimit) > 0;
+    }
+
+    /**
+     * Validates customer data for creation/update.
+     * 
+     * @throws IllegalArgumentException if invalid
+     */
+    public void validate() {
+        if (customerCode == null || customerCode.isBlank()) {
+            throw new IllegalArgumentException("Customer code is required");
+        }
+        if (legalName == null || legalName.isBlank()) {
+            throw new IllegalArgumentException("Legal name is required");
+        }
+        if (currency == null || currency.length() != 3) {
+            throw new IllegalArgumentException("Currency must be ISO 4217 code (3 chars)");
+        }
+        if (creditLimit != null && creditLimit.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException("Credit limit must be >= 0");
+        }
+    }
+
+    /**
+     * Returns available credit (credit limit - outstanding balance).
+     * Returns null if no credit limit is set.
+     */
+    public java.math.BigDecimal getAvailableCredit(java.math.BigDecimal outstandingBalance) {
+        if (creditLimit == null) {
+            return null; // Unlimited
+        }
+        java.math.BigDecimal available = creditLimit.subtract(outstandingBalance);
+        return available.max(BigDecimal.ZERO);
     }
 
     // ==================== Helpers ====================

@@ -4,6 +4,7 @@ import com.invoicegenie.ar.domain.model.payment.CreditNote;
 import com.invoicegenie.shared.domain.Money;
 import com.invoicegenie.shared.domain.TenantId;
 
+import jakarta.enterprise.context.ApplicationScoped;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -20,7 +21,8 @@ import java.util.UUID;
  * 
  * <p>Credit notes can be applied to short payments or future invoices.
  */
-public final class CreditNoteService {
+@ApplicationScoped
+public class CreditNoteService {
 
     /**
      * Result of credit note generation.

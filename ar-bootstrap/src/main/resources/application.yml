@@ -18,9 +18,18 @@ quarkus:
     log:
       sql: false
   index-dependency:
+    ar-domain:
+      group-id: com.invoicegenie
+      artifact-id: ar-domain
     ar-adapter-api:
       group-id: com.invoicegenie
       artifact-id: ar-adapter-api
+    ar-adapter-messaging:
+      group-id: com.invoicegenie
+      artifact-id: ar-adapter-messaging
+    ar-adapter-persistence:
+      group-id: com.invoicegenie
+      artifact-id: ar-adapter-persistence
   log:
     level: INFO
     category:
@@ -57,9 +66,18 @@ quarkus:
       database:
         generation: update
     index-dependency:
+      ar-domain:
+        group-id: com.invoicegenie
+        artifact-id: ar-domain
       ar-adapter-api:
         group-id: com.invoicegenie
         artifact-id: ar-adapter-api
+      ar-adapter-messaging:
+        group-id: com.invoicegenie
+        artifact-id: ar-adapter-messaging
+      ar-adapter-persistence:
+        group-id: com.invoicegenie
+        artifact-id: ar-adapter-persistence
       ar-application:
         group-id: com.invoicegenie
         artifact-id: ar-application
@@ -81,15 +99,43 @@ quarkus:
       database:
         generation: update
     index-dependency:
+      ar-domain:
+        group-id: com.invoicegenie
+        artifact-id: ar-domain
       ar-adapter-api:
         group-id: com.invoicegenie
         artifact-id: ar-adapter-api
+      ar-adapter-messaging:
+        group-id: com.invoicegenie
+        artifact-id: ar-adapter-messaging
+      ar-adapter-persistence:
+        group-id: com.invoicegenie
+        artifact-id: ar-adapter-persistence
+      ar-application:
+        group-id: com.invoicegenie
+        artifact-id: ar-application
 
-# Kafka (optional — disable if not used)
-mp.messaging.outgoing.invoice-issued:
-  connector: smallrye-kafka
-  topic: ar.invoice.issued
-  # value.serializer: org.apache.kafka.common.serialization.StringSerializer
+# Kafka (optional — disabled by default, enable in production with Kafka running)
+# Uncomment the following when Kafka is available:
+# mp.messaging.outgoing.invoice-issued:
+#   connector: smallrye-kafka
+#   topic: ar.invoice.issued
+#   value.serializer: org.apache.kafka.common.serialization.StringSerializer
+
+# mp.messaging.outgoing.outbox-events:
+#   connector: smallrye-kafka
+#   topic: ar.domain.events
+#   value.serializer: org.apache.kafka.common.serialization.StringSerializer
+#   key.serializer: org.apache.kafka.common.serialization.StringSerializer
+
+# Transactional Outbox Configuration
+outbox:
+  enabled: true
+  batch-size: 100
+  poll-interval: 5s
+  delay-start: 10s
+  cleanup-days: 7
+  cleanup-cron: "0 0 0 * * ?"
 
 # RLS: set per-request in filter before using connection
 # app.current_tenant_id is set by TenantFilter or a dedicated DbTenantInterceptor

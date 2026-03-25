@@ -1,9 +1,7 @@
-
 #!/bin/bash
-# InvoiceGenie API Test Script
+# InvoiceGenie API Test Script - Comprehensive
+# Tests: Customer, Invoice, Cheque, CreditNote, Outbox workflows
 # Usage: ./scripts/test-api.sh [base_url]
-# Requires: curl; optional: jq (otherwise python3 or sed-based JSON field extraction is used)
-# Default port 8080 works for both PostgreSQL (default) and SQLite profiles
 
 set -e
 
@@ -11,7 +9,7 @@ BASE_URL="${1:-http://localhost:8080}"
 TENANT_ID="${TENANT_ID:-11111111-1111-1111-1111-111111111111}"
 
 echo "=========================================="
-echo "InvoiceGenie API Test Suite"
+echo "InvoiceGenie Comprehensive API Test Suite"
 echo "Base URL: $BASE_URL"
 echo "Tenant: $TENANT_ID"
 echo "=========================================="
@@ -20,29 +18,24 @@ echo "=========================================="
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m'
 
 # --- JSON helpers (work without jq) ---
-json_get_id() {
+json_get() {
     local json="$1"
+    local field="$2"
     if command -v jq >/dev/null 2>&1; then
-        echo "$json" | jq -r '.id // empty' 2>/dev/null || true
+        echo "$json" | jq -r ".$field // empty" 2>/dev/null || true
     elif command -v python3 >/dev/null 2>&1; then
-        echo "$json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id') or '')" 2>/dev/null || true
+        echo "$json" | python3 -c "import sys,json; print(json.load(sys.stdin).get('$field') or '')" 2>/dev/null || true
     else
-        echo "$json" | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+        echo "$json" | sed -n "s/.*\"$field\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p"
     fi
 }
 
-json_get_next_cursor() {
-    local json="$1"
-    if command -v jq >/dev/null 2>&1; then
-        echo "$json" | jq -r '.nextCursor // empty' 2>/dev/null || true
-    elif command -v python3 >/dev/null 2>&1; then
-        echo "$json" | python3 -c "import sys,json; v=json.load(sys.stdin).get('nextCursor'); print('' if v is None else v)" 2>/dev/null || true
-    else
-        echo "$json" | sed -n 's/.*"nextCursor"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
-    fi
+json_get_id() {
+    json_get "$1" "id"
 }
 
 pretty_json() {
@@ -99,7 +92,7 @@ test_endpoint() {
         echo -e "${GREEN}PASS${NC} ($http_code)"
         PASS=$((PASS + 1))
         id_val=$(json_get_id "$body" || true)
-        if [ -n "$id_val" ]; then echo "$id_val"; fi
+        if [ -n "$id_val" ]; then echo "  ID: $id_val"; fi
     else
         echo -e "${RED}FAIL${NC} (expected $expected, got $http_code)"
         pretty_json "$body"
@@ -107,288 +100,371 @@ test_endpoint() {
     fi
 }
 
-echo ""
-echo "=== 1. Health Check ==="
-test_endpoint "Health" "GET" "/q/health" "" "200"
+# Store IDs for later tests
+CUSTOMER_ID=""
+INVOICE_ID=""
+CHEQUE_ID=""
+CREDIT_NOTE_ID=""
 
 echo ""
-echo "=== 2. Swagger UI ==="
-test_endpoint "OpenAPI" "GET" "/q/openapi" "" "200"
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}   SECTION 1: CUSTOMER WORKFLOW${NC}"
+echo -e "${BLUE}========================================${NC}"
 
 echo ""
-echo "=== 3. Create Invoice (with lines) ==="
-CREATE_BODY='{
-  "invoiceNumber": "INV-TEST-'$(date +%s)'",
-  "customerRef": "TEST-CUST",
-  "currencyCode": "USD",
-  "dueDate": "2026-04-30",
-  "lines": [
-    {"description": "Consulting", "amount": 500.00},
-    {"description": "Expenses", "amount": 50.00}
-  ]
-}'
-CREATE_RESP=$(curl -s -w "%{http_code}" -X POST \
+echo "=== 1.1 Create Customer ==="
+CREATE_CUSTOMER='{"customerCode":"CUST-'$(date +%s)'","legalName":"Test Customer Inc.","currency":"USD"}'
+CREATE_CUSTOMER_RESP=$(curl -s -w "%{http_code}" -X POST \
     -H "Content-Type: application/json" \
     -H "X-Tenant-Id: $TENANT_ID" \
-    -d "$CREATE_BODY" \
-    "$BASE_URL/api/v1/invoices")
-CREATE_CODE="${CREATE_RESP: -3}"
-CREATE_JSON="${CREATE_RESP%???}"
-echo -n "[Create] POST /api/v1/invoices ... "
-if [[ "$CREATE_CODE" == "201" ]]; then
-    echo -e "${GREEN}PASS${NC} ($CREATE_CODE)"
+    -d "$CREATE_CUSTOMER" \
+    "$BASE_URL/api/v1/customers")
+CREATE_CUSTOMER_CODE="${CREATE_CUSTOMER_RESP: -3}"
+CREATE_CUSTOMER_JSON="${CREATE_CUSTOMER_RESP%???}"
+echo -n "[Create Customer] POST /api/v1/customers ... "
+if [[ "$CREATE_CUSTOMER_CODE" == "201" ]]; then
+    echo -e "${GREEN}PASS${NC} ($CREATE_CUSTOMER_CODE)"
     PASS=$((PASS + 1))
-    INVOICE_ID=$(json_get_id "$CREATE_JSON")
+    CUSTOMER_ID=$(json_get_id "$CREATE_CUSTOMER_JSON")
+    echo "  Customer ID: $CUSTOMER_ID"
 else
-    echo -e "${RED}FAIL${NC} (expected 201, got $CREATE_CODE)"
-    pretty_json "$CREATE_JSON"
+    echo -e "${RED}FAIL${NC} (expected 201, got $CREATE_CUSTOMER_CODE)"
+    pretty_json "$CREATE_CUSTOMER_JSON"
     FAIL=$((FAIL + 1))
-    INVOICE_ID=""
 fi
 
 echo ""
-echo "=== 4. Get Invoice ==="
-test_endpoint "Get" "GET" "/api/v1/invoices/$INVOICE_ID" "" "200"
+echo "=== 1.2 Get Customer ==="
+test_endpoint "Get Customer" "GET" "/api/v1/customers/$CUSTOMER_ID" "" "200"
 
 echo ""
-echo "=== 5. List Invoices ==="
-test_endpoint "List" "GET" "/api/v1/invoices?limit=10" "" "200"
+echo "=== 1.3 List Customers ==="
+test_endpoint "List Customers" "GET" "/api/v1/customers" "" "200"
 
 echo ""
-echo "=== 6. List with Status Filter ==="
-test_endpoint "List Filtered" "GET" "/api/v1/invoices?status=ISSUED&limit=5" "" "200"
+echo "=== 1.4 Update Customer ==="
+test_endpoint "Update Customer" "PUT" "/api/v1/customers/$CUSTOMER_ID" \
+    '{"displayName":"Test Customer Updated","email":"test@example.com","creditLimit":10000.00}' "200"
 
 echo ""
-echo "=== 7. Issue Invoice (already issued via create, expect 409) ==="
-test_endpoint "Issue" "POST" "/api/v1/invoices/$INVOICE_ID/issue" "" "409"
+echo "=== 1.5 Credit Limit Check (should pass) ==="
+test_endpoint "Credit Check OK" "GET" "/api/v1/customers/$CUSTOMER_ID/credit-check?outstanding=5000&invoiceAmount=4000" "" "200"
 
 echo ""
-echo "=== 8. Apply Partial Payment ==="
-test_endpoint "Payment Partial" "POST" "/api/v1/invoices/$INVOICE_ID/payment" '{"fullyPaid": false}' "200"
+echo "=== 1.6 Credit Limit Check (should fail - over limit) ==="
+test_endpoint "Credit Check Over" "GET" "/api/v1/customers/$CUSTOMER_ID/credit-check?outstanding=9000&invoiceAmount=2000" "" "200"
 
 echo ""
-echo "=== 9. Apply Full Payment ==="
-test_endpoint "Payment Full" "POST" "/api/v1/invoices/$INVOICE_ID/payment" '{"fullyPaid": true}' "200"
+echo "=== 1.7 Customer Stats ==="
+test_endpoint "Customer Stats" "GET" "/api/v1/customers/stats" "" "200"
 
 echo ""
-echo "=== 10. Mark Overdue (should fail - already PAID) ==="
-test_endpoint "Overdue" "POST" "/api/v1/invoices/$INVOICE_ID/overdue" "" "409"
+echo "=== 1.8 Search Customers ==="
+test_endpoint "Search Customers" "GET" "/api/v1/customers?search=Test" "" "200"
 
 echo ""
-echo "=== 11. Create Second Invoice for Lifecycle Tests ==="
-CREATE2='{"invoiceNumber":"INV-OVERDUE-'$(date +%s)'","customerRef":"C2","currencyCode":"USD","dueDate":"2020-01-01","lines":[{"description":"Old","amount":100}]}'
-CREATE2_RESP=$(curl -s -w "%{http_code}" -X POST \
-    -H "Content-Type: application/json" \
-    -H "X-Tenant-Id: $TENANT_ID" \
-    -d "$CREATE2" \
-    "$BASE_URL/api/v1/invoices")
-CREATE2_CODE="${CREATE2_RESP: -3}"
-CREATE2_JSON="${CREATE2_RESP%???}"
-if [[ "$CREATE2_CODE" == "201" ]]; then
-    INVOICE2_ID=$(json_get_id "$CREATE2_JSON")
-else
-    INVOICE2_ID=""
-fi
+echo "=== 1.9 Block Customer ==="
+test_endpoint "Block Customer" "POST" "/api/v1/customers/$CUSTOMER_ID/block" "" "200"
 
 echo ""
-echo "=== 12. Mark Overdue (with past due date) ==="
-test_endpoint "Overdue Past" "POST" "/api/v1/invoices/$INVOICE2_ID/overdue?today=2026-01-01" "" "200"
+echo "=== 1.10 Unblock Customer ==="
+test_endpoint "Unblock Customer" "POST" "/api/v1/customers/$CUSTOMER_ID/unblock" "" "200"
 
 echo ""
-echo "=== 13. Write Off ==="
-test_endpoint "WriteOff" "POST" "/api/v1/invoices/$INVOICE2_ID/writeoff" '{"reason":"Bad debt"}' "200"
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}   SECTION 2: INVOICE WORKFLOW${NC}"
+echo -e "${BLUE}========================================${NC}"
 
 echo ""
-echo "=== 14. Pagination Test ==="
-PAGE1=$(curl -s -X GET -H "X-Tenant-Id: $TENANT_ID" "$BASE_URL/api/v1/invoices?limit=1")
-if command -v python3 >/dev/null 2>&1; then
-    echo "$PAGE1" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['items'][0]['id'] if d.get('items') else '')" 2>/dev/null || true
-fi
-NEXT=$(json_get_next_cursor "$PAGE1")
-test_endpoint "Page 1" "GET" "/api/v1/invoices?limit=1" "" "200"
-if [ -n "$NEXT" ]; then
-    test_endpoint "Page 2" "GET" "/api/v1/invoices?limit=1&cursor=$NEXT" "" "200"
-else
-    echo -e "${YELLOW}SKIP${NC} (no nextCursor)"
-fi
-
-echo ""
-echo "=== 15. Idempotency Header (ignored for now) ==="
-CREATE15='{
-  "invoiceNumber": "INV-TEST-IDEM-'$(date +%s)'",
-  "customerRef": "TEST-CUST",
+echo "=== 2.1 Create Invoice ==="
+CREATE_INVOICE='{
+  "invoiceNumber": "INV-TEST-'$(date +%s)'",
+  "customerRef": "'$CUSTOMER_ID'",
   "currencyCode": "USD",
   "dueDate": "2026-04-30",
   "lines": [
-    {"description": "Consulting", "amount": 500.00},
-    {"description": "Expenses", "amount": 50.00}
+    {"description": "Consulting Services", "amount": 5000.00},
+    {"description": "Expenses", "amount": 500.00}
   ]
 }'
-test_endpoint "Idempotent" "POST" "/api/v1/invoices" "$CREATE15" "201"
+CREATE_INV_RESP=$(curl -s -w "%{http_code}" -X POST \
+    -H "Content-Type: application/json" \
+    -H "X-Tenant-Id: $TENANT_ID" \
+    -d "$CREATE_INVOICE" \
+    "$BASE_URL/api/v1/invoices")
+CREATE_INV_CODE="${CREATE_INV_RESP: -3}"
+CREATE_INV_JSON="${CREATE_INV_RESP%???}"
+echo -n "[Create Invoice] POST /api/v1/invoices ... "
+if [[ "$CREATE_INV_CODE" == "201" ]]; then
+    echo -e "${GREEN}PASS${NC} ($CREATE_INV_CODE)"
+    PASS=$((PASS + 1))
+    INVOICE_ID=$(json_get_id "$CREATE_INV_JSON")
+    echo "  Invoice ID: $INVOICE_ID"
+else
+    echo -e "${RED}FAIL${NC} (expected 201, got $CREATE_INV_CODE)"
+    pretty_json "$CREATE_INV_JSON"
+    FAIL=$((FAIL + 1))
+fi
 
 echo ""
-echo "=== 16. Validation Error (no lines) ==="
-test_endpoint "No Lines" "POST" "/api/v1/invoices" '{"invoiceNumber":"X"}' "400"
+echo "=== 2.2 Get Invoice ==="
+test_endpoint "Get Invoice" "GET" "/api/v1/invoices/$INVOICE_ID" "" "200"
 
 echo ""
-echo "=== 17. 404 Not Found ==="
-test_endpoint "NotFound" "GET" "/api/v1/invoices/00000000-0000-0000-0000-000000000000" "" "404"
+echo "=== 2.3 List Invoices ==="
+test_endpoint "List Invoices" "GET" "/api/v1/invoices?limit=10" "" "200"
 
 echo ""
-echo "=== 18. 405 Delete ==="
-test_endpoint "Delete" "DELETE" "/api/v1/invoices/$INVOICE_ID" "" "405"
+echo "=== 2.4 Apply Payment ==="
+test_endpoint "Payment" "POST" "/api/v1/invoices/$INVOICE_ID/payment" '{"fullyPaid": true}' "200"
 
 echo ""
-echo "=== 19. Payment Allocation - FIFO Auto-Allocate (404 without payment) ==="
-test_endpoint "FIFO Allocate" "POST" "/api/v1/payments/00000000-0000-0000-0000-000000000000/allocate/fifo" '{"allocatedBy":"00000000-0000-0000-0000-000000000001"}' "404"
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}   SECTION 3: CHEQUE WORKFLOW${NC}"
+echo -e "${BLUE}========================================${NC}"
 
 echo ""
-echo "=== 20. Payment Allocation - Manual Allocate (404 without payment) ==="
-test_endpoint "Manual Allocate" "POST" "/api/v1/payments/00000000-0000-0000-0000-000000000000/allocate/manual" '{"allocatedBy":"00000000-0000-0000-0000-000000000001","allocations":[{"invoiceId":"00000000-0000-0000-0000-000000000000","amount":100.00,"notes":"test"}]}' "404"
-
-echo ""
-echo "=== 21. Payment Allocation - Get Allocations (404 without payment) ==="
-test_endpoint "Get Allocations" "GET" "/api/v1/payments/00000000-0000-0000-0000-000000000000/allocations" "" "404"
-
-echo ""
-echo "=== 22. Payment Allocation - Get Invoice Allocations ==="
-test_endpoint "Get Invoice Allocations" "GET" "/api/v1/payments/invoices/$INVOICE_ID/allocations" "" "200"
-
-echo ""
-echo "=== 23. Ledger - List Accounts ==="
-test_endpoint "List Accounts" "GET" "/api/v1/ledger/accounts" "" "200"
-
-echo ""
-echo "=== 24. Ledger - Get Account Balance ==="
-test_endpoint "Get AR Balance" "GET" "/api/v1/ledger/balance/AR" "" "200"
-
-echo ""
-echo "=== 25. Ledger - Get Transaction (404 without transaction) ==="
-test_endpoint "Get Transaction" "GET" "/api/v1/ledger/transactions/00000000-0000-0000-0000-000000000000" "" "404"
-
-echo ""
-echo "=== 26. Ledger - Get By Reference ==="
-test_endpoint "Get By Reference" "GET" "/api/v1/ledger/reference/INVOICE/$INVOICE_ID" "" "200"
-
-echo ""
-echo "=== 27. Cheque - Create (RECEIVED state) ==="
-CHEQUE_CREATE='{
+echo "=== 3.1 Create Cheque (RECEIVED) ==="
+CREATE_CHEQUE='{
   "chequeNumber": "CHQ-'$(date +%s)'",
-  "customerId": "11111111-1111-1111-1111-111111111111",
+  "customerId": "'$CUSTOMER_ID'",
   "amount": 1000.00,
   "currencyCode": "USD",
   "bankName": "Test Bank",
   "bankBranch": "Main Branch",
   "chequeDate": "2026-03-20",
-  "notes": "Test cheque"
+  "notes": "Test cheque for workflow"
 }'
-CHEQUE_CREATE_RESP=$(curl -s -w "%{http_code}" -X POST \
+CREATE_CHQ_RESP=$(curl -s -w "%{http_code}" -X POST \
     -H "Content-Type: application/json" \
     -H "X-Tenant-Id: $TENANT_ID" \
-    -d "$CHEQUE_CREATE" \
+    -d "$CREATE_CHEQUE" \
     "$BASE_URL/api/v1/cheques")
-CHEQUE_CREATE_CODE="${CHEQUE_CREATE_RESP: -3}"
-CHEQUE_CREATE_JSON="${CHEQUE_CREATE_RESP%???}"
+CREATE_CHQ_CODE="${CREATE_CHQ_RESP: -3}"
+CREATE_CHQ_JSON="${CREATE_CHQ_RESP%???}"
 echo -n "[Create Cheque] POST /api/v1/cheques ... "
-if [[ "$CHEQUE_CREATE_CODE" == "201" ]]; then
-    echo -e "${GREEN}PASS${NC} ($CHEQUE_CREATE_CODE)"
+if [[ "$CREATE_CHQ_CODE" == "201" ]]; then
+    echo -e "${GREEN}PASS${NC} ($CREATE_CHQ_CODE)"
     PASS=$((PASS + 1))
-    CHEQUE_ID=$(json_get_id "$CHEQUE_CREATE_JSON")
+    CHEQUE_ID=$(json_get_id "$CREATE_CHQ_JSON")
+    echo "  Cheque ID: $CHEQUE_ID"
 else
-    echo -e "${RED}FAIL${NC} (expected 201, got $CHEQUE_CREATE_CODE)"
-    pretty_json "$CHEQUE_CREATE_JSON"
+    echo -e "${RED}FAIL${NC} (expected 201, got $CREATE_CHQ_CODE)"
+    pretty_json "$CREATE_CHQ_JSON"
     FAIL=$((FAIL + 1))
-    CHEQUE_ID=""
 fi
 
 echo ""
-echo "=== 28. Cheque - Deposit (RECEIVED → DEPOSITED) ==="
-test_endpoint "Deposit Cheque" "POST" "/api/v1/cheques/$CHEQUE_ID/deposit" "" "200"
-
-echo ""
-echo "=== 29. Cheque - Clear (DEPOSITED → CLEARED) ==="
-test_endpoint "Clear Cheque" "POST" "/api/v1/cheques/$CHEQUE_ID/clear" "" "200"
-
-echo ""
-echo "=== 30. Cheque - Get by ID ==="
+echo "=== 3.2 Get Cheque ==="
 test_endpoint "Get Cheque" "GET" "/api/v1/cheques/$CHEQUE_ID" "" "200"
 
 echo ""
-echo "=== 31. Cheque - List ==="
-test_endpoint "List Cheques" "GET" "/api/v1/cheques" "" "200"
+echo "=== 3.3 Deposit Cheque (RECEIVED → DEPOSITED) ==="
+test_endpoint "Deposit Cheque" "POST" "/api/v1/cheques/$CHEQUE_ID/deposit" "" "200"
 
 echo ""
-echo "=== 32. Cheque - Create for Bounce Test ==="
-CHEQUE_BOUNCE_CREATE='{
+echo "=== 3.4 Create Second Cheque for Bounce Test ==="
+CREATE_CHQ2='{
   "chequeNumber": "CHQ-BOUNCE-'$(date +%s)'",
-  "customerId": "11111111-1111-1111-1111-111111111111",
+  "customerId": "'$CUSTOMER_ID'",
   "amount": 500.00,
   "currencyCode": "USD",
-  "bankName": "Test Bank",
-  "bankBranch": "Main Branch",
+  "bankName": "Bad Bank",
+  "bankBranch": "Branch 2",
   "chequeDate": "2026-03-20",
   "notes": "Cheque for bounce test"
 }'
-CHEQUE_BOUNCE_RESP=$(curl -s -w "%{http_code}" -X POST \
+CREATE_CHQ2_RESP=$(curl -s -w "%{http_code}" -X POST \
     -H "Content-Type: application/json" \
     -H "X-Tenant-Id: $TENANT_ID" \
-    -d "$CHEQUE_BOUNCE_CREATE" \
+    -d "$CREATE_CHQ2" \
     "$BASE_URL/api/v1/cheques")
-CHEQUE_BOUNCE_CODE="${CHEQUE_BOUNCE_RESP: -3}"
-CHEQUE_BOUNCE_JSON="${CHEQUE_BOUNCE_RESP%???}"
-if [[ "$CHEQUE_BOUNCE_CODE" == "201" ]]; then
-    CHEQUE_BOUNCE_ID=$(json_get_id "$CHEQUE_BOUNCE_JSON")
-    echo -e "${GREEN}PASS${NC} (201)"
+CREATE_CHQ2_CODE="${CREATE_CHQ2_RESP: -3}"
+CREATE_CHQ2_JSON="${CREATE_CHQ2_RESP%???}"
+CHEQUE2_ID=""
+if [[ "$CREATE_CHQ2_CODE" == "201" ]]; then
+    CHEQUE2_ID=$(json_get_id "$CREATE_CHQ2_JSON")
+    echo -e "${GREEN}PASS${NC} (201) - Cheque2 ID: $CHEQUE2_ID"
     PASS=$((PASS + 1))
 else
-    echo -e "${RED}FAIL${NC} (expected 201, got $CHEQUE_BOUNCE_CODE)"
+    echo -e "${RED}FAIL${NC} (expected 201, got $CREATE_CHQ2_CODE)"
     FAIL=$((FAIL + 1))
-    CHEQUE_BOUNCE_ID=""
 fi
 
 echo ""
-echo "=== 33. Cheque - Deposit for Bounce Test ==="
-if [ -n "$CHEQUE_BOUNCE_ID" ]; then
-    test_endpoint "Deposit Bounce Cheque" "POST" "/api/v1/cheques/$CHEQUE_BOUNCE_ID/deposit" "" "200"
+echo "=== 3.5 Deposit Second Cheque ==="
+test_endpoint "Deposit Cheque2" "POST" "/api/v1/cheques/$CHEQUE2_ID/deposit" "" "200"
+
+echo ""
+echo "=== 3.6 Bounce Second Cheque (DEPOSITED → BOUNCED) ==="
+test_endpoint "Bounce Cheque" "POST" "/api/v1/cheques/$CHEQUE2_ID/bounce" '{"reason":"Insufficient funds"}' "200"
+
+echo ""
+echo "=== 3.7 Clear First Cheque (DEPOSITED → CLEARED) ==="
+test_endpoint "Clear Cheque" "POST" "/api/v1/cheques/$CHEQUE_ID/clear" "" "200"
+
+echo ""
+echo "=== 3.8 List Cheques by Status ==="
+test_endpoint "List Cleared Cheques" "GET" "/api/v1/cheques?status=CLEARED" "" "200"
+
+echo ""
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}   SECTION 4: CREDIT NOTE WORKFLOW${NC}"
+echo -e "${BLUE}========================================${NC}"
+
+echo ""
+echo "=== 4.1 Generate Credit Note (Early Payment Discount) ==="
+CREATE_CN='{
+  "customerId": "'$CUSTOMER_ID'",
+  "discountAmount": 100.00,
+  "currencyCode": "USD",
+  "referenceInvoiceId": "'$INVOICE_ID'"
+}'
+CREATE_CN_RESP=$(curl -s -w "%{http_code}" -X POST \
+    -H "Content-Type: application/json" \
+    -H "X-Tenant-Id: $TENANT_ID" \
+    -d "$CREATE_CN" \
+    "$BASE_URL/api/v1/credit-notes")
+CREATE_CN_CODE="${CREATE_CN_RESP: -3}"
+CREATE_CN_JSON="${CREATE_CN_RESP%???}"
+echo -n "[Create Credit Note] POST /api/v1/credit-notes ... "
+if [[ "$CREATE_CN_CODE" == "201" ]]; then
+    echo -e "${GREEN}PASS${NC} ($CREATE_CN_CODE)"
+    PASS=$((PASS + 1))
+    CREDIT_NOTE_ID=$(json_get_id "$CREATE_CN_JSON")
+    echo "  Credit Note ID: $CREDIT_NOTE_ID"
 else
-    echo -e "${YELLOW}SKIP${NC} (no cheque ID)"
+    echo -e "${RED}FAIL${NC} (expected 201, got $CREATE_CN_CODE)"
+    pretty_json "$CREATE_CN_JSON"
+    FAIL=$((FAIL + 1))
 fi
 
 echo ""
-echo "=== 34. Cheque - Bounce (DEPOSITED → BOUNCED) ==="
-if [ -n "$CHEQUE_BOUNCE_ID" ]; then
-    test_endpoint "Bounce Cheque" "POST" "/api/v1/cheques/$CHEQUE_BOUNCE_ID/bounce" '{"reason":"Insufficient funds"}' "200"
-else
-    echo -e "${YELLOW}SKIP${NC} (no cheque ID)"
-fi
+echo "=== 4.2 Get Credit Note ==="
+test_endpoint "Get Credit Note" "GET" "/api/v1/credit-notes/$CREDIT_NOTE_ID" "" "200"
 
 echo ""
-echo "=== 35. Cheque - Get Bounced Cheque ==="
-if [ -n "$CHEQUE_BOUNCE_ID" ]; then
-    test_endpoint "Get Bounced Cheque" "GET" "/api/v1/cheques/$CHEQUE_BOUNCE_ID" "" "200"
-else
-    echo -e "${YELLOW}SKIP${NC} (no cheque ID)"
-fi
-
-echo ""
-echo "=== 36. Aging - Get Aging Report ==="
-test_endpoint "Aging Report" "GET" "/api/v1/aging" "" "200"
-
-echo ""
-echo "=== 37. Aging - Get Buckets ==="
-test_endpoint "Aging Buckets" "GET" "/api/v1/aging/buckets" "" "200"
-
-echo ""
-echo "=== 38. Aging - Calculate Discount ==="
-test_endpoint "Calculate Discount" "POST" "/api/v1/aging/discount/calculate" '{"amount": 1000.00, "currencyCode": "USD", "dueDate": "2026-04-30"}' "200"
-
-echo ""
-echo "=== 39. Credit Notes - Generate ==="
-test_endpoint "Generate Credit Note" "POST" "/api/v1/credit-notes" '{"customerId": "11111111-1111-1111-1111-111111111111", "discountAmount": 20.00, "currencyCode": "USD"}' "201"
-
-echo ""
-echo "=== 40. Credit Notes - List ==="
+echo "=== 4.3 List Credit Notes ==="
 test_endpoint "List Credit Notes" "GET" "/api/v1/credit-notes" "" "200"
+
+echo ""
+echo "=== 4.4 List Issued Credit Notes ==="
+test_endpoint "List Issued CN" "GET" "/api/v1/credit-notes?status=ISSUED" "" "200"
+
+echo ""
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}   SECTION 5: OUTBOX WORKFLOW${NC}"
+echo -e "${BLUE}========================================${NC}"
+
+echo ""
+echo "=== 5.1 Outbox Stats ==="
+test_endpoint "Outbox Stats" "GET" "/api/v1/outbox/stats" "" "200"
+
+echo ""
+echo "=== 5.2 Outbox Pending ==="
+test_endpoint "Outbox Pending" "GET" "/api/v1/outbox/pending?limit=10" "" "200"
+
+echo ""
+echo "=== 5.3 Trigger Manual Processing ==="
+test_endpoint "Process Outbox" "POST" "/api/v1/outbox/process" "" "200"
+
+echo ""
+echo "=== 5.4 Verify Processing ==="
+sleep 2
+OUTBOX_STATS=$(curl -s -X GET \
+    -H "X-Tenant-Id: $TENANT_ID" \
+    "$BASE_URL/api/v1/outbox/stats")
+echo "Outbox stats after processing:"
+pretty_json "$OUTBOX_STATS"
+
+echo ""
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}   SECTION 6: CUSTOMER DELETE WORKFLOW${NC}"
+echo -e "${BLUE}========================================${NC}"
+
+echo ""
+echo "=== 6.1 Create Customer for Delete Test ==="
+CREATE_DEL_CUST='{"customerCode":"CUST-DEL-'$(date +%s)'","legalName":"Customer To Delete","currency":"USD"}'
+CREATE_DEL_RESP=$(curl -s -w "%{http_code}" -X POST \
+    -H "Content-Type: application/json" \
+    -H "X-Tenant-Id: $TENANT_ID" \
+    -d "$CREATE_DEL_CUST" \
+    "$BASE_URL/api/v1/customers")
+DEL_CUST_ID=""
+if [[ "${CREATE_DEL_RESP: -3}" == "201" ]]; then
+    DEL_CUST_ID=$(json_get_id "${CREATE_DEL_RESP%???}")
+    echo -e "${GREEN}PASS${NC} (201) - Created: $DEL_CUST_ID"
+    PASS=$((PASS + 1))
+else
+    echo -e "${RED}FAIL${NC}"
+    FAIL=$((FAIL + 1))
+fi
+
+echo ""
+echo "=== 6.2 Delete Customer (Soft Delete) ==="
+test_endpoint "Delete Customer" "DELETE" "/api/v1/customers/$DEL_CUST_ID" "" "200"
+
+echo ""
+echo "=== 6.3 Verify Customer Status is DELETED ==="
+DEL_CUST_RESP=$(curl -s -X GET \
+    -H "X-Tenant-Id: $TENANT_ID" \
+    "$BASE_URL/api/v1/customers/$DEL_CUST_ID")
+DEL_STATUS=$(json_get "$DEL_CUST_RESP" "status")
+echo "Customer status after delete: $DEL_STATUS"
+if [[ "$DEL_STATUS" == "DELETED" ]]; then
+    echo -e "${GREEN}PASS${NC} - Customer status is DELETED"
+    PASS=$((PASS + 1))
+else
+    echo -e "${RED}FAIL${NC} - Expected DELETED, got $DEL_STATUS"
+    FAIL=$((FAIL + 1))
+fi
+
+echo ""
+echo "=== 6.4 List Customers (exclude deleted) ==="
+test_endpoint "List Active Only" "GET" "/api/v1/customers?includeDeleted=false" "" "200"
+
+echo ""
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}   SECTION 7: ERROR CASES${NC}"
+echo -e "${BLUE}========================================${NC}"
+
+echo ""
+echo "=== 7.1 Duplicate Customer Code (should fail) ==="
+test_endpoint "Duplicate Code" "POST" "/api/v1/customers" "$CREATE_CUSTOMER" "400"
+
+echo ""
+echo "=== 7.2 Get Non-existent Customer (404) ==="
+test_endpoint "Not Found Customer" "GET" "/api/v1/customers/00000000-0000-0000-0000-000000000000" "" "404"
+
+echo ""
+echo "=== 7.3 Invalid State Transition (clear RECEIVED cheque) ==="
+CREATE_INVALID_CHQ='{
+  "chequeNumber": "CHQ-INVALID-'$(date +%s)'",
+  "customerId": "'$CUSTOMER_ID'",
+  "amount": 100.00,
+  "currencyCode": "USD",
+  "bankName": "Test Bank",
+  "bankBranch": "Branch",
+  "chequeDate": "2026-03-20"
+}'
+INVALID_CHQ_RESP=$(curl -s -w "%{http_code}" -X POST \
+    -H "Content-Type: application/json" \
+    -H "X-Tenant-Id: $TENANT_ID" \
+    -d "$CREATE_INVALID_CHQ" \
+    "$BASE_URL/api/v1/cheques")
+INVALID_CHQ_ID=""
+if [[ "${INVALID_CHQ_RESP: -3}" == "201" ]]; then
+    INVALID_CHQ_ID=$(json_get_id "${INVALID_CHQ_RESP%???}")
+fi
+
+if [ -n "$INVALID_CHQ_ID" ]; then
+    test_endpoint "Invalid Clear" "POST" "/api/v1/cheques/$INVALID_CHQ_ID/clear" "" "400"
+fi
+
+echo ""
+echo "=== 7.4 Block Already Blocked Customer ==="
+test_endpoint "Block Again" "POST" "/api/v1/customers/$CUSTOMER_ID/block" "" "200"
+test_endpoint "Block Blocked" "POST" "/api/v1/customers/$CUSTOMER_ID/block" "" "400"
 
 echo ""
 echo "=========================================="

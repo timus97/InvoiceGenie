@@ -8,6 +8,7 @@ import com.invoicegenie.ar.domain.model.payment.ChequeStatus;
 import com.invoicegenie.shared.domain.Money;
 import com.invoicegenie.shared.domain.TenantId;
 
+import jakarta.enterprise.context.ApplicationScoped;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -29,7 +30,8 @@ import java.util.UUID;
  *   <li>Remove payment allocations if any</li>
  * </ul>
  */
-public final class ChequeService {
+@ApplicationScoped
+public class ChequeService {
 
     /**
      * Result of cheque deposit operation.

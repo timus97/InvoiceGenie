@@ -10,8 +10,13 @@
     </parent>
     <artifactId>ar-adapter-messaging</artifactId>
     <name>AR Adapter Messaging</name>
-    <description>Event publisher — Kafka or outbox</description>
+    <description>Event publisher — Kafka with transactional outbox pattern</description>
     <dependencies>
+        <dependency>
+            <groupId>com.invoicegenie</groupId>
+            <artifactId>ar-domain</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>com.invoicegenie</groupId>
             <artifactId>ar-application</artifactId>
@@ -20,6 +25,24 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-scheduler</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-reactive-messaging-kafka</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>

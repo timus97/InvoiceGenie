@@ -4,21 +4,23 @@ import com.invoicegenie.ar.application.port.inbound.GetInvoiceUseCase;
 import com.invoicegenie.ar.application.port.inbound.InvoiceLifecycleUseCase;
 import com.invoicegenie.ar.application.port.inbound.IssueInvoiceUseCase;
 import com.invoicegenie.ar.application.port.inbound.ListInvoicesUseCase;
-import com.invoicegenie.ar.application.port.outbound.EventPublisher;
 import com.invoicegenie.ar.application.port.outbound.IdGenerator;
 import com.invoicegenie.ar.application.service.GetInvoiceService;
 import com.invoicegenie.ar.application.service.InvoiceLifecycleService;
 import com.invoicegenie.ar.application.service.IssueInvoiceService;
 import com.invoicegenie.ar.application.service.ListInvoicesService;
-import com.invoicegenie.ar.domain.event.InvoiceIssued;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
+import com.invoicegenie.shared.domain.UuidV7;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 
 /**
  * CDI wiring: adapters implement ports; use cases get dependencies here.
+ * 
+ * <p>EventPublisher is now provided by KafkaEventPublisher in ar-adapter-messaging,
+ * which uses the transactional outbox pattern for reliable event delivery.
  */
 public class ArApplication {
 
@@ -26,8 +28,9 @@ public class ArApplication {
     @ApplicationScoped
     public IssueInvoiceUseCase issueInvoiceUseCase(InvoiceRepository invoiceRepository,
                                                    IdGenerator idGenerator,
-                                                   EventPublisher eventPublisher) {
-        return new IssueInvoiceService(invoiceRepository, idGenerator, eventPublisher);
+                                                   com.invoicegenie.ar.application.port.outbound.EventPublisher eventPublisher,
+                                                   com.invoicegenie.ar.domain.model.outbox.AuditRepository auditRepository) {
+        return new IssueInvoiceService(invoiceRepository, idGenerator, eventPublisher, auditRepository);
     }
 
     @Produces
@@ -44,8 +47,9 @@ public class ArApplication {
 
     @Produces
     @ApplicationScoped
-    public InvoiceLifecycleUseCase lifecycleUseCase(InvoiceRepository invoiceRepository) {
-        return new InvoiceLifecycleService(invoiceRepository);
+    public InvoiceLifecycleUseCase lifecycleUseCase(InvoiceRepository invoiceRepository,
+                                                     com.invoicegenie.ar.domain.model.outbox.AuditRepository auditRepository) {
+        return new InvoiceLifecycleService(invoiceRepository, auditRepository);
     }
 
     @Produces
@@ -54,19 +58,7 @@ public class ArApplication {
         return new IdGenerator() {
             @Override
             public InvoiceId newInvoiceId() {
-                return InvoiceId.of(java.util.UUID.randomUUID());
-            }
-        };
-    }
-
-    /** No-op event publisher stub for dev/test builds. */
-    @Produces
-    @ApplicationScoped
-    public EventPublisher eventPublisher() {
-        return new EventPublisher() {
-            @Override
-            public void publish(InvoiceIssued event) {
-                // no-op: Kafka adapter in ar-adapter-messaging handles real publishing
+                return InvoiceId.of(UuidV7.generate());
             }
         };
     }

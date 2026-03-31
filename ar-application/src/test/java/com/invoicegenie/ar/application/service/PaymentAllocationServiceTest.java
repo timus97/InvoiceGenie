@@ -80,7 +80,6 @@ class PaymentAllocationServiceTest {
 
             when(paymentRepository.findByTenantAndId(tenantId, paymentId)).thenReturn(Optional.of(payment));
             when(invoiceRepository.findOpenByTenantAndCustomer(tenantId, customerId)).thenReturn(List.of(invoice));
-            when(invoiceRepository.findByTenantAndId(eq(tenantId), any())).thenReturn(Optional.of(invoice));
 
             Optional<PaymentAllocationUseCase.AllocationResult> result = service.autoAllocateFIFO(
                     tenantId, paymentId, UUID.randomUUID(), null);
@@ -109,7 +108,6 @@ class PaymentAllocationServiceTest {
 
             when(paymentRepository.findByTenantAndId(tenantId, paymentId)).thenReturn(Optional.of(payment));
             when(invoiceRepository.findOpenByTenantAndCustomer(tenantId, customerId)).thenReturn(List.of(invoice));
-            when(invoiceRepository.findByTenantAndId(eq(tenantId), any())).thenReturn(Optional.of(invoice));
 
             // First call
             Optional<PaymentAllocationUseCase.AllocationResult> result1 = service.autoAllocateFIFO(

@@ -10,6 +10,9 @@ import jakarta.inject.Inject;
 
 /**
  * CDI producer for ChequeService.
+ * 
+ * <p>ChequeService is @Vetoed to prevent auto-discovery.
+ * This producer is the single source of the ChequeService bean.
  */
 @ApplicationScoped
 public class ChequeProducer {

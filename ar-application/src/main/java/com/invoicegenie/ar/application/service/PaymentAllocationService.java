@@ -83,14 +83,18 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
             paymentRepository.save(tenantId, payment);
             
             // Update invoice balances (mark as partially/fully paid)
-            for (PaymentAllocation alloc : engineResult.allocations()) {
-                invoiceRepository.findByTenantAndId(tenantId, alloc.getInvoiceId())
-                        .ifPresent(invoice -> {
-                            // Update invoice payment status
-                            boolean fullyPaid = invoice.getBalanceDue().getAmount().signum() <= 0;
-                            invoice.applyPaymentStatus(fullyPaid);
-                            invoiceRepository.save(tenantId, invoice);
-                        });
+            // Group allocations by invoice to calculate remaining balance per invoice
+            for (Invoice invoice : customerInvoices) {
+                // Sum allocations for this invoice from the engine result
+                java.math.BigDecimal allocatedToInvoice = engineResult.allocations().stream()
+                        .filter(a -> a.getInvoiceId().equals(invoice.getId()))
+                        .map(a -> a.getAmount().getAmount())
+                        .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+                
+                java.math.BigDecimal remaining = invoice.getTotal().getAmount().subtract(allocatedToInvoice);
+                boolean fullyPaid = remaining.signum() <= 0;
+                invoice.applyPaymentStatus(fullyPaid);
+                invoiceRepository.save(tenantId, invoice);
             }
         }
 
@@ -143,11 +147,23 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
         if (!engineResult.allocations().isEmpty()) {
             paymentRepository.save(tenantId, payment);
             
-            // Update invoice balances
-            for (PaymentAllocation alloc : engineResult.allocations()) {
-                invoiceRepository.findByTenantAndId(tenantId, alloc.getInvoiceId())
+            // Update invoice balances (mark as partially/fully paid)
+            // Load invoices that were allocated to
+            java.util.Set<InvoiceId> affectedInvoiceIds = engineResult.allocations().stream()
+                    .map(PaymentAllocation::getInvoiceId)
+                    .collect(java.util.stream.Collectors.toSet());
+            
+            for (InvoiceId invoiceId : affectedInvoiceIds) {
+                invoiceRepository.findByTenantAndId(tenantId, invoiceId)
                         .ifPresent(invoice -> {
-                            boolean fullyPaid = invoice.getBalanceDue().getAmount().signum() <= 0;
+                            // Sum allocations for this invoice
+                            java.math.BigDecimal allocated = engineResult.allocations().stream()
+                                    .filter(a -> a.getInvoiceId().equals(invoiceId))
+                                    .map(a -> a.getAmount().getAmount())
+                                    .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+                            
+                            java.math.BigDecimal remaining = invoice.getTotal().getAmount().subtract(allocated);
+                            boolean fullyPaid = remaining.signum() <= 0;
                             invoice.applyPaymentStatus(fullyPaid);
                             invoiceRepository.save(tenantId, invoice);
                         });

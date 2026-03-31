@@ -1,0 +1,22 @@
+# Test configuration for QuarkusTest — uses H2 in-memory DB
+quarkus:
+  http:
+    port: 0  # random available port for tests
+  datasource:
+    db-kind: h2
+    jdbc:
+      url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+      driver: org.h2.Driver
+      username: sa
+      password: ""
+  hibernate-orm:
+    database:
+      generation: update  # create schema from entities
+    log:
+      sql: false
+  log:
+    level: WARN
+
+# Disable outbox worker in tests (no Kafka)
+outbox:
+  enabled: false

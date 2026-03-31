@@ -6,6 +6,9 @@ RUN apt-get update && \
         maven \
         sqlite3 \
         libsqlite3-dev \
+        postgresql \
+        postgresql-client \
+        postgresql-contrib \
         ca-certificates \
         curl \
         jq \
@@ -16,7 +19,11 @@ RUN apt-get update && \
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 ENV PATH=$JAVA_HOME/bin:$PATH
 
-ENV COMMIT_HASH=main
+ENV POSTGRES_DB=invoicegenie
+ENV POSTGRES_USER=invoicegenie
+ENV POSTGRES_PASSWORD=invoicegenie
+
+ENV COMMIT_HASH=7aa39262e60dac44999bd3f1a8ca51bc0d0b9a3f
 ENV REPO_URL=https://github.com/timus97/InvoiceGenie.git
 ENV REPO_NAME=InvoiceGenie
 
@@ -28,11 +35,12 @@ RUN git init && \
     git checkout FETCH_HEAD && \
     git remote remove origin
 
-# Build the project
-RUN mvn -pl ar-bootstrap -am package -DskipTests -q
 
-# Expose port
+#RUN mvn -pl ar-bootstrap -am package -DskipTests -q
+
+
+EXPOSE 5432
 EXPOSE 8080
 
-# Default: run with default profile (PostgreSQL)
-CMD ["java", "-jar", "ar-bootstrap/target/quarkus-app/quarkus-run.jar"]
+
+CMD ["/bin/bash", "-lc", "service postgresql start; if ! su - postgres -c \"psql -tc \\\"SELECT 1 FROM pg_roles WHERE rolname='${POSTGRES_USER}'\\\"\" | grep -q 1; then su - postgres -c \"psql -c \\\"CREATE ROLE ${POSTGRES_USER} LOGIN PASSWORD '${POSTGRES_PASSWORD}';\\\"\"; fi; if ! su - postgres -c \"psql -tc \\\"SELECT 1 FROM pg_database WHERE datname='${POSTGRES_DB}'\\\"\" | grep -q 1; then su - postgres -c \"psql -c \\\"CREATE DATABASE ${POSTGRES_DB} OWNER ${POSTGRES_USER};\\\"\";]

@@ -1,8 +1,10 @@
 package com.invoicegenie.ar.adapter.api.rest;
 
 import com.invoicegenie.ar.application.port.inbound.PaymentAllocationUseCase;
+import com.invoicegenie.ar.application.port.inbound.RecordPaymentUseCase;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.payment.PaymentId;
+import com.invoicegenie.ar.domain.model.payment.PaymentMethod;
 import com.invoicegenie.shared.domain.Money;
 import com.invoicegenie.shared.tenant.TenantContext;
 
@@ -10,6 +12,8 @@ import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.math.BigDecimal;
@@ -28,10 +32,50 @@ import java.util.stream.Collectors;
 public class PaymentResource {
 
     private final PaymentAllocationUseCase allocationUseCase;
+    private final RecordPaymentUseCase recordPaymentUseCase;
 
-    public PaymentResource(PaymentAllocationUseCase allocationUseCase) {
+    public PaymentResource(PaymentAllocationUseCase allocationUseCase,
+                           RecordPaymentUseCase recordPaymentUseCase) {
         this.allocationUseCase = allocationUseCase;
+        this.recordPaymentUseCase = recordPaymentUseCase;
     }
+
+    // ==================== CREATE ====================
+
+    @POST
+    @Operation(summary = "Create/record a new payment received from a customer")
+    @APIResponses({
+        @APIResponse(responseCode = "201", description = "Payment created"),
+        @APIResponse(responseCode = "400", description = "Validation error"),
+        @APIResponse(responseCode = "409", description = "Duplicate payment number")
+    })
+    public Response create(CreatePaymentRequestDto dto) {
+        var tenantId = TenantContext.getCurrentTenant();
+        
+        try {
+            var command = new RecordPaymentUseCase.RecordPaymentCommand(
+                    dto.paymentNumber(),
+                    dto.customerId(),
+                    dto.amount(),
+                    dto.currencyCode(),
+                    dto.paymentDate(),
+                    dto.method(),
+                    dto.reference(),
+                    dto.notes()
+            );
+            
+            var paymentId = recordPaymentUseCase.record(tenantId, command);
+            return Response.status(201)
+                    .entity(new PaymentCreatedDto(paymentId.getValue().toString(), dto.paymentNumber()))
+                    .build();
+        } catch (IllegalArgumentException e) {
+            return Response.status(400)
+                    .entity(new ErrorDto("VALIDATION_ERROR", e.getMessage()))
+                    .build();
+        }
+    }
+
+    // ==================== ALLOCATION ====================
 
     @POST
     @Path("/{paymentId}/allocate/fifo")
@@ -130,4 +174,18 @@ public class PaymentResource {
     public record AllocationDetailDto(String invoiceId, BigDecimal amount, String allocationId) {}
     public record InvoiceAllocationsDto(String invoiceId, List<AllocationDetailDto> allocations) {}
     public record ErrorDto(String code, String message) {}
+    
+    // Payment creation DTOs
+    public record CreatePaymentRequestDto(
+            String paymentNumber,
+            String customerId,
+            BigDecimal amount,
+            String currencyCode,
+            java.time.LocalDate paymentDate,
+            PaymentMethod method,
+            String reference,
+            String notes
+    ) {}
+    
+    public record PaymentCreatedDto(String id, String paymentNumber) {}
 }

@@ -37,10 +37,15 @@ RUN apt-get update && \
         libxcb-shape0 \
         libxcb-render-util0 \
         x11-utils \
-        && rm -rf /var/lib/apt/lists/* \
-        && update-ca-certificates
+    && locale-gen en_US.UTF-8 \
+    && update-locale LANG=en_US.UTF-8 \
+    && rm -rf /var/lib/apt/lists/* \
+    && update-ca-certificates
 
-# ✅ Qt fix (prevents shared memory issues in Docker)
+
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+
 ENV QT_X11_NO_MITSHM=1
 
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64

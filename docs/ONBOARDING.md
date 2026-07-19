@@ -1,4 +1,4 @@
-﻿# InvoiceGenie — Onboarding & Architecture Blueprint
+# InvoiceGenie — Onboarding & Architecture Blueprint
 
 > **Audience:** Engineers joining the project, AI agents, and reviewers who need a map of the system before changing code.  
 > **Repo:** [timus97/InvoiceGenie](https://github.com/timus97/InvoiceGenie)  
@@ -690,7 +690,6 @@ mvn -pl ar-bootstrap test
 # Dependency hygiene
 mvn dependency:tree
 mvn versions:display-dependency-updates
-mvn -Psecurity-scan dependency-check:check   # OWASP; optional, can be slow (NVD download)
 ```
 
 Manual: Postman collection under `postman/`, or API scripts:

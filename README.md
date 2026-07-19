@@ -131,10 +131,6 @@ mvn test
 ./scripts/test-api.ps1 -BaseUrl http://localhost:8080
 ./scripts/test-api.sh
 
-# OWASP Dependency-Check (fails on CVSS >= 7; set NVD_API_KEY for faster NVD sync)
-./scripts/security-scan.ps1
-./scripts/security-scan.sh
-
 # Run persistence adapter tests only
 mvn -pl ar-adapter-persistence test
 

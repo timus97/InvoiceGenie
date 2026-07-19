@@ -1,5 +1,6 @@
 package com.invoicegenie.ar.domain.service;
 
+import com.invoicegenie.ar.domain.event.PaymentAllocated;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
@@ -18,7 +19,6 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -65,17 +65,21 @@ class PaymentAllocationEngineTest {
         @DisplayName("should allocate payment to oldest invoice first")
         void shouldAllocateToOldestFirst() {
             Payment payment = createPayment(Money.of("1000.00", "USD"));
-            Invoice oldInvoice = createInvoice("INV-001", LocalDate.now().minusDays(30), 
+            Invoice oldInvoice = createInvoice("INV-001", LocalDate.now().minusDays(30),
                     LocalDate.now().minusDays(10), Money.of("500.00", "USD"));
             Invoice newInvoice = createInvoice("INV-002", LocalDate.now().minusDays(10),
                     LocalDate.now().plusDays(10), Money.of("500.00", "USD"));
-            
+
             PaymentAllocationEngine.AllocationResult result = engine.autoAllocateFIFO(
                     tenantId, payment, List.of(newInvoice, oldInvoice), UUID.randomUUID());
-            
+
             assertTrue(result.isFullyAllocated());
             assertEquals(2, result.allocations().size());
             assertFalse(result.hasErrors());
+            assertEquals(2, result.events().size());
+            assertTrue(result.events().stream().allMatch(e -> e instanceof PaymentAllocated));
+            assertEquals(payment.getId(), result.events().get(0).paymentId());
+            assertEquals(tenantId, result.events().get(0).tenantId());
         }
 
         @Test
@@ -84,15 +88,18 @@ class PaymentAllocationEngineTest {
             Payment payment = createPayment(Money.of("300.00", "USD"));
             Invoice invoice = createInvoice("INV-001", LocalDate.now().minusDays(30),
                     LocalDate.now().plusDays(10), Money.of("1000.00", "USD"));
-            
+
             PaymentAllocationEngine.AllocationResult result = engine.autoAllocateFIFO(
                     tenantId, payment, List.of(invoice), UUID.randomUUID());
-            
+
             // Payment is fully allocated (all 300.00 used), but invoice is partially paid
             assertTrue(result.isFullyAllocated());
             assertEquals(1, result.allocations().size());
             assertEquals(0, new BigDecimal("300.00").compareTo(result.totalAllocated().getAmount()));
             assertEquals(0, new BigDecimal("0.00").compareTo(result.remainingUnallocated().getAmount()));
+            assertEquals(1, result.events().size());
+            assertEquals(0, new BigDecimal("300.00").compareTo(result.events().get(0).amount().getAmount()));
+            assertEquals(invoice.getId(), result.events().get(0).invoiceId());
         }
 
         @Test
@@ -119,11 +126,12 @@ class PaymentAllocationEngineTest {
             Payment payment = createPayment(Money.of("1000.00", "USD"));
             Invoice eurInvoice = createInvoice("INV-EUR", LocalDate.now().minusDays(30),
                     LocalDate.now().plusDays(10), Money.of("500.00", "EUR"));
-            
+
             PaymentAllocationEngine.AllocationResult result = engine.autoAllocateFIFO(
                     tenantId, payment, List.of(eurInvoice), UUID.randomUUID());
-            
+
             assertEquals(0, result.allocations().size());
+            assertEquals(0, result.events().size());
             assertEquals(0, new BigDecimal("1000.00").compareTo(result.remainingUnallocated().getAmount()));
         }
 
@@ -134,12 +142,26 @@ class PaymentAllocationEngineTest {
             payment.reverse(); // Change status to REVERSED
             Invoice invoice = createInvoice("INV-001", LocalDate.now().minusDays(30),
                     LocalDate.now().plusDays(10), Money.of("500.00", "USD"));
-            
+
             PaymentAllocationEngine.AllocationResult result = engine.autoAllocateFIFO(
                     tenantId, payment, List.of(invoice), UUID.randomUUID());
-            
+
             assertTrue(result.hasErrors());
             assertTrue(result.errors().get(0).reason().contains("RECEIVED"));
+            assertTrue(result.events().isEmpty());
+        }
+
+        @Test
+        @DisplayName("should return empty events when no open invoices")
+        void shouldReturnEmptyEventsWhenNoOpenInvoices() {
+            Payment payment = createPayment(Money.of("1000.00", "USD"));
+
+            PaymentAllocationEngine.AllocationResult result = engine.autoAllocateFIFO(
+                    tenantId, payment, List.of(), UUID.randomUUID());
+
+            assertEquals(0, result.allocations().size());
+            assertEquals(0, result.events().size());
+            assertFalse(result.hasErrors());
         }
     }
 
@@ -155,19 +177,24 @@ class PaymentAllocationEngineTest {
                     LocalDate.now().plusDays(10), Money.of("500.00", "USD"));
             Invoice invoice2 = createInvoice("INV-002", LocalDate.now().minusDays(20),
                     LocalDate.now().plusDays(20), Money.of("500.00", "USD"));
-            
+
             List<PaymentAllocationEngine.ManualAllocationRequest> requests = List.of(
                     new PaymentAllocationEngine.ManualAllocationRequest(
                             invoice1.getId(), Money.of("400.00", "USD"), "Partial payment"),
                     new PaymentAllocationEngine.ManualAllocationRequest(
                             invoice2.getId(), Money.of("600.00", "USD"), "Full payment")
             );
-            
+
             PaymentAllocationEngine.AllocationResult result = engine.manualAllocate(
-                    tenantId, payment, requests, UUID.randomUUID());
-            
+                    tenantId, payment, List.of(invoice1, invoice2), requests, UUID.randomUUID());
+
             assertTrue(result.isFullyAllocated());
             assertEquals(2, result.allocations().size());
+            assertEquals(2, result.events().size());
+            assertEquals(invoice1.getId(), result.events().get(0).invoiceId());
+            assertEquals(invoice2.getId(), result.events().get(1).invoiceId());
+            assertEquals(0, new BigDecimal("400.00").compareTo(result.events().get(0).amount().getAmount()));
+            assertEquals(0, new BigDecimal("600.00").compareTo(result.events().get(1).amount().getAmount()));
         }
 
         @Test
@@ -176,16 +203,17 @@ class PaymentAllocationEngineTest {
             Payment payment = createPayment(Money.of("500.00", "USD"));
             Invoice invoice = createInvoice("INV-001", LocalDate.now().minusDays(30),
                     LocalDate.now().plusDays(10), Money.of("1000.00", "USD"));
-            
+
             List<PaymentAllocationEngine.ManualAllocationRequest> requests = List.of(
                     new PaymentAllocationEngine.ManualAllocationRequest(
                             invoice.getId(), Money.of("600.00", "USD"), "Over payment")
             );
-            
+
             PaymentAllocationEngine.AllocationResult result = engine.manualAllocate(
-                    tenantId, payment, requests, UUID.randomUUID());
-            
+                    tenantId, payment, List.of(invoice), requests, UUID.randomUUID());
+
             assertTrue(result.hasErrors());
+            assertTrue(result.events().isEmpty());
         }
 
         @Test
@@ -195,16 +223,78 @@ class PaymentAllocationEngineTest {
             payment.refund();
             Invoice invoice = createInvoice("INV-001", LocalDate.now().minusDays(30),
                     LocalDate.now().plusDays(10), Money.of("500.00", "USD"));
-            
+
             List<PaymentAllocationEngine.ManualAllocationRequest> requests = List.of(
                     new PaymentAllocationEngine.ManualAllocationRequest(
                             invoice.getId(), Money.of("500.00", "USD"), "Payment")
             );
-            
+
             PaymentAllocationEngine.AllocationResult result = engine.manualAllocate(
-                    tenantId, payment, requests, UUID.randomUUID());
-            
+                    tenantId, payment, List.of(invoice), requests, UUID.randomUUID());
+
             assertTrue(result.hasErrors());
+            assertTrue(result.events().isEmpty());
+        }
+
+        @Test
+        @DisplayName("should reject closed invoice")
+        void shouldRejectClosedInvoice() {
+            Payment payment = createPayment(Money.of("500.00", "USD"));
+            Invoice invoice = createInvoice("INV-001", LocalDate.now().minusDays(30),
+                    LocalDate.now().plusDays(10), Money.of("500.00", "USD"));
+            invoice.applyPaymentStatus(true); // fully paid -> closed
+
+            List<PaymentAllocationEngine.ManualAllocationRequest> requests = List.of(
+                    new PaymentAllocationEngine.ManualAllocationRequest(
+                            invoice.getId(), Money.of("100.00", "USD"), "Late allocation")
+            );
+
+            PaymentAllocationEngine.AllocationResult result = engine.manualAllocate(
+                    tenantId, payment, List.of(invoice), requests, UUID.randomUUID());
+
+            assertTrue(result.hasErrors());
+            assertTrue(result.errors().get(0).reason().contains("not open"));
+            assertTrue(result.events().isEmpty());
+            assertEquals(0, result.allocations().size());
+        }
+
+        @Test
+        @DisplayName("should reject currency mismatch")
+        void shouldRejectCurrencyMismatch() {
+            Payment payment = createPayment(Money.of("500.00", "USD"));
+            Invoice invoice = createInvoice("INV-EUR", LocalDate.now().minusDays(30),
+                    LocalDate.now().plusDays(10), Money.of("500.00", "EUR"));
+
+            List<PaymentAllocationEngine.ManualAllocationRequest> requests = List.of(
+                    new PaymentAllocationEngine.ManualAllocationRequest(
+                            invoice.getId(), Money.of("100.00", "USD"), "Mismatch")
+            );
+
+            PaymentAllocationEngine.AllocationResult result = engine.manualAllocate(
+                    tenantId, payment, List.of(invoice), requests, UUID.randomUUID());
+
+            assertTrue(result.hasErrors());
+            assertTrue(result.errors().get(0).reason().contains("Currency mismatch"));
+            assertTrue(result.events().isEmpty());
+        }
+
+        @Test
+        @DisplayName("should error when invoice not provided")
+        void shouldErrorWhenInvoiceNotProvided() {
+            Payment payment = createPayment(Money.of("500.00", "USD"));
+            InvoiceId missingId = InvoiceId.generate();
+
+            List<PaymentAllocationEngine.ManualAllocationRequest> requests = List.of(
+                    new PaymentAllocationEngine.ManualAllocationRequest(
+                            missingId, Money.of("100.00", "USD"), "Missing invoice")
+            );
+
+            PaymentAllocationEngine.AllocationResult result = engine.manualAllocate(
+                    tenantId, payment, List.of(), requests, UUID.randomUUID());
+
+            assertTrue(result.hasErrors());
+            assertTrue(result.errors().get(0).reason().contains("not found"));
+            assertTrue(result.events().isEmpty());
         }
     }
 
@@ -216,16 +306,16 @@ class PaymentAllocationEngineTest {
         @DisplayName("should calculate outstanding balance")
         void shouldCalculateOutstanding() {
             Money invoiceTotal = Money.of("1000.00", "USD");
-            
+
             PaymentAllocation alloc1 = new PaymentAllocation(
                     UUID.randomUUID(), InvoiceId.generate(), Money.of("300.00", "USD"),
                     UUID.randomUUID(), "Payment 1");
             PaymentAllocation alloc2 = new PaymentAllocation(
                     UUID.randomUUID(), InvoiceId.generate(), Money.of("200.00", "USD"),
                     UUID.randomUUID(), "Payment 2");
-            
+
             Money outstanding = engine.calculateOutstanding(invoiceTotal, List.of(alloc1, alloc2));
-            
+
             assertEquals(0, new BigDecimal("500.00").compareTo(outstanding.getAmount()));
         }
 
@@ -233,9 +323,9 @@ class PaymentAllocationEngineTest {
         @DisplayName("should return full amount when no allocations")
         void shouldReturnFullWhenNoAllocations() {
             Money invoiceTotal = Money.of("1000.00", "USD");
-            
+
             Money outstanding = engine.calculateOutstanding(invoiceTotal, List.of());
-            
+
             assertEquals(invoiceTotal, outstanding);
         }
     }

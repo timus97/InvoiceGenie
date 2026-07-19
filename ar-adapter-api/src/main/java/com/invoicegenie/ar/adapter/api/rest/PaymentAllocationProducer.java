@@ -2,6 +2,7 @@ package com.invoicegenie.ar.adapter.api.rest;
 
 import com.invoicegenie.ar.application.port.inbound.PaymentAllocationUseCase;
 import com.invoicegenie.ar.application.port.inbound.RecordPaymentUseCase;
+import com.invoicegenie.ar.application.port.outbound.EventPublisher;
 import com.invoicegenie.ar.application.port.outbound.IdGenerator;
 import com.invoicegenie.ar.application.service.PaymentAllocationService;
 import com.invoicegenie.ar.application.service.RecordPaymentService;
@@ -36,15 +37,18 @@ public class PaymentAllocationProducer {
     @Inject
     AuditRepository auditRepository;
 
+    @Inject
+    EventPublisher eventPublisher;
+
     @Produces
     @ApplicationScoped
     public PaymentAllocationUseCase paymentAllocationUseCase() {
-        return new PaymentAllocationService(paymentRepository, invoiceRepository);
+        return new PaymentAllocationService(paymentRepository, invoiceRepository, eventPublisher);
     }
 
     @Produces
     @ApplicationScoped
     public RecordPaymentUseCase recordPaymentUseCase() {
-        return new RecordPaymentService(paymentRepository, customerRepository, idGenerator, auditRepository);
+        return new RecordPaymentService(paymentRepository, customerRepository, idGenerator, auditRepository, eventPublisher);
     }
 }

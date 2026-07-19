@@ -106,10 +106,11 @@ public class PaymentResource {
         var paymentIdObj = PaymentId.of(UUID.fromString(paymentId));
         var allocatedBy = dto.allocatedBy() != null ? UUID.fromString(dto.allocatedBy()) : UUID.randomUUID();
         
+        // Currency is corrected in PaymentAllocationService to the payment's currency
         var requests = dto.allocations().stream()
                 .map(a -> new PaymentAllocationUseCase.ManualAllocationRequest(
                         InvoiceId.of(UUID.fromString(a.invoiceId())),
-                        Money.of(a.amount().toString(), "USD"), // Assuming USD for now
+                        Money.of(a.amount().toString(), "USD"),
                         a.notes()))
                 .toList();
         

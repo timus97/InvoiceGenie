@@ -1,7 +1,9 @@
 package com.invoicegenie.ar.application.service;
 
 import com.invoicegenie.ar.application.port.inbound.RecordPaymentUseCase;
+import com.invoicegenie.ar.application.port.outbound.EventPublisher;
 import com.invoicegenie.ar.application.port.outbound.IdGenerator;
+import com.invoicegenie.ar.domain.event.PaymentRecorded;
 import com.invoicegenie.ar.domain.model.customer.Customer;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.customer.CustomerRepository;
@@ -45,13 +47,16 @@ class RecordPaymentServiceTest {
     @Mock
     private AuditRepository auditRepository;
 
+    @Mock
+    private EventPublisher eventPublisher;
+
     private RecordPaymentService service;
     private TenantId tenantId;
     private CustomerId customerId;
 
     @BeforeEach
     void setUp() {
-        service = new RecordPaymentService(paymentRepository, customerRepository, idGenerator, auditRepository);
+        service = new RecordPaymentService(paymentRepository, customerRepository, idGenerator, auditRepository, eventPublisher);
         tenantId = TenantId.of(UUID.randomUUID());
         customerId = CustomerId.of(UUID.randomUUID());
     }
@@ -94,6 +99,7 @@ class RecordPaymentServiceTest {
             assertNotNull(result.getValue());
             verify(paymentRepository).save(eq(tenantId), any());
             verify(auditRepository).save(eq(tenantId), any());
+            verify(eventPublisher).publish(any(PaymentRecorded.class));
         }
 
         @Test
@@ -116,6 +122,37 @@ class RecordPaymentServiceTest {
             // Assert
             assertEquals(expectedUuid, result.getValue());
             verify(idGenerator).newUuid();
+            verify(eventPublisher).publish(any(PaymentRecorded.class));
+        }
+
+        @Test
+        @DisplayName("should publish PaymentRecorded with correct fields")
+        void shouldPublishPaymentRecordedWithCorrectFields() {
+            // Arrange
+            var customer = mock(Customer.class);
+            var expectedUuid = UUID.randomUUID();
+            when(customerRepository.findByTenantAndId(eq(tenantId), eq(customerId)))
+                    .thenReturn(Optional.of(customer));
+            when(idGenerator.newUuid()).thenReturn(expectedUuid);
+            when(paymentRepository.findByTenantAndNumber(eq(tenantId), anyString()))
+                    .thenReturn(Optional.empty());
+
+            var command = createCommand();
+
+            // Act
+            service.record(tenantId, command);
+
+            // Assert
+            verify(eventPublisher).publish(argThat(event -> {
+                if (!(event instanceof PaymentRecorded pr)) {
+                    return false;
+                }
+                return pr.paymentId().getValue().equals(expectedUuid)
+                        && pr.tenantId().equals(tenantId)
+                        && pr.customerRef().equals(customerId.getValue().toString())
+                        && pr.amount().getAmount().compareTo(new BigDecimal("1000.00")) == 0
+                        && "USD".equals(pr.amount().getCurrencyCode());
+            }));
         }
     }
 
@@ -133,9 +170,10 @@ class RecordPaymentServiceTest {
             var command = createCommand();
 
             // Act & Assert
-            var ex = assertThrows(IllegalArgumentException.class, 
+            var ex = assertThrows(IllegalArgumentException.class,
                     () -> service.record(tenantId, command));
             assertTrue(ex.getMessage().contains("Customer not found"));
+            verifyNoInteractions(eventPublisher);
         }
 
         @Test
@@ -144,7 +182,7 @@ class RecordPaymentServiceTest {
             // Arrange
             var customer = mock(Customer.class);
             var existingPayment = mock(com.invoicegenie.ar.domain.model.payment.Payment.class);
-            
+
             when(customerRepository.findByTenantAndId(eq(tenantId), eq(customerId)))
                     .thenReturn(Optional.of(customer));
             when(paymentRepository.findByTenantAndNumber(eq(tenantId), eq("PAY-001")))
@@ -153,9 +191,10 @@ class RecordPaymentServiceTest {
             var command = createCommand();
 
             // Act & Assert
-            var ex = assertThrows(IllegalArgumentException.class, 
+            var ex = assertThrows(IllegalArgumentException.class,
                     () -> service.record(tenantId, command));
             assertTrue(ex.getMessage().contains("Payment number already exists"));
+            verifyNoInteractions(eventPublisher);
         }
     }
 
@@ -166,7 +205,7 @@ class RecordPaymentServiceTest {
         @Test
         @DisplayName("should reject null payment number")
         void shouldRejectNullPaymentNumber() {
-            assertThrows(IllegalArgumentException.class, () -> 
+            assertThrows(IllegalArgumentException.class, () ->
                 new RecordPaymentUseCase.RecordPaymentCommand(
                     null, customerId.getValue().toString(), new BigDecimal("100"), "USD",
                     LocalDate.now(), PaymentMethod.CASH, null, null));
@@ -175,7 +214,7 @@ class RecordPaymentServiceTest {
         @Test
         @DisplayName("should reject blank payment number")
         void shouldRejectBlankPaymentNumber() {
-            assertThrows(IllegalArgumentException.class, () -> 
+            assertThrows(IllegalArgumentException.class, () ->
                 new RecordPaymentUseCase.RecordPaymentCommand(
                     "", customerId.getValue().toString(), new BigDecimal("100"), "USD",
                     LocalDate.now(), PaymentMethod.CASH, null, null));
@@ -184,7 +223,7 @@ class RecordPaymentServiceTest {
         @Test
         @DisplayName("should reject null customer ID")
         void shouldRejectNullCustomerId() {
-            assertThrows(IllegalArgumentException.class, () -> 
+            assertThrows(IllegalArgumentException.class, () ->
                 new RecordPaymentUseCase.RecordPaymentCommand(
                     "PAY-001", null, new BigDecimal("100"), "USD",
                     LocalDate.now(), PaymentMethod.CASH, null, null));
@@ -193,7 +232,7 @@ class RecordPaymentServiceTest {
         @Test
         @DisplayName("should reject zero amount")
         void shouldRejectZeroAmount() {
-            assertThrows(IllegalArgumentException.class, () -> 
+            assertThrows(IllegalArgumentException.class, () ->
                 new RecordPaymentUseCase.RecordPaymentCommand(
                     "PAY-001", customerId.getValue().toString(), BigDecimal.ZERO, "USD",
                     LocalDate.now(), PaymentMethod.CASH, null, null));
@@ -202,7 +241,7 @@ class RecordPaymentServiceTest {
         @Test
         @DisplayName("should reject negative amount")
         void shouldRejectNegativeAmount() {
-            assertThrows(IllegalArgumentException.class, () -> 
+            assertThrows(IllegalArgumentException.class, () ->
                 new RecordPaymentUseCase.RecordPaymentCommand(
                     "PAY-001", customerId.getValue().toString(), new BigDecimal("-100"), "USD",
                     LocalDate.now(), PaymentMethod.CASH, null, null));
@@ -211,7 +250,7 @@ class RecordPaymentServiceTest {
         @Test
         @DisplayName("should reject null payment date")
         void shouldRejectNullPaymentDate() {
-            assertThrows(IllegalArgumentException.class, () -> 
+            assertThrows(IllegalArgumentException.class, () ->
                 new RecordPaymentUseCase.RecordPaymentCommand(
                     "PAY-001", customerId.getValue().toString(), new BigDecimal("100"), "USD",
                     null, PaymentMethod.CASH, null, null));
@@ -220,7 +259,7 @@ class RecordPaymentServiceTest {
         @Test
         @DisplayName("should reject null method")
         void shouldRejectNullMethod() {
-            assertThrows(IllegalArgumentException.class, () -> 
+            assertThrows(IllegalArgumentException.class, () ->
                 new RecordPaymentUseCase.RecordPaymentCommand(
                     "PAY-001", customerId.getValue().toString(), new BigDecimal("100"), "USD",
                     LocalDate.now(), null, null, null));

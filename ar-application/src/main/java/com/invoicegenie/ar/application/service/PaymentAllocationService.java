@@ -1,6 +1,8 @@
 package com.invoicegenie.ar.application.service;
 
 import com.invoicegenie.ar.application.port.inbound.PaymentAllocationUseCase;
+import com.invoicegenie.ar.application.port.outbound.EventPublisher;
+import com.invoicegenie.ar.domain.event.PaymentAllocated;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
@@ -13,7 +15,9 @@ import com.invoicegenie.shared.domain.Money;
 import com.invoicegenie.shared.domain.TenantId;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,7 +25,7 @@ import java.util.concurrent.ConcurrentMap;
 
 /**
  * Application service: payment allocation operations.
- * 
+ *
  * <p>Features:
  * <ul>
  *   <li>FIFO auto-allocation</li>
@@ -29,22 +33,27 @@ import java.util.concurrent.ConcurrentMap;
  *   <li>Idempotency support</li>
  *   <li>Concurrency safety via optimistic locking</li>
  *   <li>One payment can be allocated to multiple invoices</li>
+ *   <li>Cumulative {@code amountPaid} on invoices (prevents over-allocation)</li>
+ *   <li>Publishes {@link PaymentAllocated} events after successful allocation</li>
  * </ul>
  */
 public class PaymentAllocationService implements PaymentAllocationUseCase {
 
     private final PaymentRepository paymentRepository;
     private final InvoiceRepository invoiceRepository;
+    private final EventPublisher eventPublisher;
     private final PaymentAllocationEngine allocationEngine;
-    
+
     // Simple in-memory idempotency store (in production, use database table)
     private final ConcurrentMap<String, AllocationResult> idempotencyCache = new ConcurrentHashMap<>();
 
     public PaymentAllocationService(
             PaymentRepository paymentRepository,
-            InvoiceRepository invoiceRepository) {
+            InvoiceRepository invoiceRepository,
+            EventPublisher eventPublisher) {
         this.paymentRepository = paymentRepository;
         this.invoiceRepository = invoiceRepository;
+        this.eventPublisher = eventPublisher;
         this.allocationEngine = new PaymentAllocationEngine();
     }
 
@@ -54,8 +63,7 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
             PaymentId paymentId,
             UUID allocatedBy,
             String idempotencyKey) {
-        
-        // Check idempotency
+
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             String key = tenantId.getValue() + ":" + paymentId.getValue() + ":" + idempotencyKey;
             AllocationResult cached = idempotencyCache.get(key);
@@ -64,25 +72,22 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
             }
         }
 
-        // Load payment with optimistic locking
         Optional<Payment> paymentOpt = paymentRepository.findByTenantAndId(tenantId, paymentId);
         if (paymentOpt.isEmpty()) {
             return Optional.empty();
         }
         Payment payment = paymentOpt.get();
 
-        // Load open invoices for this customer
-        List<Invoice> customerInvoices = invoiceRepository.findOpenByTenantAndCustomer(tenantId, payment.getCustomerId());
+        List<Invoice> customerInvoices = invoiceRepository.findOpenByTenantAndCustomer(
+                tenantId, payment.getCustomerId());
 
-        // Perform allocation
         PaymentAllocationEngine.AllocationResult engineResult = allocationEngine.autoAllocateFIFO(
                 tenantId, payment, customerInvoices, allocatedBy);
 
-        // Save payment (with version check via optimistic locking in repository)
         if (!engineResult.allocations().isEmpty()) {
             paymentRepository.save(tenantId, payment);
 
-            // Apply each allocation to the invoice aggregate (cumulative amountPaid)
+            // Apply each allocation to invoice aggregate (cumulative amountPaid)
             for (PaymentAllocation allocation : engineResult.allocations()) {
                 customerInvoices.stream()
                         .filter(inv -> inv.getId().equals(allocation.getInvoiceId()))
@@ -92,12 +97,12 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
                             invoiceRepository.save(tenantId, invoice);
                         });
             }
+
+            publishEvents(engineResult.events());
         }
 
-        // Build result
         AllocationResult result = toResult(payment, engineResult);
 
-        // Cache for idempotency
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             String key = tenantId.getValue() + ":" + paymentId.getValue() + ":" + idempotencyKey;
             idempotencyCache.put(key, result);
@@ -114,7 +119,6 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
             UUID allocatedBy,
             String idempotencyKey) {
 
-        // Check idempotency
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             String key = tenantId.getValue() + ":" + paymentId.getValue() + ":" + idempotencyKey;
             AllocationResult cached = idempotencyCache.get(key);
@@ -123,25 +127,31 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
             }
         }
 
-        // Load payment with optimistic locking
         Optional<Payment> paymentOpt = paymentRepository.findByTenantAndId(tenantId, paymentId);
         if (paymentOpt.isEmpty()) {
             return Optional.empty();
         }
         Payment payment = paymentOpt.get();
 
-        // Load invoices and validate each request against outstanding balance (prevents over-allocation)
-        java.util.Map<InvoiceId, Invoice> invoicesById = new java.util.HashMap<>();
-        java.util.Map<InvoiceId, Money> remainingByInvoice = new java.util.HashMap<>();
+        String paymentCurrency = payment.getAmount().getCurrencyCode();
+        Map<InvoiceId, Invoice> invoicesById = new HashMap<>();
+        Map<InvoiceId, Money> remainingByInvoice = new HashMap<>();
+        List<Invoice> invoices = new ArrayList<>();
         List<PaymentAllocationEngine.ManualAllocationRequest> engineRequests = new ArrayList<>();
         List<String> preErrors = new ArrayList<>();
 
         for (ManualAllocationRequest request : requests) {
+            // Force payment currency (REST may hardcode incorrectly)
+            Money amount = Money.of(request.amount().getAmount().toPlainString(), paymentCurrency);
+
             Invoice invoice = invoicesById.computeIfAbsent(request.invoiceId(), id ->
                     invoiceRepository.findByTenantAndId(tenantId, id).orElse(null));
             if (invoice == null) {
                 preErrors.add("Invoice not found: " + request.invoiceId().getValue());
                 continue;
+            }
+            if (!invoices.contains(invoice)) {
+                invoices.add(invoice);
             }
             if (!invoice.canReceivePayments()) {
                 preErrors.add("Invoice cannot receive payments: " + request.invoiceId().getValue());
@@ -149,32 +159,31 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
             }
             Money remaining = remainingByInvoice.computeIfAbsent(request.invoiceId(),
                     id -> invoice.getBalanceDue());
-            if (request.amount().getAmount().compareTo(remaining.getAmount()) > 0) {
+            if (amount.getAmount().compareTo(remaining.getAmount()) > 0) {
                 preErrors.add("Allocation exceeds balance due for invoice "
                         + request.invoiceId().getValue()
-                        + " (requested " + request.amount().getAmount()
+                        + " (requested " + amount.getAmount()
                         + ", remaining " + remaining.getAmount() + ")");
                 continue;
             }
-            remainingByInvoice.put(request.invoiceId(), remaining.subtract(request.amount()));
+            remainingByInvoice.put(request.invoiceId(), remaining.subtract(amount));
             engineRequests.add(new PaymentAllocationEngine.ManualAllocationRequest(
-                    request.invoiceId(), request.amount(), request.notes()));
+                    request.invoiceId(), amount, request.notes()));
         }
 
-        // Perform allocation for validated requests
         PaymentAllocationEngine.AllocationResult engineResult = engineRequests.isEmpty()
                 ? new PaymentAllocationEngine.AllocationResult(
                         List.of(),
-                        Money.of("0.00", payment.getAmount().getCurrencyCode()),
+                        Money.of("0.00", paymentCurrency),
                         payment.getAmountUnallocated(),
+                        List.of(),
                         List.of())
-                : allocationEngine.manualAllocate(tenantId, payment, engineRequests, allocatedBy);
+                : allocationEngine.manualAllocate(
+                        tenantId, payment, invoices, engineRequests, allocatedBy);
 
-        // Save payment
         if (!engineResult.allocations().isEmpty()) {
             paymentRepository.save(tenantId, payment);
 
-            // Apply each allocation to the invoice aggregate (cumulative amountPaid)
             for (PaymentAllocation allocation : engineResult.allocations()) {
                 Invoice invoice = invoicesById.get(allocation.getInvoiceId());
                 if (invoice != null) {
@@ -182,16 +191,18 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
                     invoiceRepository.save(tenantId, invoice);
                 }
             }
+
+            publishEvents(engineResult.events());
         }
 
-        // Merge pre-validation errors into result
         if (!preErrors.isEmpty()) {
             List<String> allErrors = new ArrayList<>(preErrors);
             engineResult.errors().forEach(e -> allErrors.add(e.reason()));
             AllocationResult result = new AllocationResult(
                     payment.getId(),
                     engineResult.allocations().stream()
-                            .map(a -> new AllocationResult.AllocationDetail(a.getInvoiceId(), a.getAmount(), a.getId()))
+                            .map(a -> new AllocationResult.AllocationDetail(
+                                    a.getInvoiceId(), a.getAmount(), a.getId()))
                             .toList(),
                     engineResult.totalAllocated(),
                     engineResult.remainingUnallocated(),
@@ -205,10 +216,8 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
             return Optional.of(result);
         }
 
-        // Build result
         AllocationResult result = toResult(payment, engineResult);
 
-        // Cache for idempotency
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
             String key = tenantId.getValue() + ":" + paymentId.getValue() + ":" + idempotencyKey;
             idempotencyCache.put(key, result);
@@ -222,9 +231,10 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
         return paymentRepository.findByTenantAndId(tenantId, paymentId)
                 .map(payment -> {
                     List<AllocationResult.AllocationDetail> details = payment.getAllocations().stream()
-                            .map(a -> new AllocationResult.AllocationDetail(a.getInvoiceId(), a.getAmount(), a.getId()))
+                            .map(a -> new AllocationResult.AllocationDetail(
+                                    a.getInvoiceId(), a.getAmount(), a.getId()))
                             .toList();
-                    
+
                     return new AllocationResult(
                             payment.getId(),
                             details,
@@ -243,11 +253,20 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
                 .toList();
     }
 
+    private void publishEvents(List<PaymentAllocated> events) {
+        if (events == null) {
+            return;
+        }
+        for (PaymentAllocated event : events) {
+            eventPublisher.publish(event);
+        }
+    }
+
     private AllocationResult toResult(Payment payment, PaymentAllocationEngine.AllocationResult engineResult) {
         List<AllocationResult.AllocationDetail> details = engineResult.allocations().stream()
                 .map(a -> new AllocationResult.AllocationDetail(a.getInvoiceId(), a.getAmount(), a.getId()))
                 .toList();
-        
+
         List<String> errors = engineResult.errors().stream()
                 .map(e -> e.reason())
                 .toList();

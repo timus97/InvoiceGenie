@@ -44,7 +44,7 @@ class AgingApplicationServiceTest {
     private Invoice openInvoice(String number, LocalDate dueDate, String amount) {
         InvoiceId id = InvoiceId.of(UUID.randomUUID());
         InvoiceLine line = new InvoiceLine(1, "Item", Money.of(amount, "USD"));
-        Invoice invoice = new Invoice(id, number, UUID.randomUUID().toString(), "USD",
+        Invoice invoice = new Invoice(id, number, null, UUID.randomUUID().toString(), "USD",
                 dueDate.minusDays(30), dueDate, List.of(line));
         invoice.issue();
         return invoice;

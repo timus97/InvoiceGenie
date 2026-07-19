@@ -1,4 +1,4 @@
-﻿package com.invoicegenie.ar;
+package com.invoicegenie.ar;
 
 import com.invoicegenie.ar.application.port.inbound.AgingUseCase;
 import com.invoicegenie.ar.application.port.inbound.ApplyInvoicePaymentUseCase;

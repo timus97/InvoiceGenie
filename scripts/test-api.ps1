@@ -104,7 +104,8 @@ Write-Host ""
 Write-Host "=== SECTION 2: INVOICE ===" -ForegroundColor Cyan
 $invBody = @{
     invoiceNumber = "INV-TEST-$ts"
-    customerRef   = $CustomerId
+    customerId    = $CustomerId
+    customerRef   = "API-Test"
     currencyCode  = "USD"
     dueDate       = "2026-04-30"
     lines         = @(
@@ -303,7 +304,8 @@ Write-Host ""
 Write-Host "=== SECTION 2: INVOICE ===" -ForegroundColor Cyan
 $invBody = @{
     invoiceNumber = "INV-TEST-$ts"
-    customerRef   = $CustomerId
+    customerId    = $CustomerId
+    customerRef   = "API-Test"
     currencyCode  = "USD"
     dueDate       = "2026-04-30"
     lines         = @(
@@ -505,7 +507,8 @@ Write-Host ""
 Write-Host "=== SECTION 2: INVOICE ===" -ForegroundColor Cyan
 $invBody = @{
     invoiceNumber = "INV-TEST-$ts"
-    customerRef   = $CustomerId
+    customerId    = $CustomerId
+    customerRef   = "API-Test"
     currencyCode  = "USD"
     dueDate       = "2026-04-30"
     lines         = @(

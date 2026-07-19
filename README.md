@@ -105,17 +105,35 @@ mvn -pl ar-bootstrap -Dquarkus.profile=dev -Dquarkus.http.port=8082 quarkus:dev
 ```bash
 curl -s http://localhost:8080/q/health
 
+# Create a customer first, then issue an invoice with customerId (UUID)
+curl -s -X POST http://localhost:8080/api/v1/customers \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001" \
+  -d '{"customerCode":"C1","legalName":"Acme","currency":"USD"}'
+
 curl -s -X POST http://localhost:8080/api/v1/invoices \
   -H "Content-Type: application/json" \
   -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001" \
-  -d '{"invoiceNumber":"INV-1","customerRef":"C1","currencyCode":"USD","dueDate":"2026-12-31","lines":[{"description":"Svc","amount":100}]}'
+  -d '{"invoiceNumber":"INV-1","customerId":"<customer-uuid>","currencyCode":"USD","dueDate":"2026-12-31","lines":[{"description":"Svc","amount":100}]}'
 ```
 
 ## Testing
 
 ```bash
-# Run all tests
+# Unit tests (all modules)
 mvn test
+
+# Coverage reports + 80% line floor (PowerShell / bash)
+./scripts/coverage.ps1
+./scripts/coverage.sh
+
+# API smoke tests against a running server (dev profile)
+./scripts/test-api.ps1 -BaseUrl http://localhost:8080
+./scripts/test-api.sh
+
+# OWASP Dependency-Check (fails on CVSS >= 7; set NVD_API_KEY for faster NVD sync)
+./scripts/security-scan.ps1
+./scripts/security-scan.sh
 
 # Run persistence adapter tests only
 mvn -pl ar-adapter-persistence test

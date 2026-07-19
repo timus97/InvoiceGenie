@@ -1,4 +1,4 @@
-﻿package com.invoicegenie.ar.application.service;
+package com.invoicegenie.ar.application.service;
 
 import com.invoicegenie.ar.application.port.inbound.IssueInvoiceUseCase;
 import com.invoicegenie.ar.application.port.outbound.EventPublisher;

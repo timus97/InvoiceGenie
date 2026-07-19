@@ -183,7 +183,8 @@ echo ""
 echo "=== 2.1 Create Invoice ==="
 CREATE_INVOICE='{
   "invoiceNumber": "INV-TEST-'$(date +%s)'",
-  "customerRef": "'$CUSTOMER_ID'",
+  "customerId": "'$CUSTOMER_ID'",
+  "customerRef": "API-Test",
   "currencyCode": "USD",
   "dueDate": "2026-04-30",
   "lines": [

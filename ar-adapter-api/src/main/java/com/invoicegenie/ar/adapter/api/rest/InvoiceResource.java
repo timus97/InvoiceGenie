@@ -10,16 +10,9 @@ import com.invoicegenie.ar.domain.model.invoice.InvoiceStatus;
 import com.invoicegenie.shared.tenant.TenantContext;
 
 import jakarta.ws.rs.*;
-import jakarta.ws.rs.core.Context;
-import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.UriInfo;
 import org.eclipse.microprofile.openapi.annotations.Operation;
-import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
-import org.eclipse.microprofile.openapi.annotations.media.Content;
-import org.eclipse.microprofile.openapi.annotations.media.Schema;
-import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
@@ -27,7 +20,6 @@ import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import java.net.URI;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -85,7 +77,7 @@ public class InvoiceResource {
                         .toList()
         );
         var tenantId = TenantContext.getCurrentTenant();
-        var id = issueInvoiceUseCase.issue(tenantId, command);
+        var id = issueInvoiceUseCase.issue(tenantId, command, idempotencyKey);
         return Response.created(URI.create("/api/v1/invoices/" + id.getValue()))
                 .entity(new InvoiceIdDto(id.getValue().toString()))
                 .build();

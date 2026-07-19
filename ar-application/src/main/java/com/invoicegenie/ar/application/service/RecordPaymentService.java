@@ -6,11 +6,13 @@ import com.invoicegenie.ar.application.port.outbound.IdGenerator;
 import com.invoicegenie.ar.domain.event.PaymentRecorded;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.customer.CustomerRepository;
+import com.invoicegenie.ar.domain.model.ledger.LedgerRepository;
 import com.invoicegenie.ar.domain.model.outbox.AuditEntry;
 import com.invoicegenie.ar.domain.model.outbox.AuditRepository;
 import com.invoicegenie.ar.domain.model.payment.Payment;
 import com.invoicegenie.ar.domain.model.payment.PaymentId;
 import com.invoicegenie.ar.domain.model.payment.PaymentRepository;
+import com.invoicegenie.ar.domain.service.LedgerService;
 import com.invoicegenie.shared.domain.TenantId;
 
 import java.util.Optional;
@@ -20,6 +22,7 @@ import java.util.Optional;
  *
  * <p>Validates that the customer exists before creating the payment.
  * Creates audit log entry for compliance.
+ * Posts payment-received ledger entries (Dr Bank / Cr AR).
  * Publishes {@link PaymentRecorded} after successful save.
  */
 public class RecordPaymentService implements RecordPaymentUseCase {
@@ -29,17 +32,23 @@ public class RecordPaymentService implements RecordPaymentUseCase {
     private final IdGenerator idGenerator;
     private final AuditRepository auditRepository;
     private final EventPublisher eventPublisher;
+    private final LedgerService ledgerService;
+    private final LedgerRepository ledgerRepository;
 
     public RecordPaymentService(PaymentRepository paymentRepository,
                                 CustomerRepository customerRepository,
                                 IdGenerator idGenerator,
                                 AuditRepository auditRepository,
-                                EventPublisher eventPublisher) {
+                                EventPublisher eventPublisher,
+                                LedgerService ledgerService,
+                                LedgerRepository ledgerRepository) {
         this.paymentRepository = paymentRepository;
         this.customerRepository = customerRepository;
         this.idGenerator = idGenerator;
         this.auditRepository = auditRepository;
         this.eventPublisher = eventPublisher;
+        this.ledgerService = ledgerService;
+        this.ledgerRepository = ledgerRepository;
     }
 
     @Override
@@ -82,6 +91,12 @@ public class RecordPaymentService implements RecordPaymentUseCase {
 
         // Persist
         paymentRepository.save(tenantId, payment);
+
+        // Durable ledger: Dr Bank / Cr AR
+        LedgerService.TransactionResult ledgerTx = ledgerService.recordPaymentReceived(
+                tenantId, paymentId.getValue(), command.paymentNumber(), payment.getAmount());
+        ledgerService.assertBalanced(ledgerTx.entries());
+        ledgerRepository.saveAll(tenantId, ledgerTx.entries());
 
         // Audit log
         String afterState = String.format(

@@ -3,12 +3,12 @@ package com.invoicegenie.ar.adapter.api.rest;
 import com.invoicegenie.ar.application.port.inbound.InvoiceLifecycleUseCase;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.ledger.LedgerEntry;
+import com.invoicegenie.ar.domain.model.ledger.LedgerRepository;
 import com.invoicegenie.ar.domain.model.payment.Cheque;
 import com.invoicegenie.ar.domain.model.payment.ChequeRepository;
 import com.invoicegenie.ar.domain.model.payment.ChequeStatus;
 import com.invoicegenie.ar.domain.service.ChequeService;
 import com.invoicegenie.shared.domain.Money;
-import com.invoicegenie.shared.domain.TenantId;
 import com.invoicegenie.shared.tenant.TenantContext;
 
 import jakarta.ws.rs.*;
@@ -37,12 +37,15 @@ public class ChequeResource {
     private final ChequeService chequeService;
     private final ChequeRepository chequeRepository;
     private final InvoiceLifecycleUseCase invoiceLifecycleUseCase;
+    private final LedgerRepository ledgerRepository;
 
     public ChequeResource(ChequeService chequeService, ChequeRepository chequeRepository,
-                          InvoiceLifecycleUseCase invoiceLifecycleUseCase) {
+                          InvoiceLifecycleUseCase invoiceLifecycleUseCase,
+                          LedgerRepository ledgerRepository) {
         this.chequeService = chequeService;
         this.chequeRepository = chequeRepository;
         this.invoiceLifecycleUseCase = invoiceLifecycleUseCase;
+        this.ledgerRepository = ledgerRepository;
     }
 
     @POST
@@ -102,6 +105,10 @@ public class ChequeResource {
                     var result = chequeService.clear(tenantId, cheque);
                     if (result.success()) {
                         chequeRepository.save(tenantId, cheque);
+                        // Durable ledger: Dr Bank / Cr AR
+                        if (result.ledgerEntries() != null && !result.ledgerEntries().isEmpty()) {
+                            ledgerRepository.saveAll(tenantId, result.ledgerEntries());
+                        }
                         return Response.ok(new ClearResultDto(toDto(cheque), 
                                 result.ledgerEntries().stream().map(this::toEntryDto).collect(Collectors.toList())))
                                 .build();
@@ -128,6 +135,11 @@ public class ChequeResource {
                     var result = chequeService.bounce(tenantId, cheque, dto.reason());
                     if (result.success()) {
                         chequeRepository.save(tenantId, cheque);
+
+                        // Durable reverse ledger: Dr AR / Cr Bank
+                        if (result.reverseEntries() != null && !result.reverseEntries().isEmpty()) {
+                            ledgerRepository.saveAll(tenantId, result.reverseEntries());
+                        }
                         
                         // Reopen affected invoices
                         List<String> reopenedInvoices = new ArrayList<>();

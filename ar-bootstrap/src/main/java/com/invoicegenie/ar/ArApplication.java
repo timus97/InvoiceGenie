@@ -8,6 +8,7 @@ import com.invoicegenie.ar.application.port.inbound.PaymentAllocationUseCase;
 import com.invoicegenie.ar.application.port.inbound.RecordPaymentUseCase;
 import com.invoicegenie.ar.application.port.outbound.EventPublisher;
 import com.invoicegenie.ar.application.port.outbound.IdGenerator;
+import com.invoicegenie.ar.application.port.outbound.IdempotencyStore;
 import com.invoicegenie.ar.application.service.GetInvoiceService;
 import com.invoicegenie.ar.application.service.InvoiceLifecycleService;
 import com.invoicegenie.ar.application.service.IssueInvoiceService;
@@ -17,6 +18,7 @@ import com.invoicegenie.ar.application.service.RecordPaymentService;
 import com.invoicegenie.ar.domain.model.customer.CustomerRepository;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
+import com.invoicegenie.ar.domain.model.ledger.LedgerRepository;
 import com.invoicegenie.ar.domain.model.outbox.AuditRepository;
 import com.invoicegenie.ar.domain.model.payment.PaymentId;
 import com.invoicegenie.ar.domain.model.payment.PaymentRepository;
@@ -46,8 +48,12 @@ public class ArApplication {
     public IssueInvoiceUseCase issueInvoiceUseCase(InvoiceRepository invoiceRepository,
                                                    IdGenerator idGenerator,
                                                    EventPublisher eventPublisher,
-                                                   AuditRepository auditRepository) {
-        return new IssueInvoiceService(invoiceRepository, idGenerator, eventPublisher, auditRepository);
+                                                   AuditRepository auditRepository,
+                                                   LedgerService ledgerService,
+                                                   LedgerRepository ledgerRepository,
+                                                   IdempotencyStore idempotencyStore) {
+        return new IssueInvoiceService(invoiceRepository, idGenerator, eventPublisher, auditRepository,
+                ledgerService, ledgerRepository, idempotencyStore);
     }
 
     @Produces
@@ -65,8 +71,10 @@ public class ArApplication {
     @Produces
     @ApplicationScoped
     public InvoiceLifecycleUseCase lifecycleUseCase(InvoiceRepository invoiceRepository,
-                                                     AuditRepository auditRepository) {
-        return new InvoiceLifecycleService(invoiceRepository, auditRepository);
+                                                     AuditRepository auditRepository,
+                                                     LedgerService ledgerService,
+                                                     LedgerRepository ledgerRepository) {
+        return new InvoiceLifecycleService(invoiceRepository, auditRepository, ledgerService, ledgerRepository);
     }
 
     // ── Payment use cases ──────────────────────────────────────────────────
@@ -75,8 +83,9 @@ public class ArApplication {
     @ApplicationScoped
     public PaymentAllocationUseCase paymentAllocationUseCase(PaymentRepository paymentRepository,
                                                              InvoiceRepository invoiceRepository,
-                                                             EventPublisher eventPublisher) {
-        return new PaymentAllocationService(paymentRepository, invoiceRepository, eventPublisher);
+                                                             EventPublisher eventPublisher,
+                                                             IdempotencyStore idempotencyStore) {
+        return new PaymentAllocationService(paymentRepository, invoiceRepository, eventPublisher, idempotencyStore);
     }
 
     @Produces
@@ -85,8 +94,11 @@ public class ArApplication {
                                                      CustomerRepository customerRepository,
                                                      IdGenerator idGenerator,
                                                      AuditRepository auditRepository,
-                                                     EventPublisher eventPublisher) {
-        return new RecordPaymentService(paymentRepository, customerRepository, idGenerator, auditRepository, eventPublisher);
+                                                     EventPublisher eventPublisher,
+                                                     LedgerService ledgerService,
+                                                     LedgerRepository ledgerRepository) {
+        return new RecordPaymentService(paymentRepository, customerRepository, idGenerator, auditRepository,
+                eventPublisher, ledgerService, ledgerRepository);
     }
 
     // ── Domain services (plain Java — no CDI annotations in ar-domain) ─────

@@ -1,11 +1,14 @@
 package com.invoicegenie.ar.application.service;
 
-import com.invoicegenie.ar.domain.model.outbox.AuditRepository;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceLine;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceStatus;
+import com.invoicegenie.ar.domain.model.ledger.LedgerEntry;
+import com.invoicegenie.ar.domain.model.ledger.LedgerRepository;
+import com.invoicegenie.ar.domain.model.outbox.AuditRepository;
+import com.invoicegenie.ar.domain.service.LedgerService;
 import com.invoicegenie.shared.domain.Money;
 import com.invoicegenie.shared.domain.TenantId;
 
@@ -14,6 +17,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -31,11 +35,9 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class InvoiceLifecycleServiceTest {
 
-    @Mock
-    private InvoiceRepository invoiceRepository;
-
-    @Mock
-    private AuditRepository auditRepository;
+    @Mock private InvoiceRepository invoiceRepository;
+    @Mock private AuditRepository auditRepository;
+    @Mock private LedgerRepository ledgerRepository;
 
     private InvoiceLifecycleService service;
     private TenantId tenantId;
@@ -43,7 +45,8 @@ class InvoiceLifecycleServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new InvoiceLifecycleService(invoiceRepository, auditRepository);
+        service = new InvoiceLifecycleService(invoiceRepository, auditRepository,
+                new LedgerService(), ledgerRepository);
         tenantId = TenantId.of(UUID.randomUUID());
         invoiceId = InvoiceId.generate();
     }
@@ -62,7 +65,6 @@ class InvoiceLifecycleServiceTest {
     }
 
     private Invoice createOverdueInvoice() {
-        // Create an invoice with a due date in the past
         Invoice invoice = new Invoice(invoiceId, "INV-001", "CUST001", "USD",
                 LocalDate.now().minusDays(60), LocalDate.now().minusDays(30), List.of());
         invoice.addLine(new InvoiceLine(1, "Service", Money.of("1000.00", "USD")));
@@ -75,7 +77,7 @@ class InvoiceLifecycleServiceTest {
     class Issue {
 
         @Test
-        @DisplayName("should issue draft invoice")
+        @DisplayName("should issue draft invoice and post ledger")
         void shouldIssueDraftInvoice() {
             Invoice invoice = createDraftInvoice();
             when(invoiceRepository.findByTenantAndId(tenantId, invoiceId)).thenReturn(Optional.of(invoice));
@@ -86,6 +88,10 @@ class InvoiceLifecycleServiceTest {
             assertEquals(InvoiceStatus.ISSUED, result.get().getStatus());
             verify(invoiceRepository).save(tenantId, invoice);
             verify(auditRepository).save(eq(tenantId), any());
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<LedgerEntry>> captor = ArgumentCaptor.forClass(List.class);
+            verify(ledgerRepository).saveAll(eq(tenantId), captor.capture());
+            assertEquals(2, captor.getValue().size());
         }
 
         @Test
@@ -98,6 +104,7 @@ class InvoiceLifecycleServiceTest {
             assertFalse(result.isPresent());
             verify(invoiceRepository, never()).save(any(), any());
             verify(auditRepository, never()).save(any(), any());
+            verifyNoInteractions(ledgerRepository);
         }
     }
 
@@ -111,7 +118,6 @@ class InvoiceLifecycleServiceTest {
             Invoice invoice = createOverdueInvoice();
             when(invoiceRepository.findByTenantAndId(tenantId, invoiceId)).thenReturn(Optional.of(invoice));
 
-            // Pass a date that's after the due date (due date is 30 days ago)
             Optional<Invoice> result = service.markOverdue(tenantId, invoiceId, LocalDate.now());
 
             assertTrue(result.isPresent());
@@ -137,10 +143,10 @@ class InvoiceLifecycleServiceTest {
     class WriteOff {
 
         @Test
-        @DisplayName("should write off overdue invoice with reason")
+        @DisplayName("should write off overdue invoice and post ledger")
         void shouldWriteOffOverdueInvoiceWithReason() {
             Invoice invoice = createOverdueInvoice();
-            invoice.markOverdue(LocalDate.now()); // Must be OVERDUE first
+            invoice.markOverdue(LocalDate.now());
             when(invoiceRepository.findByTenantAndId(tenantId, invoiceId)).thenReturn(Optional.of(invoice));
 
             Optional<Invoice> result = service.writeOff(tenantId, invoiceId, "Bad debt");
@@ -149,6 +155,10 @@ class InvoiceLifecycleServiceTest {
             assertEquals(InvoiceStatus.WRITTEN_OFF, result.get().getStatus());
             verify(invoiceRepository).save(tenantId, invoice);
             verify(auditRepository).save(eq(tenantId), any());
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<LedgerEntry>> captor = ArgumentCaptor.forClass(List.class);
+            verify(ledgerRepository).saveAll(eq(tenantId), captor.capture());
+            assertEquals(2, captor.getValue().size());
         }
 
         @Test
@@ -160,6 +170,7 @@ class InvoiceLifecycleServiceTest {
 
             assertFalse(result.isPresent());
             verify(auditRepository, never()).save(any(), any());
+            verifyNoInteractions(ledgerRepository);
         }
     }
 

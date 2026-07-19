@@ -10,11 +10,16 @@
     </parent>
     <artifactId>ar-adapter-persistence</artifactId>
     <name>AR Adapter Persistence</name>
-    <description>Repository adapters — DB with tenant_id on every table</description>
+    <description>Repository adapters â€” DB with tenant_id on every table</description>
     <dependencies>
         <dependency>
             <groupId>com.invoicegenie</groupId>
             <artifactId>ar-domain</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.invoicegenie</groupId>
+            <artifactId>ar-application</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
@@ -51,3 +56,4 @@
         </dependency>
     </dependencies>
 </project>
+

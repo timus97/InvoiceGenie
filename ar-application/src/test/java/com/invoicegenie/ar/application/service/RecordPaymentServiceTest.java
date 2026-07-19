@@ -7,10 +7,13 @@ import com.invoicegenie.ar.domain.event.PaymentRecorded;
 import com.invoicegenie.ar.domain.model.customer.Customer;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.customer.CustomerRepository;
+import com.invoicegenie.ar.domain.model.ledger.LedgerEntry;
+import com.invoicegenie.ar.domain.model.ledger.LedgerRepository;
 import com.invoicegenie.ar.domain.model.outbox.AuditRepository;
 import com.invoicegenie.ar.domain.model.payment.PaymentId;
 import com.invoicegenie.ar.domain.model.payment.PaymentMethod;
 import com.invoicegenie.ar.domain.model.payment.PaymentRepository;
+import com.invoicegenie.ar.domain.service.LedgerService;
 import com.invoicegenie.shared.domain.TenantId;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -18,11 +21,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -35,20 +40,12 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class RecordPaymentServiceTest {
 
-    @Mock
-    private PaymentRepository paymentRepository;
-
-    @Mock
-    private CustomerRepository customerRepository;
-
-    @Mock
-    private IdGenerator idGenerator;
-
-    @Mock
-    private AuditRepository auditRepository;
-
-    @Mock
-    private EventPublisher eventPublisher;
+    @Mock private PaymentRepository paymentRepository;
+    @Mock private CustomerRepository customerRepository;
+    @Mock private IdGenerator idGenerator;
+    @Mock private AuditRepository auditRepository;
+    @Mock private EventPublisher eventPublisher;
+    @Mock private LedgerRepository ledgerRepository;
 
     private RecordPaymentService service;
     private TenantId tenantId;
@@ -56,7 +53,8 @@ class RecordPaymentServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new RecordPaymentService(paymentRepository, customerRepository, idGenerator, auditRepository, eventPublisher);
+        service = new RecordPaymentService(paymentRepository, customerRepository, idGenerator, auditRepository,
+                eventPublisher, new LedgerService(), ledgerRepository);
         tenantId = TenantId.of(UUID.randomUUID());
         customerId = CustomerId.of(UUID.randomUUID());
     }
@@ -79,9 +77,8 @@ class RecordPaymentServiceTest {
     class SuccessfulRecording {
 
         @Test
-        @DisplayName("should create payment when customer exists")
+        @DisplayName("should create payment when customer exists and post ledger")
         void shouldCreatePaymentWhenCustomerExists() {
-            // Arrange
             var customer = mock(Customer.class);
             when(customerRepository.findByTenantAndId(eq(tenantId), eq(customerId)))
                     .thenReturn(Optional.of(customer));
@@ -89,23 +86,21 @@ class RecordPaymentServiceTest {
             when(paymentRepository.findByTenantAndNumber(eq(tenantId), anyString()))
                     .thenReturn(Optional.empty());
 
-            var command = createCommand();
+            var result = service.record(tenantId, createCommand());
 
-            // Act
-            var result = service.record(tenantId, command);
-
-            // Assert
             assertNotNull(result);
-            assertNotNull(result.getValue());
             verify(paymentRepository).save(eq(tenantId), any());
             verify(auditRepository).save(eq(tenantId), any());
             verify(eventPublisher).publish(any(PaymentRecorded.class));
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<List<LedgerEntry>> captor = ArgumentCaptor.forClass(List.class);
+            verify(ledgerRepository).saveAll(eq(tenantId), captor.capture());
+            assertEquals(2, captor.getValue().size());
         }
 
         @Test
         @DisplayName("should generate UUID v7 for payment ID")
         void shouldGenerateUuidV7ForPaymentId() {
-            // Arrange
             var customer = mock(Customer.class);
             var expectedUuid = UUID.randomUUID();
             when(customerRepository.findByTenantAndId(eq(tenantId), eq(customerId)))
@@ -114,12 +109,8 @@ class RecordPaymentServiceTest {
             when(paymentRepository.findByTenantAndNumber(eq(tenantId), anyString()))
                     .thenReturn(Optional.empty());
 
-            var command = createCommand();
+            var result = service.record(tenantId, createCommand());
 
-            // Act
-            var result = service.record(tenantId, command);
-
-            // Assert
             assertEquals(expectedUuid, result.getValue());
             verify(idGenerator).newUuid();
             verify(eventPublisher).publish(any(PaymentRecorded.class));
@@ -128,7 +119,6 @@ class RecordPaymentServiceTest {
         @Test
         @DisplayName("should publish PaymentRecorded with correct fields")
         void shouldPublishPaymentRecordedWithCorrectFields() {
-            // Arrange
             var customer = mock(Customer.class);
             var expectedUuid = UUID.randomUUID();
             when(customerRepository.findByTenantAndId(eq(tenantId), eq(customerId)))
@@ -137,12 +127,8 @@ class RecordPaymentServiceTest {
             when(paymentRepository.findByTenantAndNumber(eq(tenantId), anyString()))
                     .thenReturn(Optional.empty());
 
-            var command = createCommand();
+            service.record(tenantId, createCommand());
 
-            // Act
-            service.record(tenantId, command);
-
-            // Assert
             verify(eventPublisher).publish(argThat(event -> {
                 if (!(event instanceof PaymentRecorded pr)) {
                     return false;
@@ -163,23 +149,19 @@ class RecordPaymentServiceTest {
         @Test
         @DisplayName("should fail when customer not found")
         void shouldFailWhenCustomerNotFound() {
-            // Arrange
             when(customerRepository.findByTenantAndId(eq(tenantId), eq(customerId)))
                     .thenReturn(Optional.empty());
 
-            var command = createCommand();
-
-            // Act & Assert
             var ex = assertThrows(IllegalArgumentException.class,
-                    () -> service.record(tenantId, command));
+                    () -> service.record(tenantId, createCommand()));
             assertTrue(ex.getMessage().contains("Customer not found"));
             verifyNoInteractions(eventPublisher);
+            verifyNoInteractions(ledgerRepository);
         }
 
         @Test
         @DisplayName("should fail when payment number already exists")
         void shouldFailWhenPaymentNumberExists() {
-            // Arrange
             var customer = mock(Customer.class);
             var existingPayment = mock(com.invoicegenie.ar.domain.model.payment.Payment.class);
 
@@ -188,13 +170,11 @@ class RecordPaymentServiceTest {
             when(paymentRepository.findByTenantAndNumber(eq(tenantId), eq("PAY-001")))
                     .thenReturn(Optional.of(existingPayment));
 
-            var command = createCommand();
-
-            // Act & Assert
             var ex = assertThrows(IllegalArgumentException.class,
-                    () -> service.record(tenantId, command));
+                    () -> service.record(tenantId, createCommand()));
             assertTrue(ex.getMessage().contains("Payment number already exists"));
             verifyNoInteractions(eventPublisher);
+            verifyNoInteractions(ledgerRepository);
         }
     }
 

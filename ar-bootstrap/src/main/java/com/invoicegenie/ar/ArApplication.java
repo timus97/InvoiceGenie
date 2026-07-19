@@ -1,25 +1,38 @@
 package com.invoicegenie.ar;
 
+import com.invoicegenie.ar.application.port.inbound.AgingUseCase;
 import com.invoicegenie.ar.application.port.inbound.ApplyInvoicePaymentUseCase;
+import com.invoicegenie.ar.application.port.inbound.ChequeUseCase;
+import com.invoicegenie.ar.application.port.inbound.CreditNoteUseCase;
+import com.invoicegenie.ar.application.port.inbound.CustomerUseCase;
 import com.invoicegenie.ar.application.port.inbound.GetInvoiceUseCase;
 import com.invoicegenie.ar.application.port.inbound.InvoiceLifecycleUseCase;
 import com.invoicegenie.ar.application.port.inbound.IssueInvoiceUseCase;
+import com.invoicegenie.ar.application.port.inbound.LedgerQueryUseCase;
 import com.invoicegenie.ar.application.port.inbound.ListInvoicesUseCase;
 import com.invoicegenie.ar.application.port.inbound.PaymentAllocationUseCase;
 import com.invoicegenie.ar.application.port.inbound.RecordPaymentUseCase;
 import com.invoicegenie.ar.application.port.outbound.EventPublisher;
 import com.invoicegenie.ar.application.port.outbound.IdGenerator;
+import com.invoicegenie.ar.application.service.AgingApplicationService;
 import com.invoicegenie.ar.application.service.ApplyInvoicePaymentService;
+import com.invoicegenie.ar.application.service.ChequeApplicationService;
+import com.invoicegenie.ar.application.service.CreditNoteApplicationService;
+import com.invoicegenie.ar.application.service.CustomerManagementService;
 import com.invoicegenie.ar.application.service.GetInvoiceService;
 import com.invoicegenie.ar.application.service.InvoiceLifecycleService;
 import com.invoicegenie.ar.application.service.IssueInvoiceService;
+import com.invoicegenie.ar.application.service.LedgerQueryService;
 import com.invoicegenie.ar.application.service.ListInvoicesService;
 import com.invoicegenie.ar.application.service.PaymentAllocationService;
 import com.invoicegenie.ar.application.service.RecordPaymentService;
 import com.invoicegenie.ar.domain.model.customer.CustomerRepository;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
+import com.invoicegenie.ar.domain.model.ledger.LedgerRepository;
 import com.invoicegenie.ar.domain.model.outbox.AuditRepository;
+import com.invoicegenie.ar.domain.model.payment.ChequeRepository;
+import com.invoicegenie.ar.domain.model.payment.CreditNoteRepository;
 import com.invoicegenie.ar.domain.model.payment.PaymentId;
 import com.invoicegenie.ar.domain.model.payment.PaymentRepository;
 import com.invoicegenie.ar.domain.service.AgingService;
@@ -99,6 +112,44 @@ public class ArApplication {
                                                                  RecordPaymentUseCase recordPaymentUseCase,
                                                                  PaymentAllocationUseCase paymentAllocationUseCase) {
         return new ApplyInvoicePaymentService(invoiceRepository, recordPaymentUseCase, paymentAllocationUseCase);
+    }
+
+    // ── Customer / Cheque / CreditNote / Aging / Ledger use cases ───────────
+
+    @Produces
+    @ApplicationScoped
+    public CustomerUseCase customerUseCase(CustomerService customerService,
+                                           CustomerRepository customerRepository) {
+        return new CustomerManagementService(customerService, customerRepository);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public ChequeUseCase chequeUseCase(ChequeService chequeService,
+                                       ChequeRepository chequeRepository,
+                                       InvoiceLifecycleUseCase invoiceLifecycleUseCase) {
+        return new ChequeApplicationService(chequeService, chequeRepository, invoiceLifecycleUseCase);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public CreditNoteUseCase creditNoteUseCase(CreditNoteService creditNoteService,
+                                               CreditNoteRepository creditNoteRepository) {
+        return new CreditNoteApplicationService(creditNoteService, creditNoteRepository);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public AgingUseCase agingUseCase(AgingService agingService,
+                                     InvoiceRepository invoiceRepository) {
+        return new AgingApplicationService(agingService, invoiceRepository);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public LedgerQueryUseCase ledgerQueryUseCase(LedgerService ledgerService,
+                                                 LedgerRepository ledgerRepository) {
+        return new LedgerQueryService(ledgerService, ledgerRepository);
     }
 
     // ── Domain services (plain Java — no CDI annotations in ar-domain) ─────

@@ -86,9 +86,12 @@ public final class AgingReport {
                            Money amountDue, LocalDate dueDate, int daysOverdue) {
         AgingBucket bucket = AgingBucket.fromDaysOverdue(daysOverdue);
         
-        // Update bucket summary
+        // Update bucket summary (record is immutable — put updated instance back)
         AgingBucketSummary summary = bucketSummaries.get(bucket);
-        summary.addInvoice(amountDue.getAmount());
+        if (summary == null) {
+            summary = new AgingBucketSummary(bucket);
+        }
+        bucketSummaries.put(bucket, summary.addInvoice(amountDue.getAmount()));
         
         // Add invoice detail
         invoiceDetails.add(new AgingInvoiceDetail(

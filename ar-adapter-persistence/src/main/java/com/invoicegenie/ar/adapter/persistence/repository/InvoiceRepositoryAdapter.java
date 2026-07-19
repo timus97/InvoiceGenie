@@ -99,6 +99,23 @@ public class InvoiceRepositoryAdapter implements InvoiceRepository {
                 .setParameter("openStatuses", List.of(InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE))
                 .getResultList();
 
+        return loadWithLines(tenantId, entities);
+    }
+
+    @Override
+    public List<Invoice> findOpenByTenant(TenantId tenantId) {
+        List<InvoiceEntity> entities = em.createQuery(
+                        "SELECT e FROM InvoiceEntity e WHERE e.tenantId = :tenantId " +
+                                "AND e.status IN (:openStatuses) ORDER BY e.dueDate ASC, e.createdAt ASC",
+                        InvoiceEntity.class)
+                .setParameter("tenantId", tenantId.getValue())
+                .setParameter("openStatuses", List.of(InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE))
+                .getResultList();
+
+        return loadWithLines(tenantId, entities);
+    }
+
+    private List<Invoice> loadWithLines(TenantId tenantId, List<InvoiceEntity> entities) {
         return entities.stream()
                 .map(e -> {
                     List<InvoiceLineEntity> lines = em.createQuery(

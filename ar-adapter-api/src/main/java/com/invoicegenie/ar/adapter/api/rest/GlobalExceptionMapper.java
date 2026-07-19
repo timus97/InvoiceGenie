@@ -1,5 +1,6 @@
 package com.invoicegenie.ar.adapter.api.rest;
 
+import com.invoicegenie.ar.adapter.api.dto.ErrorResponse;
 import com.invoicegenie.ar.domain.exception.DomainValidationException;
 import com.invoicegenie.ar.domain.exception.InvalidStateTransitionException;
 import com.invoicegenie.ar.domain.exception.NotFoundException;
@@ -43,7 +44,7 @@ public class GlobalExceptionMapper implements ExceptionMapper<Throwable> {
 
         return Response.status(status)
                 .type(MediaType.APPLICATION_JSON)
-                .entity(new InvoiceResource.ErrorDto(code, exception.getMessage()))
+                .entity(new ErrorResponse(code, exception.getMessage()))
                 .build();
     }
 }

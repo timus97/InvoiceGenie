@@ -9,6 +9,7 @@ import com.invoicegenie.ar.domain.model.invoice.InvoiceStatus;
 import com.invoicegenie.shared.domain.Money;
 import com.invoicegenie.shared.domain.TenantId;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -39,6 +40,8 @@ public final class InvoiceMapper {
         e.setTaxTotal(invoice.getTaxTotal().getAmount());
         e.setDiscountTotal(invoice.getDiscountTotal().getAmount());
         e.setTotal(invoice.getTotal().getAmount());
+        // Persist outstanding as amount_due (schema column); domain tracks amountPaid
+        e.setAmountDue(invoice.getBalanceDue().getAmount());
         return e;
     }
 
@@ -77,6 +80,9 @@ public final class InvoiceMapper {
                 ))
                 .toList();
 
+        // amountPaid = total - amount_due (amount_due is outstanding balance)
+        Money amountPaid = resolveAmountPaid(e, lines);
+
         return new Invoice(
                 InvoiceId.of(e.getId()),
                 e.getInvoiceNumber(),
@@ -94,7 +100,41 @@ public final class InvoiceMapper {
                 e.getStatus() == null ? InvoiceStatus.DRAFT : e.getStatus(),
                 e.getIssuedAt(),
                 e.getWrittenOffAt(),
+                amountPaid,
                 lines
         );
+    }
+
+    /**
+     * Derives amountPaid from stored amount_due using the same total formula as
+     * {@link Invoice#getTotal()} (subtotal of line totals + tax total).
+     * When amount_due is null (legacy rows), assume nothing paid.
+     */
+    private Money resolveAmountPaid(InvoiceEntity e, List<InvoiceLine> lines) {
+        String currency = e.getCurrencyCode();
+        Money total;
+        if (lines.isEmpty() && e.getTotal() != null) {
+            // List views may omit lines; use denormalized total column
+            total = Money.of(e.getTotal(), currency);
+        } else {
+            Money subtotal = Money.of(BigDecimal.ZERO, currency);
+            Money taxTotal = Money.of(BigDecimal.ZERO, currency);
+            for (InvoiceLine l : lines) {
+                subtotal = subtotal.add(l.getLineTotal());
+                taxTotal = taxTotal.add(l.getTaxAmount());
+            }
+            total = subtotal.add(taxTotal);
+        }
+        if (e.getAmountDue() == null) {
+            return Money.of(BigDecimal.ZERO, currency);
+        }
+        BigDecimal paid = total.getAmount().subtract(e.getAmountDue());
+        if (paid.signum() < 0) {
+            paid = BigDecimal.ZERO;
+        }
+        if (paid.compareTo(total.getAmount()) > 0) {
+            paid = total.getAmount();
+        }
+        return Money.of(paid, currency);
     }
 }

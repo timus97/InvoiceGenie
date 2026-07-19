@@ -6,6 +6,7 @@ import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceLine;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
+import com.invoicegenie.ar.domain.model.invoice.InvoiceStatus;
 import com.invoicegenie.ar.domain.model.payment.Payment;
 import com.invoicegenie.ar.domain.model.payment.PaymentId;
 import com.invoicegenie.ar.domain.model.payment.PaymentMethod;
@@ -86,7 +87,36 @@ class PaymentAllocationServiceTest {
 
             assertTrue(result.isPresent());
             assertEquals(1, result.get().allocations().size());
+            assertEquals(InvoiceStatus.PARTIALLY_PAID, invoice.getStatus());
+            assertEquals(Money.of("500.00", "USD"), invoice.getAmountPaid());
+            assertEquals(Money.of("500.00", "USD"), invoice.getBalanceDue());
             verify(paymentRepository).save(eq(tenantId), any());
+            verify(invoiceRepository).save(eq(tenantId), eq(invoice));
+        }
+
+        @Test
+        @DisplayName("should not over-allocate across multiple payments (cumulative amountPaid)")
+        void shouldNotOverAllocateAcrossMultiplePayments() {
+            Invoice invoice = createInvoice("INV-001", Money.of("1000.00", "USD"));
+            // Simulate prior payment already applied on the aggregate
+            invoice.recordPaymentApplied(Money.of("700.00", "USD"));
+
+            Payment payment2 = createPayment(Money.of("500.00", "USD"));
+            when(paymentRepository.findByTenantAndId(tenantId, paymentId)).thenReturn(Optional.of(payment2));
+            when(invoiceRepository.findOpenByTenantAndCustomer(tenantId, customerId)).thenReturn(List.of(invoice));
+
+            Optional<PaymentAllocationUseCase.AllocationResult> result = service.autoAllocateFIFO(
+                    tenantId, paymentId, UUID.randomUUID(), null);
+
+            assertTrue(result.isPresent());
+            assertEquals(1, result.get().allocations().size());
+            // Only remaining 300 should be allocated, not full 500
+            assertEquals(Money.of("300.00", "USD"), result.get().allocations().get(0).amount());
+            assertEquals(InvoiceStatus.PAID, invoice.getStatus());
+            assertEquals(Money.of("1000.00", "USD"), invoice.getAmountPaid());
+            assertEquals(Money.of("0.00", "USD"), invoice.getBalanceDue());
+            // 200 remains unallocated on payment
+            assertEquals(Money.of("200.00", "USD"), result.get().remainingUnallocated());
         }
 
         @Test
@@ -146,6 +176,36 @@ class PaymentAllocationServiceTest {
                     tenantId, paymentId, requests, UUID.randomUUID(), null);
 
             assertTrue(result.isPresent());
+            assertEquals(1, result.get().allocations().size());
+            assertEquals(InvoiceStatus.PARTIALLY_PAID, invoice1.getStatus());
+            assertEquals(Money.of("500.00", "USD"), invoice1.getAmountPaid());
+            verify(invoiceRepository).save(eq(tenantId), eq(invoice1));
+        }
+
+        @Test
+        @DisplayName("should reject manual allocation that exceeds remaining balance")
+        void shouldRejectManualOverAllocation() {
+            Payment payment = createPayment(Money.of("1000.00", "USD"));
+            Invoice invoice = createInvoice("INV-001", Money.of("1000.00", "USD"));
+            invoice.recordPaymentApplied(Money.of("800.00", "USD"));
+
+            when(paymentRepository.findByTenantAndId(tenantId, paymentId)).thenReturn(Optional.of(payment));
+            when(invoiceRepository.findByTenantAndId(eq(tenantId), eq(invoice.getId()))).thenReturn(Optional.of(invoice));
+
+            List<PaymentAllocationUseCase.ManualAllocationRequest> requests = List.of(
+                    new PaymentAllocationUseCase.ManualAllocationRequest(
+                            invoice.getId(), Money.of("300.00", "USD"), "Too much")
+            );
+
+            Optional<PaymentAllocationUseCase.AllocationResult> result = service.manualAllocate(
+                    tenantId, paymentId, requests, UUID.randomUUID(), null);
+
+            assertTrue(result.isPresent());
+            assertTrue(result.get().hasErrors());
+            assertEquals(0, result.get().allocations().size());
+            // amountPaid unchanged (still 800 from prior)
+            assertEquals(Money.of("800.00", "USD"), invoice.getAmountPaid());
+            verify(paymentRepository, never()).save(any(), any());
         }
     }
 

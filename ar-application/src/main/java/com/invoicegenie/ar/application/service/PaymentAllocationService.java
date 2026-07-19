@@ -81,20 +81,16 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
         // Save payment (with version check via optimistic locking in repository)
         if (!engineResult.allocations().isEmpty()) {
             paymentRepository.save(tenantId, payment);
-            
-            // Update invoice balances (mark as partially/fully paid)
-            // Group allocations by invoice to calculate remaining balance per invoice
-            for (Invoice invoice : customerInvoices) {
-                // Sum allocations for this invoice from the engine result
-                java.math.BigDecimal allocatedToInvoice = engineResult.allocations().stream()
-                        .filter(a -> a.getInvoiceId().equals(invoice.getId()))
-                        .map(a -> a.getAmount().getAmount())
-                        .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
-                
-                java.math.BigDecimal remaining = invoice.getTotal().getAmount().subtract(allocatedToInvoice);
-                boolean fullyPaid = remaining.signum() <= 0;
-                invoice.applyPaymentStatus(fullyPaid);
-                invoiceRepository.save(tenantId, invoice);
+
+            // Apply each allocation to the invoice aggregate (cumulative amountPaid)
+            for (PaymentAllocation allocation : engineResult.allocations()) {
+                customerInvoices.stream()
+                        .filter(inv -> inv.getId().equals(allocation.getInvoiceId()))
+                        .findFirst()
+                        .ifPresent(invoice -> {
+                            invoice.recordPaymentApplied(allocation.getAmount());
+                            invoiceRepository.save(tenantId, invoice);
+                        });
             }
         }
 
@@ -134,40 +130,79 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
         }
         Payment payment = paymentOpt.get();
 
-        // Convert requests to engine requests
-        List<PaymentAllocationEngine.ManualAllocationRequest> engineRequests = requests.stream()
-                .map(r -> new PaymentAllocationEngine.ManualAllocationRequest(r.invoiceId(), r.amount(), r.notes()))
-                .toList();
+        // Load invoices and validate each request against outstanding balance (prevents over-allocation)
+        java.util.Map<InvoiceId, Invoice> invoicesById = new java.util.HashMap<>();
+        java.util.Map<InvoiceId, Money> remainingByInvoice = new java.util.HashMap<>();
+        List<PaymentAllocationEngine.ManualAllocationRequest> engineRequests = new ArrayList<>();
+        List<String> preErrors = new ArrayList<>();
 
-        // Perform allocation
-        PaymentAllocationEngine.AllocationResult engineResult = allocationEngine.manualAllocate(
-                tenantId, payment, engineRequests, allocatedBy);
+        for (ManualAllocationRequest request : requests) {
+            Invoice invoice = invoicesById.computeIfAbsent(request.invoiceId(), id ->
+                    invoiceRepository.findByTenantAndId(tenantId, id).orElse(null));
+            if (invoice == null) {
+                preErrors.add("Invoice not found: " + request.invoiceId().getValue());
+                continue;
+            }
+            if (!invoice.canReceivePayments()) {
+                preErrors.add("Invoice cannot receive payments: " + request.invoiceId().getValue());
+                continue;
+            }
+            Money remaining = remainingByInvoice.computeIfAbsent(request.invoiceId(),
+                    id -> invoice.getBalanceDue());
+            if (request.amount().getAmount().compareTo(remaining.getAmount()) > 0) {
+                preErrors.add("Allocation exceeds balance due for invoice "
+                        + request.invoiceId().getValue()
+                        + " (requested " + request.amount().getAmount()
+                        + ", remaining " + remaining.getAmount() + ")");
+                continue;
+            }
+            remainingByInvoice.put(request.invoiceId(), remaining.subtract(request.amount()));
+            engineRequests.add(new PaymentAllocationEngine.ManualAllocationRequest(
+                    request.invoiceId(), request.amount(), request.notes()));
+        }
+
+        // Perform allocation for validated requests
+        PaymentAllocationEngine.AllocationResult engineResult = engineRequests.isEmpty()
+                ? new PaymentAllocationEngine.AllocationResult(
+                        List.of(),
+                        Money.of("0.00", payment.getAmount().getCurrencyCode()),
+                        payment.getAmountUnallocated(),
+                        List.of())
+                : allocationEngine.manualAllocate(tenantId, payment, engineRequests, allocatedBy);
 
         // Save payment
         if (!engineResult.allocations().isEmpty()) {
             paymentRepository.save(tenantId, payment);
-            
-            // Update invoice balances (mark as partially/fully paid)
-            // Load invoices that were allocated to
-            java.util.Set<InvoiceId> affectedInvoiceIds = engineResult.allocations().stream()
-                    .map(PaymentAllocation::getInvoiceId)
-                    .collect(java.util.stream.Collectors.toSet());
-            
-            for (InvoiceId invoiceId : affectedInvoiceIds) {
-                invoiceRepository.findByTenantAndId(tenantId, invoiceId)
-                        .ifPresent(invoice -> {
-                            // Sum allocations for this invoice
-                            java.math.BigDecimal allocated = engineResult.allocations().stream()
-                                    .filter(a -> a.getInvoiceId().equals(invoiceId))
-                                    .map(a -> a.getAmount().getAmount())
-                                    .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
-                            
-                            java.math.BigDecimal remaining = invoice.getTotal().getAmount().subtract(allocated);
-                            boolean fullyPaid = remaining.signum() <= 0;
-                            invoice.applyPaymentStatus(fullyPaid);
-                            invoiceRepository.save(tenantId, invoice);
-                        });
+
+            // Apply each allocation to the invoice aggregate (cumulative amountPaid)
+            for (PaymentAllocation allocation : engineResult.allocations()) {
+                Invoice invoice = invoicesById.get(allocation.getInvoiceId());
+                if (invoice != null) {
+                    invoice.recordPaymentApplied(allocation.getAmount());
+                    invoiceRepository.save(tenantId, invoice);
+                }
             }
+        }
+
+        // Merge pre-validation errors into result
+        if (!preErrors.isEmpty()) {
+            List<String> allErrors = new ArrayList<>(preErrors);
+            engineResult.errors().forEach(e -> allErrors.add(e.reason()));
+            AllocationResult result = new AllocationResult(
+                    payment.getId(),
+                    engineResult.allocations().stream()
+                            .map(a -> new AllocationResult.AllocationDetail(a.getInvoiceId(), a.getAmount(), a.getId()))
+                            .toList(),
+                    engineResult.totalAllocated(),
+                    engineResult.remainingUnallocated(),
+                    allErrors,
+                    payment.getVersion()
+            );
+            if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+                String key = tenantId.getValue() + ":" + paymentId.getValue() + ":" + idempotencyKey;
+                idempotencyCache.put(key, result);
+            }
+            return Optional.of(result);
         }
 
         // Build result

@@ -23,7 +23,7 @@ import java.util.Objects;
  *   <li>Totals: subtotal = sum(line totals); total = subtotal + tax_total (discount already applied per line)</li>
  *   <li>Status transitions: DRAFT → ISSUED → (PARTIALLY_PAID|PAID|OVERDUE), OVERDUE → WRITTEN_OFF</li>
  *   <li>Cannot modify lines after ISSUED (create credit memo for corrections)</li>
- *   <li>amountDue is managed by application layer based on allocations (not stored here)</li>
+ *   <li>amountPaid is tracked on the aggregate; balanceDue = total - amountPaid</li>
  * </ul>
  */
 public final class Invoice {
@@ -46,6 +46,9 @@ public final class Invoice {
     private Instant issuedAt;
     private Instant writtenOffAt;
 
+    /** Cumulative amount applied from payment allocations (same currency as invoice). */
+    private Money amountPaid;
+
     private final List<InvoiceLine> lines = new ArrayList<>();
 
     private static final InvoiceLifecycleEngine LIFECYCLE = new InvoiceLifecycleEngine();
@@ -55,18 +58,33 @@ public final class Invoice {
                    LocalDate issueDate, LocalDate dueDate, List<InvoiceLine> lines) {
         this(id, invoiceNumber, customerRef, currencyCode, issueDate, dueDate, null, null,
                 Instant.now(), Instant.now(), 1L, null, null, InvoiceStatus.DRAFT, null, null,
-                lines != null ? lines : List.of());
+                null, lines != null ? lines : List.of());
         if (dueDate.isBefore(issueDate)) {
             throw new IllegalArgumentException("dueDate cannot be before issueDate");
         }
     }
 
-    /** For reconstitution from persistence. */
+    /**
+     * For reconstitution from persistence (amountPaid defaults to zero when null).
+     */
     public Invoice(InvoiceId id, String invoiceNumber, String customerRef, String currencyCode,
                    LocalDate issueDate, LocalDate dueDate, LocalDate periodStart, LocalDate periodEnd,
                    Instant createdAt, Instant updatedAt, long version,
                    String notes, String terms, InvoiceStatus status,
                    Instant issuedAt, Instant writtenOffAt,
+                   List<InvoiceLine> lines) {
+        this(id, invoiceNumber, customerRef, currencyCode, issueDate, dueDate, periodStart, periodEnd,
+                createdAt, updatedAt, version, notes, terms, status, issuedAt, writtenOffAt,
+                null, lines);
+    }
+
+    /** For reconstitution from persistence with tracked amount paid. */
+    public Invoice(InvoiceId id, String invoiceNumber, String customerRef, String currencyCode,
+                   LocalDate issueDate, LocalDate dueDate, LocalDate periodStart, LocalDate periodEnd,
+                   Instant createdAt, Instant updatedAt, long version,
+                   String notes, String terms, InvoiceStatus status,
+                   Instant issuedAt, Instant writtenOffAt,
+                   Money amountPaid,
                    List<InvoiceLine> lines) {
         this.id = Objects.requireNonNull(id);
         this.invoiceNumber = Objects.requireNonNull(invoiceNumber);
@@ -98,6 +116,15 @@ public final class Invoice {
             for (InvoiceLine l : lines) requireSameCurrency(l.getAmount());
             this.lines.addAll(lines);
         }
+        if (amountPaid == null) {
+            this.amountPaid = Money.of(BigDecimal.ZERO, this.currencyCode);
+        } else {
+            requireSameCurrency(amountPaid);
+            if (amountPaid.getAmount().signum() < 0) {
+                throw new IllegalArgumentException("amountPaid cannot be negative");
+            }
+            this.amountPaid = amountPaid;
+        }
         validateState();
     }
 
@@ -119,6 +146,8 @@ public final class Invoice {
     public InvoiceStatus getStatus() { return status; }
     public Instant getIssuedAt() { return issuedAt; }
     public Instant getWrittenOffAt() { return writtenOffAt; }
+
+    public Money getAmountPaid() { return amountPaid; }
 
     public List<InvoiceLine> getLines() { return Collections.unmodifiableList(lines); }
 
@@ -149,15 +178,15 @@ public final class Invoice {
 
     /**
      * Returns the outstanding balance (amount due) for this invoice.
-     * In the domain model, this is the total amount; actual balance is calculated
-     * by the application layer based on allocations.
-     * For simplicity, we return the total here; the PaymentAllocationService
-     * will calculate the actual balance due based on allocations.
+     * balanceDue = total - amountPaid (never negative).
      */
     public Money getBalanceDue() {
-        // This is a simplified version; in production, balance would be calculated
-        // based on allocations. For now, return total.
-        return getTotal();
+        Money total = getTotal();
+        Money remaining = total.subtract(amountPaid);
+        if (remaining.getAmount().signum() < 0) {
+            return Money.of(BigDecimal.ZERO, currencyCode);
+        }
+        return remaining;
     }
 
     // ==================== Business Logic ====================
@@ -289,14 +318,68 @@ public final class Invoice {
 
     /**
      * Transitions to PARTIALLY_PAID or PAID based on external allocation info.
-     * Called by application layer after allocations change.
+     * Idempotent when already in the target status (needed for successive partial payments).
      */
     public void applyPaymentStatus(boolean fullyPaid) {
         if (fullyPaid) {
-            transitionTo(LIFECYCLE.markPaid());
+            if (status != InvoiceStatus.PAID) {
+                transitionTo(LIFECYCLE.markPaid());
+            }
             return;
         }
-        transitionTo(LIFECYCLE.markPartiallyPaid());
+        if (status != InvoiceStatus.PARTIALLY_PAID) {
+            transitionTo(LIFECYCLE.markPartiallyPaid());
+        }
+    }
+
+    /**
+     * Records a payment allocation against this invoice.
+     * Increases amountPaid, rejects over-allocation, and updates status.
+     *
+     * @param amount allocation amount (must be &gt; 0 and &le; balance due)
+     */
+    public void recordPaymentApplied(Money amount) {
+        Objects.requireNonNull(amount, "amount");
+        requireSameCurrency(amount);
+        if (amount.getAmount().signum() <= 0) {
+            throw new IllegalArgumentException("allocation amount must be positive");
+        }
+        if (!canReceivePayments()) {
+            throw new IllegalStateException("Invoice cannot receive payments in status: " + status);
+        }
+        Money balance = getBalanceDue();
+        if (amount.getAmount().compareTo(balance.getAmount()) > 0) {
+            throw new IllegalArgumentException(
+                    "allocation amount " + amount.getAmount()
+                            + " exceeds balance due " + balance.getAmount());
+        }
+        this.amountPaid = this.amountPaid.add(amount);
+        boolean fullyPaid = getBalanceDue().getAmount().signum() == 0;
+        InvoiceStatus before = this.status;
+        applyPaymentStatus(fullyPaid);
+        // amountPaid always changed; touch if status did not (applyPaymentStatus already touches on transition)
+        if (this.status == before) {
+            touch();
+        }
+    }
+
+    /**
+     * Reverses a previously applied allocation (e.g. allocation void / partial bounce).
+     * Decreases amountPaid and leaves status management to caller via reopen or applyPaymentStatus.
+     */
+    public void reverseAllocation(Money amount) {
+        Objects.requireNonNull(amount, "amount");
+        requireSameCurrency(amount);
+        if (amount.getAmount().signum() <= 0) {
+            throw new IllegalArgumentException("reversal amount must be positive");
+        }
+        if (amount.getAmount().compareTo(amountPaid.getAmount()) > 0) {
+            throw new IllegalArgumentException(
+                    "reversal amount " + amount.getAmount()
+                            + " exceeds amount paid " + amountPaid.getAmount());
+        }
+        this.amountPaid = this.amountPaid.subtract(amount);
+        touch();
     }
 
     public boolean canReceivePayments() {
@@ -306,11 +389,13 @@ public final class Invoice {
     /**
      * Reopen invoice after payment reversal (e.g., cheque bounce).
      * Only allowed from PAID or PARTIALLY_PAID status.
+     * Clears amountPaid so balance due returns to full total (caller may re-apply remaining valid allocations).
      */
     public void reopen(String reason) {
         if (status != InvoiceStatus.PAID && status != InvoiceStatus.PARTIALLY_PAID) {
             throw new IllegalStateException("Can only reopen PAID or PARTIALLY_PAID invoices, current: " + status);
         }
+        this.amountPaid = Money.of(BigDecimal.ZERO, currencyCode);
         transitionTo(LIFECYCLE.reopen());
         if (reason != null && !reason.isBlank()) {
             this.notes = (this.notes != null ? this.notes + "\n" : "") + "[REOPENED] " + reason;
@@ -365,6 +450,12 @@ public final class Invoice {
         }
         if (status == InvoiceStatus.DRAFT && issuedAt != null) {
             throw new IllegalStateException("Draft invoice cannot have issuedAt");
+        }
+        if (amountPaid != null && amountPaid.getAmount().signum() < 0) {
+            throw new IllegalStateException("amountPaid cannot be negative");
+        }
+        if (amountPaid != null && amountPaid.getAmount().compareTo(getTotal().getAmount()) > 0) {
+            throw new IllegalStateException("amountPaid cannot exceed invoice total");
         }
     }
 

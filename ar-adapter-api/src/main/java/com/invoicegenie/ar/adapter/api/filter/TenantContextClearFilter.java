@@ -2,8 +2,6 @@ package com.invoicegenie.ar.adapter.api.filter;
 
 import com.invoicegenie.shared.tenant.TenantContext;
 
-import jakarta.inject.Inject;
-import jakarta.persistence.EntityManager;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerResponseContext;
 import jakarta.ws.rs.container.ContainerResponseFilter;
@@ -16,9 +14,6 @@ import java.io.IOException;
  */
 @Provider
 public class TenantContextClearFilter implements ContainerResponseFilter {
-
-    @Inject
-    EntityManager em;
 
     @Override
     public void filter(ContainerRequestContext requestContext, ContainerResponseContext responseContext) throws IOException {

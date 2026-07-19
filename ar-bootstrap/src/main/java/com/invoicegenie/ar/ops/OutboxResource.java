@@ -1,10 +1,9 @@
-package com.invoicegenie.ar.adapter.api.rest;
+package com.invoicegenie.ar.ops;
 
 import com.invoicegenie.ar.adapter.messaging.OutboxWorker;
 import com.invoicegenie.ar.domain.model.outbox.OutboxEntry;
 import com.invoicegenie.ar.domain.model.outbox.OutboxRepository;
 import com.invoicegenie.ar.domain.model.outbox.OutboxStatus;
-import com.invoicegenie.shared.tenant.TenantContext;
 
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
@@ -19,7 +18,8 @@ import java.util.Map;
 
 /**
  * REST adapter: Outbox monitoring and testing endpoints.
- * Provides visibility into the transactional outbox for debugging and testing.
+ * Lives in ar-bootstrap so ar-adapter-api does not depend on ar-adapter-messaging.
+ * Path remains /api/v1/outbox for API compatibility.
  */
 @Path("/api/v1/outbox")
 @Produces(MediaType.APPLICATION_JSON)

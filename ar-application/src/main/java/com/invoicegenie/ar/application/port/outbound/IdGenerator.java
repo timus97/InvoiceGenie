@@ -1,6 +1,7 @@
 package com.invoicegenie.ar.application.port.outbound;
 
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
+import com.invoicegenie.ar.domain.model.payment.PaymentId;
 import com.invoicegenie.shared.domain.UuidV7;
 
 import java.util.UUID;
@@ -14,5 +15,9 @@ public interface IdGenerator {
 
     default UUID newUuid() {
         return UuidV7.generate();
+    }
+
+    default PaymentId newPaymentId() {
+        return PaymentId.of(UuidV7.generate());
     }
 }

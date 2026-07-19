@@ -3,8 +3,6 @@ package com.invoicegenie.ar.adapter.api.filter;
 import com.invoicegenie.shared.domain.TenantId;
 import com.invoicegenie.shared.tenant.TenantContext;
 
-import jakarta.inject.Inject;
-import jakarta.persistence.EntityManager;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.core.Response;
@@ -21,9 +19,6 @@ import java.util.Optional;
 public class TenantFilter implements ContainerRequestFilter {
 
     private static final String TENANT_HEADER = "X-Tenant-Id";
-
-    @Inject
-    EntityManager em;
 
     @Override
     public void filter(ContainerRequestContext requestContext) throws IOException {

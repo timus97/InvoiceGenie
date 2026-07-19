@@ -20,11 +20,30 @@ public interface IssueInvoiceUseCase {
 
     record IssueInvoiceCommand(
             String invoiceNumber,
+            String customerId,
             String customerRef,
             String currencyCode,
             LocalDate dueDate,
             List<LineItem> lines
     ) {
+        public IssueInvoiceCommand {
+            if (invoiceNumber == null || invoiceNumber.isBlank()) {
+                throw new IllegalArgumentException("invoiceNumber is required");
+            }
+            if (customerId == null || customerId.isBlank()) {
+                throw new IllegalArgumentException("customerId is required");
+            }
+            if (dueDate == null) {
+                throw new IllegalArgumentException("dueDate is required");
+            }
+            if (lines == null || lines.isEmpty()) {
+                throw new IllegalArgumentException("at least one line is required");
+            }
+            // Default customerRef to customerId for display when not provided
+            if (customerRef == null || customerRef.isBlank()) {
+                customerRef = customerId;
+            }
+        }
         public record LineItem(String description, BigDecimal amount) {}
     }
 }

@@ -44,8 +44,7 @@ class EndToEndWorkflowTest extends WorkflowTestBase {
             UUID custId = createCustomer("CUST-001", "Acme Corp");
 
             // WHEN: Invoice is created (API creates + issues in one step)
-            // customerRef must match customerId for allocation to find invoices
-            UUID invoiceId = createInvoice("INV-001", custId.toString(), "2026-04-30", 1000.00);
+            UUID invoiceId = createInvoice("INV-001", custId, "2026-04-30", 1000.00);
 
             // THEN: Invoice is ISSUED with full balance (total=1000)
             assertInvoiceStatus(invoiceId, "ISSUED");
@@ -67,8 +66,7 @@ class EndToEndWorkflowTest extends WorkflowTestBase {
         @DisplayName("GIVEN invoice WHEN partial payment THEN invoice is PARTIALLY_PAID")
         void partialPaymentLeavesInvoicePartiallyPaid() {
             UUID custId = createCustomer("CUST-002", "Beta Inc");
-            // customerRef must match customerId for allocation to find invoices
-            UUID invoiceId = createInvoice("INV-002", custId.toString(), "2026-05-01", 2000.00);
+            UUID invoiceId = createInvoice("INV-002", custId, "2026-05-01", 2000.00);
 
             UUID paymentId = createPayment("PAY-002", custId, 750.00, "CHECK");
             allocatePaymentManual(paymentId, invoiceId, 750.00);
@@ -88,10 +86,9 @@ class EndToEndWorkflowTest extends WorkflowTestBase {
             UUID custId = createCustomer("CUST-003", "Gamma LLC");
             
             // Create 3 invoices (API creates + issues in one step)
-            // customerRef must match customerId for allocation to find invoices
-            UUID inv1 = createInvoice("INV-A1", custId.toString(), "2026-04-01", 100.00);
-            UUID inv2 = createInvoice("INV-A2", custId.toString(), "2026-04-02", 200.00);
-            UUID inv3 = createInvoice("INV-A3", custId.toString(), "2026-04-03", 300.00);
+            UUID inv1 = createInvoice("INV-A1", custId, "2026-04-01", 100.00);
+            UUID inv2 = createInvoice("INV-A2", custId, "2026-04-02", 200.00);
+            UUID inv3 = createInvoice("INV-A3", custId, "2026-04-03", 300.00);
 
             // Payment of 700 (more than total 600)
             UUID paymentId = createPayment("PAY-003", custId, 700.00, "BANK_TRANSFER");
@@ -115,7 +112,7 @@ class EndToEndWorkflowTest extends WorkflowTestBase {
         @DisplayName("GIVEN issued invoice WHEN mark overdue THEN status OVERDUE")
         void markOverdue() {
             UUID custId = createCustomer("CUST-004", "Delta Co");
-            UUID invoiceId = createInvoice("INV-004", "Delta", "2020-01-01", 500.00); // past due (already issued by create)
+            UUID invoiceId = createInvoice("INV-004", custId, "2020-01-01", 500.00); // past due (already issued by create)
 
             post("/api/v1/invoices/" + invoiceId + "/overdue?today=2026-01-01", "{}")
                     .then().statusCode(200);
@@ -127,7 +124,7 @@ class EndToEndWorkflowTest extends WorkflowTestBase {
         @DisplayName("GIVEN overdue invoice WHEN write off THEN status WRITTEN_OFF")
         void writeOff() {
             UUID custId = createCustomer("CUST-005", "Epsilon Ltd");
-            UUID invoiceId = createInvoice("INV-005", "Epsilon", "2020-01-01", 500.00); // already issued
+            UUID invoiceId = createInvoice("INV-005", custId, "2020-01-01", 500.00); // already issued
             post("/api/v1/invoices/" + invoiceId + "/overdue?today=2026-01-01", "{}").then().statusCode(200);
 
             String body = "{\"reason\": \"Uncollectible\"}";
@@ -174,7 +171,7 @@ class EndToEndWorkflowTest extends WorkflowTestBase {
         @DisplayName("GIVEN invoice issued WHEN check AR balance THEN reflects invoice total")
         void ledgerReflectsInvoice() {
             UUID custId = createCustomer("CUST-008", "Theta Co");
-            createInvoice("INV-008", "Theta", "2026-05-01", 1500.00);
+            createInvoice("INV-008", custId, "2026-05-01", 1500.00);
             // Note: Invoice is created in DRAFT; need to issue for ledger entry
             // (Ledger entries are created on issue via event; simplified here)
 
@@ -186,20 +183,33 @@ class EndToEndWorkflowTest extends WorkflowTestBase {
     }
 
     @Nested
-    @DisplayName("Payment via Invoice Shortcut (Legacy)")
+    @DisplayName("Payment via Invoice Shortcut (Unified)")
     class InvoicePaymentShortcut {
 
         @Test
-        @DisplayName("GIVEN invoice WHEN apply payment via invoice endpoint THEN marked PAID")
+        @DisplayName("GIVEN invoice WHEN apply payment via invoice endpoint THEN creates Payment and marks PAID")
         void invoiceQuickPay() {
             UUID custId = createCustomer("CUST-009", "Iota LLC");
-            UUID invoiceId = createInvoice("INV-009", "Iota", "2026-05-01", 500.00); // already issued
+            UUID invoiceId = createInvoice("INV-009", custId, "2026-05-01", 500.00); // already issued
 
-            // Legacy shortcut: marks invoice PAID without Payment aggregate
+            // Unified path: creates Payment + allocates (PaymentRecorded + PaymentAllocated)
             post("/api/v1/invoices/" + invoiceId + "/payment", "{\"fullyPaid\": true}")
                     .then().statusCode(200);
 
             assertInvoiceStatus(invoiceId, "PAID");
+        }
+
+        @Test
+        @DisplayName("GIVEN invoice WHEN partial amount via invoice endpoint THEN PARTIALLY_PAID")
+        void invoicePartialPay() {
+            UUID custId = createCustomer("CUST-010", "Kappa LLC");
+            UUID invoiceId = createInvoice("INV-010", custId, "2026-05-01", 500.00);
+
+            post("/api/v1/invoices/" + invoiceId + "/payment",
+                    "{\"fullyPaid\": false, \"amount\": 200.00}")
+                    .then().statusCode(200);
+
+            assertInvoiceStatus(invoiceId, "PARTIALLY_PAID");
         }
     }
 }

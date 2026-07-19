@@ -61,7 +61,7 @@ class PaymentAllocationServiceTest {
     }
 
     private Invoice createInvoice(String number, Money total) {
-        Invoice invoice = new Invoice(InvoiceId.generate(), number, "CUST001", total.getCurrencyCode(),
+        Invoice invoice = new Invoice(InvoiceId.generate(), number, null, "CUST001", total.getCurrencyCode(),
                 LocalDate.now(), LocalDate.now().plusDays(30), List.of());
         invoice.addLine(new InvoiceLine(1, "Service", total));
         invoice.issue();

@@ -1,5 +1,6 @@
 package com.invoicegenie.ar;
 
+import com.invoicegenie.ar.application.port.inbound.ApplyInvoicePaymentUseCase;
 import com.invoicegenie.ar.application.port.inbound.GetInvoiceUseCase;
 import com.invoicegenie.ar.application.port.inbound.InvoiceLifecycleUseCase;
 import com.invoicegenie.ar.application.port.inbound.IssueInvoiceUseCase;
@@ -8,6 +9,7 @@ import com.invoicegenie.ar.application.port.inbound.PaymentAllocationUseCase;
 import com.invoicegenie.ar.application.port.inbound.RecordPaymentUseCase;
 import com.invoicegenie.ar.application.port.outbound.EventPublisher;
 import com.invoicegenie.ar.application.port.outbound.IdGenerator;
+import com.invoicegenie.ar.application.service.ApplyInvoicePaymentService;
 import com.invoicegenie.ar.application.service.GetInvoiceService;
 import com.invoicegenie.ar.application.service.InvoiceLifecycleService;
 import com.invoicegenie.ar.application.service.IssueInvoiceService;
@@ -44,10 +46,11 @@ public class ArApplication {
     @Produces
     @ApplicationScoped
     public IssueInvoiceUseCase issueInvoiceUseCase(InvoiceRepository invoiceRepository,
+                                                   CustomerRepository customerRepository,
                                                    IdGenerator idGenerator,
                                                    EventPublisher eventPublisher,
                                                    AuditRepository auditRepository) {
-        return new IssueInvoiceService(invoiceRepository, idGenerator, eventPublisher, auditRepository);
+        return new IssueInvoiceService(invoiceRepository, customerRepository, idGenerator, eventPublisher, auditRepository);
     }
 
     @Produces
@@ -65,8 +68,9 @@ public class ArApplication {
     @Produces
     @ApplicationScoped
     public InvoiceLifecycleUseCase lifecycleUseCase(InvoiceRepository invoiceRepository,
-                                                     AuditRepository auditRepository) {
-        return new InvoiceLifecycleService(invoiceRepository, auditRepository);
+                                                     AuditRepository auditRepository,
+                                                     ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase) {
+        return new InvoiceLifecycleService(invoiceRepository, auditRepository, applyInvoicePaymentUseCase);
     }
 
     // ── Payment use cases ──────────────────────────────────────────────────
@@ -87,6 +91,14 @@ public class ArApplication {
                                                      AuditRepository auditRepository,
                                                      EventPublisher eventPublisher) {
         return new RecordPaymentService(paymentRepository, customerRepository, idGenerator, auditRepository, eventPublisher);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase(InvoiceRepository invoiceRepository,
+                                                                 RecordPaymentUseCase recordPaymentUseCase,
+                                                                 PaymentAllocationUseCase paymentAllocationUseCase) {
+        return new ApplyInvoicePaymentService(invoiceRepository, recordPaymentUseCase, paymentAllocationUseCase);
     }
 
     // ── Domain services (plain Java — no CDI annotations in ar-domain) ─────

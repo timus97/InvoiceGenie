@@ -1,11 +1,12 @@
 package com.invoicegenie.ar.application.service;
 
-import com.invoicegenie.ar.domain.model.outbox.AuditRepository;
+import com.invoicegenie.ar.application.port.inbound.ApplyInvoicePaymentUseCase;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceLine;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceStatus;
+import com.invoicegenie.ar.domain.model.outbox.AuditRepository;
 import com.invoicegenie.shared.domain.Money;
 import com.invoicegenie.shared.domain.TenantId;
 
@@ -37,19 +38,22 @@ class InvoiceLifecycleServiceTest {
     @Mock
     private AuditRepository auditRepository;
 
+    @Mock
+    private ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase;
+
     private InvoiceLifecycleService service;
     private TenantId tenantId;
     private InvoiceId invoiceId;
 
     @BeforeEach
     void setUp() {
-        service = new InvoiceLifecycleService(invoiceRepository, auditRepository);
+        service = new InvoiceLifecycleService(invoiceRepository, auditRepository, applyInvoicePaymentUseCase);
         tenantId = TenantId.of(UUID.randomUUID());
         invoiceId = InvoiceId.generate();
     }
 
     private Invoice createDraftInvoice() {
-        Invoice invoice = new Invoice(invoiceId, "INV-001", "CUST001", "USD",
+        Invoice invoice = new Invoice(invoiceId, "INV-001", null, "CUST001", "USD",
                 LocalDate.now(), LocalDate.now().plusDays(30), List.of());
         invoice.addLine(new InvoiceLine(1, "Service", Money.of("1000.00", "USD")));
         return invoice;
@@ -63,7 +67,7 @@ class InvoiceLifecycleServiceTest {
 
     private Invoice createOverdueInvoice() {
         // Create an invoice with a due date in the past
-        Invoice invoice = new Invoice(invoiceId, "INV-001", "CUST001", "USD",
+        Invoice invoice = new Invoice(invoiceId, "INV-001", null, "CUST001", "USD",
                 LocalDate.now().minusDays(60), LocalDate.now().minusDays(30), List.of());
         invoice.addLine(new InvoiceLine(1, "Service", Money.of("1000.00", "USD")));
         invoice.issue();
@@ -168,35 +172,42 @@ class InvoiceLifecycleServiceTest {
     class ApplyPayment {
 
         @Test
-        @DisplayName("should mark invoice as fully paid")
+        @DisplayName("should delegate full payment to ApplyInvoicePaymentUseCase")
         void shouldMarkInvoiceAsFullyPaid() {
             Invoice invoice = createIssuedInvoice();
-            when(invoiceRepository.findByTenantAndId(tenantId, invoiceId)).thenReturn(Optional.of(invoice));
+            invoice.recordPaymentApplied(invoice.getBalanceDue());
+            when(applyInvoicePaymentUseCase.apply(eq(tenantId), eq(invoiceId), any()))
+                    .thenReturn(Optional.of(invoice));
 
             Optional<Invoice> result = service.applyPayment(tenantId, invoiceId, true);
 
             assertTrue(result.isPresent());
             assertEquals(InvoiceStatus.PAID, result.get().getStatus());
-            verify(invoiceRepository).save(tenantId, invoice);
+            verify(applyInvoicePaymentUseCase).apply(eq(tenantId), eq(invoiceId),
+                    eq(new ApplyInvoicePaymentUseCase.ApplyPaymentCommand(null, true)));
         }
 
         @Test
-        @DisplayName("should mark invoice as partially paid")
+        @DisplayName("should delegate partial flag to ApplyInvoicePaymentUseCase")
         void shouldMarkInvoiceAsPartiallyPaid() {
             Invoice invoice = createIssuedInvoice();
-            when(invoiceRepository.findByTenantAndId(tenantId, invoiceId)).thenReturn(Optional.of(invoice));
+            invoice.recordPaymentApplied(Money.of("100.00", "USD"));
+            when(applyInvoicePaymentUseCase.apply(eq(tenantId), eq(invoiceId), any()))
+                    .thenReturn(Optional.of(invoice));
 
             Optional<Invoice> result = service.applyPayment(tenantId, invoiceId, false);
 
             assertTrue(result.isPresent());
             assertEquals(InvoiceStatus.PARTIALLY_PAID, result.get().getStatus());
-            verify(invoiceRepository).save(tenantId, invoice);
+            verify(applyInvoicePaymentUseCase).apply(eq(tenantId), eq(invoiceId),
+                    eq(new ApplyInvoicePaymentUseCase.ApplyPaymentCommand(null, false)));
         }
 
         @Test
         @DisplayName("should return empty when invoice not found")
         void shouldReturnEmptyWhenNotFound() {
-            when(invoiceRepository.findByTenantAndId(tenantId, invoiceId)).thenReturn(Optional.empty());
+            when(applyInvoicePaymentUseCase.apply(eq(tenantId), eq(invoiceId), any()))
+                    .thenReturn(Optional.empty());
 
             Optional<Invoice> result = service.applyPayment(tenantId, invoiceId, true);
 

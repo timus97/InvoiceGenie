@@ -87,16 +87,18 @@ public class InvoiceRepositoryAdapter implements InvoiceRepository {
 
     @Override
     public List<Invoice> findOpenByTenantAndCustomer(TenantId tenantId, CustomerId customerId) {
-        // Query by customerRef which stores the customer identifier
+        // Prefer customer_id; fall back to customer_ref = UUID string for legacy rows
         List<InvoiceEntity> entities = em.createQuery(
-                        "SELECT e FROM InvoiceEntity e WHERE e.tenantId = :tenantId AND e.customerRef = :customerRef " +
+                        "SELECT e FROM InvoiceEntity e WHERE e.tenantId = :tenantId " +
+                                "AND (e.customerId = :customerId OR e.customerRef = :customerRef) " +
                                 "AND e.status IN (:openStatuses) ORDER BY e.dueDate ASC, e.createdAt ASC",
                         InvoiceEntity.class)
                 .setParameter("tenantId", tenantId.getValue())
+                .setParameter("customerId", customerId.getValue())
                 .setParameter("customerRef", customerId.getValue().toString())
                 .setParameter("openStatuses", List.of(InvoiceStatus.ISSUED, InvoiceStatus.PARTIALLY_PAID, InvoiceStatus.OVERDUE))
                 .getResultList();
-        
+
         return entities.stream()
                 .map(e -> {
                     List<InvoiceLineEntity> lines = em.createQuery(

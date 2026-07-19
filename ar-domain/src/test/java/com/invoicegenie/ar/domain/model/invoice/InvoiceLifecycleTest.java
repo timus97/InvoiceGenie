@@ -24,7 +24,7 @@ class InvoiceLifecycleTest {
 
     @Test
     void failsToIssueWhenNoLines() {
-        Invoice invoice = new Invoice(InvoiceId.of(UUID.randomUUID()), "INV-EMPTY", "CUST-1", "USD",
+        Invoice invoice = new Invoice(InvoiceId.of(UUID.randomUUID()), "INV-EMPTY", null, "CUST-1", "USD",
                 LocalDate.now(), LocalDate.now().plusDays(10), List.of());
         assertThrows(IllegalStateException.class, invoice::issue);
     }
@@ -111,12 +111,12 @@ class InvoiceLifecycleTest {
 
     @Test
     void cannotSetDueDateBeforeIssueDate() {
-        assertThrows(IllegalArgumentException.class, () -> new Invoice(InvoiceId.of(UUID.randomUUID()), "INV-3", "CUST-1", "USD",
+        assertThrows(IllegalArgumentException.class, () -> new Invoice(InvoiceId.of(UUID.randomUUID()), "INV-3", null, "CUST-1", "USD",
                 LocalDate.of(2026, 4, 1), LocalDate.of(2026, 3, 1), List.of(line(1, "Line", "10.00"))));
     }
 
     private Invoice draftInvoice() {
-        return new Invoice(InvoiceId.of(UUID.randomUUID()), "INV-001", "CUST-1", "USD",
+        return new Invoice(InvoiceId.of(UUID.randomUUID()), "INV-001", null, "CUST-1", "USD",
                 LocalDate.now(), LocalDate.now().plusDays(30), List.of(line(1, "Design", "100.00")));
     }
 

@@ -1,5 +1,7 @@
 package com.invoicegenie.ar.adapter.api.rest;
 
+import com.invoicegenie.ar.adapter.api.dto.ErrorResponse;
+import com.invoicegenie.ar.application.port.inbound.AgingUseCase;
 import com.invoicegenie.ar.domain.model.invoice.AgingBucket;
 import com.invoicegenie.ar.domain.model.invoice.AgingReport;
 import com.invoicegenie.ar.domain.service.AgingService;
@@ -28,10 +30,10 @@ import java.util.stream.Collectors;
 @Tag(name = "Aging", description = "Aging reports and early payment discount")
 public class AgingResource {
 
-    private final AgingService agingService;
+    private final AgingUseCase agingUseCase;
 
-    public AgingResource(AgingService agingService) {
-        this.agingService = agingService;
+    public AgingResource(AgingUseCase agingUseCase) {
+        this.agingUseCase = agingUseCase;
     }
 
     @GET
@@ -39,11 +41,28 @@ public class AgingResource {
     public Response getAgingReport(@QueryParam("asOfDate") String asOfDateStr) {
         var tenantId = TenantContext.getCurrentTenant();
         LocalDate asOfDate = asOfDateStr != null ? LocalDate.parse(asOfDateStr) : LocalDate.now();
-        
-        // For demo, return empty report - in production would query open invoices
-        AgingReport report = new AgingReport(asOfDate, "USD");
-        AgingReport.AgingSummary summary = AgingReport.AgingSummary.from(report);
-        
+
+        AgingService.AgingReportResult result = agingUseCase.getReport(tenantId, asOfDate);
+        if (!result.success() || result.summary() == null) {
+            return Response.status(500)
+                    .entity(new ErrorResponse("AGING_ERROR",
+                            result.message() != null ? result.message() : "Failed to generate aging report"))
+                    .build();
+        }
+
+        AgingReport.AgingSummary summary = result.summary();
+        List<InvoiceDetailDto> invoices = result.report() != null
+                ? result.report().getInvoiceDetails().stream()
+                    .map(d -> new InvoiceDetailDto(
+                            d.invoiceId().toString(),
+                            d.invoiceNumber(),
+                            d.amountDue().getAmount(),
+                            d.dueDate().toString(),
+                            d.daysOverdue(),
+                            d.bucket().name()))
+                    .collect(Collectors.toList())
+                : List.of();
+
         return Response.ok(new AgingReportDto(
                 summary.asOfDate().toString(),
                 summary.currencyCode(),
@@ -57,7 +76,7 @@ public class AgingResource {
                 summary.count31To60(),
                 summary.count61To90(),
                 summary.count90Plus(),
-                List.of()
+                invoices
         )).build();
     }
 
@@ -76,16 +95,14 @@ public class AgingResource {
     @Path("/discount/calculate")
     @Operation(summary = "Calculate early payment discount")
     public Response calculateDiscount(DiscountRequestDto dto) {
-        var tenantId = TenantContext.getCurrentTenant();
-        
         try {
             Money amountDue = Money.of(dto.amount().toString(), dto.currencyCode() != null ? dto.currencyCode() : "USD");
             LocalDate dueDate = dto.dueDate() != null ? dto.dueDate() : LocalDate.now().plusDays(30);
             LocalDate today = dto.today() != null ? dto.today() : LocalDate.now();
-            
-            var result = agingService.calculateEarlyPaymentDiscount(
+
+            var result = agingUseCase.calculateEarlyPaymentDiscount(
                     UUID.randomUUID(), amountDue, dueDate, today);
-            
+
             return Response.ok(new DiscountResponseDto(
                     result.invoiceId().toString(),
                     result.originalAmount().getAmount(),
@@ -93,28 +110,25 @@ public class AgingResource {
                     result.discountedAmount().getAmount(),
                     result.eligible(),
                     result.reason(),
-                    agingService.EARLY_PAYMENT_DISCOUNT_RATE.toString()
+                    AgingService.EARLY_PAYMENT_DISCOUNT_RATE.toString()
             )).build();
         } catch (Exception e) {
-            return Response.status(400).entity(new ErrorDto("ERROR", e.getMessage())).build();
+            return Response.status(400).entity(new ErrorResponse("ERROR", e.getMessage())).build();
         }
     }
 
-    // DTOs
     public record AgingReportDto(String asOfDate, String currencyCode, BigDecimal grandTotal,
             BigDecimal total0To30, BigDecimal total31To60, BigDecimal total61To90, BigDecimal total90Plus,
             int totalCount, int count0To30, int count31To60, int count61To90, int count90Plus,
             List<InvoiceDetailDto> invoices) {}
-    
+
     public record InvoiceDetailDto(String invoiceId, String invoiceNumber, BigDecimal amountDue,
             String dueDate, int daysOverdue, String bucket) {}
-    
+
     public record BucketDto(String code, String label, boolean earlyPaymentEligible) {}
-    
+
     public record DiscountRequestDto(BigDecimal amount, String currencyCode, LocalDate dueDate, LocalDate today) {}
-    
+
     public record DiscountResponseDto(String invoiceId, BigDecimal originalAmount, BigDecimal discountAmount,
             BigDecimal discountedAmount, boolean eligible, String reason, String discountRate) {}
-    
-    public record ErrorDto(String code, String message) {}
 }

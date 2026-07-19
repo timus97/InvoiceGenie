@@ -171,4 +171,19 @@ class InvoiceRepositoryAdapterTest {
 
         assertTrue(result.isEmpty());
     }
+
+    @Test
+    void findOpenByTenant_ReturnsOpenInvoices() {
+        UUID tenantId = UUID.randomUUID();
+
+        TypedQuery<InvoiceEntity> query = mock(TypedQuery.class);
+        when(em.createQuery(contains("InvoiceEntity"), eq(InvoiceEntity.class))).thenReturn(query);
+        when(query.setParameter(anyString(), any())).thenReturn(query);
+        when(query.getResultList()).thenReturn(List.of());
+
+        List<Invoice> result = adapter.findOpenByTenant(TenantId.of(tenantId));
+
+        assertTrue(result.isEmpty());
+        verify(query).setParameter(eq("openStatuses"), any());
+    }
 }

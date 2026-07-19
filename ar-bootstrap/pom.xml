@@ -12,6 +12,12 @@
     <name>AR Bootstrap</name>
     <description>Quarkus app — wires adapters and config</description>
     <dependencies>
+        <!-- Explicit: ArApplication wires application services/ports -->
+        <dependency>
+            <groupId>com.invoicegenie</groupId>
+            <artifactId>ar-application</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <dependency>
             <groupId>com.invoicegenie</groupId>
             <artifactId>ar-adapter-api</artifactId>

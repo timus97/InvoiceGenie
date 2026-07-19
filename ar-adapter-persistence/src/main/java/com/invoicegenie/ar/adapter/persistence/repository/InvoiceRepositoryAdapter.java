@@ -76,9 +76,10 @@ public class InvoiceRepositoryAdapter implements InvoiceRepository {
         }
         List<InvoiceEntity> list = query.getResultList();
         boolean hasMore = list.size() > limit;
-        List<Invoice> items = list.stream().limit(limit)
-                .map(e -> mapper.toDomain(e, List.of()))
-                .toList();
+        // Load lines so domain rehydration (amountPaid vs total) stays valid — empty lines
+        // make getTotal()=0 and fail validateState when amountPaid > 0.
+        List<InvoiceEntity> pageEntities = list.stream().limit(limit).toList();
+        List<Invoice> items = loadWithLines(tenantId, pageEntities);
         Optional<PageCursor> next = hasMore && !items.isEmpty()
                 ? Optional.of(new PageCursor(items.get(items.size() - 1).getCreatedAt(), items.get(items.size() - 1).getId()))
                 : Optional.empty();

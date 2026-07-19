@@ -1,8 +1,8 @@
-# InvoiceGenie — Multi-Tenant AR Backend
+# InvoiceGenie — Multi-Tenant AR Backend + Web GUI
 
-Production-grade **Accounts Receivable** backend: Java 17, Quarkus, DDD, Hexagonal Architecture, strict multi-tenant isolation. Designed for millions of invoices.
+Production-grade **Accounts Receivable** stack: Java 17, Quarkus, DDD, Hexagonal Architecture, strict multi-tenant isolation — plus a **Next.js** console under `web/`.
 
-No UI in this repo; backend only. Extensible for future AP and GL modules.
+Extensible for future AP and GL modules.
 
 ---
 
@@ -12,6 +12,7 @@ No UI in this repo; backend only. Extensible for future AP and GL modules.
 |------|---------|-----------|---------|
 | **JDK** | 17+ (17 recommended) | Yes | Compile & run Quarkus |
 | **Maven** | 3.9+ | Yes | Multi-module build |
+| **Node.js** | 20+ | Yes (GUI) | Next.js web console in `web/` |
 | **Git** | Any recent | Yes | Source control |
 | **Docker Desktop** (or Postgres 15+) | Recent | Optional | Postgres / full stack |
 | **curl** or **Postman** | — | Optional | API smoke tests |
@@ -85,10 +86,35 @@ docker compose up -d --build
 
 App: `http://localhost:8080` · Postgres: `localhost:5432`.
 
+### Web GUI (Next.js)
+
+The UI lives in **`web/`** and proxies `/api/*` and `/q/*` to the Quarkus backend (default `BACKEND_URL=http://localhost:8080`), so the browser stays same-origin and does not need CORS.
+
+```bash
+# Terminal 1 — API (H2)
+mvn -pl ar-bootstrap "-Dquarkus.profile=dev" "-Dquarkus.kafka.devservices.enabled=false" quarkus:dev
+
+# Terminal 2 — UI
+cd web
+cp .env.example .env.local   # first time only
+npm install
+npm run dev
+```
+
+| URL | Description |
+|-----|-------------|
+| `http://localhost:3000` | AR console (Dashboard, Customers, Invoices, …) |
+| Settings → tenant | Sets `X-Tenant-Id` (default smoke UUID below) |
+
+Default smoke tenant: `00000000-0000-0000-0000-000000000001`
+
+More detail: [web/README.md](web/README.md).
+
 ### Endpoints once running
 
 | URL | Description |
 |-----|-------------|
+| `http://localhost:3000` | Web GUI |
 | `http://localhost:8080/api/v1/invoices` | REST API |
 | `http://localhost:8080/q/swagger-ui/` | Swagger UI |
 | `http://localhost:8080/q/openapi` | OpenAPI JSON |

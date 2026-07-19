@@ -14,6 +14,18 @@ services:
     volumes:
       - ./data:/app/data
 
+  web:
+    build: ./web
+    ports:
+      - "3000:3000"
+    environment:
+      - BACKEND_URL=http://app:8080
+      - NEXT_PUBLIC_APP_NAME=InvoiceGenie AR
+      - NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE=true
+      - NEXT_PUBLIC_DEFAULT_TENANT_ID=00000000-0000-0000-0000-000000000001
+    depends_on:
+      - app
+
   postgres:
     image: postgres:15-alpine
     environment:

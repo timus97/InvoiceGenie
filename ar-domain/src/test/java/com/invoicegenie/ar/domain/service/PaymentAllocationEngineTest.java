@@ -39,8 +39,7 @@ class PaymentAllocationEngineTest {
     }
 
     private Invoice createInvoice(String number, LocalDate issueDate, LocalDate dueDate, Money total) {
-        Invoice invoice = new Invoice(
-                InvoiceId.generate(), number, "CUST001", total.getCurrencyCode(),
+        Invoice invoice = new Invoice(InvoiceId.generate(), number, null, "CUST001", total.getCurrencyCode(),
                 issueDate, dueDate, List.of()
         );
         // Add a line to make it issuable

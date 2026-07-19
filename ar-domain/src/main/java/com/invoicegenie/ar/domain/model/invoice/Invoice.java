@@ -1,5 +1,6 @@
 package com.invoicegenie.ar.domain.model.invoice;
 
+import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.shared.domain.Money;
 
 import java.math.BigDecimal;
@@ -24,12 +25,15 @@ import java.util.Objects;
  *   <li>Status transitions: DRAFT → ISSUED → (PARTIALLY_PAID|PAID|OVERDUE), OVERDUE → WRITTEN_OFF</li>
  *   <li>Cannot modify lines after ISSUED (create credit memo for corrections)</li>
  *   <li>amountPaid is tracked on the aggregate; balanceDue = total - amountPaid</li>
+ *   <li>customerId is the FK to Customer; customerRef is denormalized display text</li>
  * </ul>
  */
 public final class Invoice {
 
     private final InvoiceId id;
     private final String invoiceNumber; // human-readable, tenant-scoped
+    /** Strong reference to Customer aggregate. Nullable only for legacy reconstitution. */
+    private final CustomerId customerId;
     private final String customerRef; // denormalized for display
     private final String currencyCode; // ISO 4217
     private final LocalDate issueDate;
@@ -53,10 +57,15 @@ public final class Invoice {
 
     private static final InvoiceLifecycleEngine LIFECYCLE = new InvoiceLifecycleEngine();
 
-    /** For new invoice creation (DRAFT). */
-    public Invoice(InvoiceId id, String invoiceNumber, String customerRef, String currencyCode,
-                   LocalDate issueDate, LocalDate dueDate, List<InvoiceLine> lines) {
-        this(id, invoiceNumber, customerRef, currencyCode, issueDate, dueDate, null, null,
+    /**
+     * For new invoice creation (DRAFT).
+     *
+     * @param customerId strong customer reference (preferred non-null for new invoices)
+     * @param customerRef display label; defaults to customerId string when blank
+     */
+    public Invoice(InvoiceId id, String invoiceNumber, CustomerId customerId, String customerRef,
+                   String currencyCode, LocalDate issueDate, LocalDate dueDate, List<InvoiceLine> lines) {
+        this(id, invoiceNumber, customerId, customerRef, currencyCode, issueDate, dueDate, null, null,
                 Instant.now(), Instant.now(), 1L, null, null, InvoiceStatus.DRAFT, null, null,
                 null, lines != null ? lines : List.of());
         if (dueDate.isBefore(issueDate)) {
@@ -67,19 +76,21 @@ public final class Invoice {
     /**
      * For reconstitution from persistence (amountPaid defaults to zero when null).
      */
-    public Invoice(InvoiceId id, String invoiceNumber, String customerRef, String currencyCode,
+    public Invoice(InvoiceId id, String invoiceNumber, CustomerId customerId, String customerRef,
+                   String currencyCode,
                    LocalDate issueDate, LocalDate dueDate, LocalDate periodStart, LocalDate periodEnd,
                    Instant createdAt, Instant updatedAt, long version,
                    String notes, String terms, InvoiceStatus status,
                    Instant issuedAt, Instant writtenOffAt,
                    List<InvoiceLine> lines) {
-        this(id, invoiceNumber, customerRef, currencyCode, issueDate, dueDate, periodStart, periodEnd,
+        this(id, invoiceNumber, customerId, customerRef, currencyCode, issueDate, dueDate, periodStart, periodEnd,
                 createdAt, updatedAt, version, notes, terms, status, issuedAt, writtenOffAt,
                 null, lines);
     }
 
     /** For reconstitution from persistence with tracked amount paid. */
-    public Invoice(InvoiceId id, String invoiceNumber, String customerRef, String currencyCode,
+    public Invoice(InvoiceId id, String invoiceNumber, CustomerId customerId, String customerRef,
+                   String currencyCode,
                    LocalDate issueDate, LocalDate dueDate, LocalDate periodStart, LocalDate periodEnd,
                    Instant createdAt, Instant updatedAt, long version,
                    String notes, String terms, InvoiceStatus status,
@@ -88,7 +99,14 @@ public final class Invoice {
                    List<InvoiceLine> lines) {
         this.id = Objects.requireNonNull(id);
         this.invoiceNumber = Objects.requireNonNull(invoiceNumber);
-        this.customerRef = Objects.requireNonNull(customerRef);
+        this.customerId = customerId; // nullable for legacy rows
+        if (customerRef != null && !customerRef.isBlank()) {
+            this.customerRef = customerRef;
+        } else if (customerId != null) {
+            this.customerRef = customerId.getValue().toString();
+        } else {
+            throw new IllegalArgumentException("customerRef or customerId is required");
+        }
         this.currencyCode = Objects.requireNonNull(currencyCode);
         if (currencyCode.length() != 3) throw new IllegalArgumentException("currency must be ISO 4217");
         this.issueDate = Objects.requireNonNull(issueDate);
@@ -132,6 +150,7 @@ public final class Invoice {
 
     public InvoiceId getId() { return id; }
     public String getInvoiceNumber() { return invoiceNumber; }
+    public CustomerId getCustomerId() { return customerId; }
     public String getCustomerRef() { return customerRef; }
     public String getCurrencyCode() { return currencyCode; }
     public LocalDate getIssueDate() { return issueDate; }

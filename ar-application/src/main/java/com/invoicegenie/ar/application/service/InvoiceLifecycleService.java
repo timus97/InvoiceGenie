@@ -1,11 +1,12 @@
 package com.invoicegenie.ar.application.service;
 
+import com.invoicegenie.ar.application.port.inbound.ApplyInvoicePaymentUseCase;
 import com.invoicegenie.ar.application.port.inbound.InvoiceLifecycleUseCase;
-import com.invoicegenie.ar.domain.model.outbox.AuditRepository;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
 import com.invoicegenie.ar.domain.model.outbox.AuditEntry;
+import com.invoicegenie.ar.domain.model.outbox.AuditRepository;
 import com.invoicegenie.shared.domain.TenantId;
 
 import java.time.LocalDate;
@@ -18,11 +19,14 @@ public class InvoiceLifecycleService implements InvoiceLifecycleUseCase {
 
     private final InvoiceRepository invoiceRepository;
     private final AuditRepository auditRepository;
+    private final ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase;
 
     public InvoiceLifecycleService(InvoiceRepository invoiceRepository,
-                                   AuditRepository auditRepository) {
+                                   AuditRepository auditRepository,
+                                   ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase) {
         this.invoiceRepository = invoiceRepository;
         this.auditRepository = auditRepository;
+        this.applyInvoicePaymentUseCase = applyInvoicePaymentUseCase;
     }
 
     @Override
@@ -69,16 +73,9 @@ public class InvoiceLifecycleService implements InvoiceLifecycleUseCase {
 
     @Override
     public Optional<Invoice> applyPayment(TenantId tenantId, InvoiceId invoiceId, boolean fullyPaid) {
-        return invoiceRepository.findByTenantAndId(tenantId, invoiceId)
-                .map(inv -> {
-                    String before = String.format("{\"status\":\"%s\"}", inv.getStatus());
-                    inv.applyPaymentStatus(fullyPaid);
-                    invoiceRepository.save(tenantId, inv);
-                    String after = String.format("{\"status\":\"%s\",\"fullyPaid\":%s}", inv.getStatus(), fullyPaid);
-                    auditRepository.save(tenantId, AuditEntry.transition(tenantId, "INVOICE", invoiceId.getValue(),
-                            inv.getInvoiceNumber(), null, "APPLY_PAYMENT", before, after));
-                    return inv;
-                });
+        // Creates a real Payment + allocates to this invoice (PaymentRecorded + PaymentAllocated)
+        return applyInvoicePaymentUseCase.apply(tenantId, invoiceId,
+                new ApplyInvoicePaymentUseCase.ApplyPaymentCommand(null, fullyPaid));
     }
 
     @Override

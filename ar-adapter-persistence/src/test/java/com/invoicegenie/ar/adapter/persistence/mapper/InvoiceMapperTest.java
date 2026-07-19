@@ -28,7 +28,7 @@ class InvoiceMapperTest {
                 Money.of("100.00", "USD"), Money.of("10.00", "USD"),
                 new BigDecimal("0.10"), Money.of("19.00", "USD"), Money.of("209.00", "USD"));
 
-        Invoice invoice = new Invoice(invoiceId, "INV-001", "CUST-1", "USD",
+        Invoice invoice = new Invoice(invoiceId, "INV-001", null, "CUST-1", "USD",
                 LocalDate.of(2026, 3, 1), LocalDate.of(2026, 3, 31), List.of(line));
         invoice.issue();
         invoice.recordPaymentApplied(Money.of("50.00", "USD"));

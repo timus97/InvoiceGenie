@@ -49,7 +49,7 @@ class GetInvoiceServiceTest {
         @Test
         @DisplayName("should return invoice when found")
         void shouldReturnInvoiceWhenFound() {
-            Invoice invoice = new Invoice(invoiceId, "INV-001", "CUST001", "USD",
+            Invoice invoice = new Invoice(invoiceId, "INV-001", null, "CUST001", "USD",
                     LocalDate.now(), LocalDate.now().plusDays(30), List.of());
             invoice.addLine(new InvoiceLine(1, "Service", Money.of("1000.00", "USD")));
             
@@ -75,7 +75,7 @@ class GetInvoiceServiceTest {
         @Test
         @DisplayName("should return issued invoice")
         void shouldReturnIssuedInvoice() {
-            Invoice invoice = new Invoice(invoiceId, "INV-001", "CUST001", "USD",
+            Invoice invoice = new Invoice(invoiceId, "INV-001", null, "CUST001", "USD",
                     LocalDate.now(), LocalDate.now().plusDays(30), List.of());
             invoice.addLine(new InvoiceLine(1, "Service", Money.of("1000.00", "USD")));
             invoice.issue();
@@ -91,7 +91,7 @@ class GetInvoiceServiceTest {
         @Test
         @DisplayName("should return paid invoice")
         void shouldReturnPaidInvoice() {
-            Invoice invoice = new Invoice(invoiceId, "INV-001", "CUST001", "USD",
+            Invoice invoice = new Invoice(invoiceId, "INV-001", null, "CUST001", "USD",
                     LocalDate.now(), LocalDate.now().plusDays(30), List.of());
             invoice.addLine(new InvoiceLine(1, "Service", Money.of("1000.00", "USD")));
             invoice.issue();

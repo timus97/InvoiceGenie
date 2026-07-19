@@ -47,7 +47,7 @@ class ListInvoicesServiceTest {
 
     private Invoice createInvoice(String number, InvoiceStatus status) {
         InvoiceId id = InvoiceId.generate();
-        Invoice invoice = new Invoice(id, number, "CUST001", "USD",
+        Invoice invoice = new Invoice(id, number, null, "CUST001", "USD",
                 LocalDate.now(), LocalDate.now().plusDays(30), List.of());
         invoice.addLine(new InvoiceLine(1, "Service", Money.of("1000.00", "USD")));
         if (status != InvoiceStatus.DRAFT) {

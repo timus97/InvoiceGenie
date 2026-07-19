@@ -2,6 +2,7 @@ package com.invoicegenie.ar.adapter.persistence.mapper;
 
 import com.invoicegenie.ar.adapter.persistence.entity.InvoiceEntity;
 import com.invoicegenie.ar.adapter.persistence.entity.InvoiceLineEntity;
+import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceLine;
@@ -22,6 +23,7 @@ public final class InvoiceMapper {
         e.setId(invoice.getId().getValue());
         e.setTenantId(tenantId.getValue());
         e.setInvoiceNumber(invoice.getInvoiceNumber());
+        e.setCustomerId(invoice.getCustomerId() != null ? invoice.getCustomerId().getValue() : null);
         e.setCustomerRef(invoice.getCustomerRef());
         e.setCurrencyCode(invoice.getCurrencyCode());
         e.setIssueDate(invoice.getIssueDate());
@@ -83,9 +85,12 @@ public final class InvoiceMapper {
         // amountPaid = total - amount_due (amount_due is outstanding balance)
         Money amountPaid = resolveAmountPaid(e, lines);
 
+        CustomerId customerId = e.getCustomerId() != null ? CustomerId.of(e.getCustomerId()) : null;
+
         return new Invoice(
                 InvoiceId.of(e.getId()),
                 e.getInvoiceNumber(),
+                customerId,
                 e.getCustomerRef(),
                 e.getCurrencyCode(),
                 e.getIssueDate(),

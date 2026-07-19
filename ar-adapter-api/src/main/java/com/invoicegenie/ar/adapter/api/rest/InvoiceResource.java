@@ -1,5 +1,6 @@
 package com.invoicegenie.ar.adapter.api.rest;
 
+import com.invoicegenie.ar.application.port.inbound.ApplyInvoicePaymentUseCase;
 import com.invoicegenie.ar.application.port.inbound.GetInvoiceUseCase;
 import com.invoicegenie.ar.application.port.inbound.InvoiceLifecycleUseCase;
 import com.invoicegenie.ar.application.port.inbound.IssueInvoiceUseCase;
@@ -10,24 +11,17 @@ import com.invoicegenie.ar.domain.model.invoice.InvoiceStatus;
 import com.invoicegenie.shared.tenant.TenantContext;
 
 import jakarta.ws.rs.*;
-import jakarta.ws.rs.core.Context;
-import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.UriInfo;
 import org.eclipse.microprofile.openapi.annotations.Operation;
-import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
-import org.eclipse.microprofile.openapi.annotations.media.Content;
-import org.eclipse.microprofile.openapi.annotations.media.Schema;
-import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -44,15 +38,18 @@ public class InvoiceResource {
     private final GetInvoiceUseCase getInvoiceUseCase;
     private final ListInvoicesUseCase listInvoicesUseCase;
     private final InvoiceLifecycleUseCase lifecycleUseCase;
+    private final ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase;
 
     public InvoiceResource(IssueInvoiceUseCase issueInvoiceUseCase,
                            GetInvoiceUseCase getInvoiceUseCase,
                            ListInvoicesUseCase listInvoicesUseCase,
-                           InvoiceLifecycleUseCase lifecycleUseCase) {
+                           InvoiceLifecycleUseCase lifecycleUseCase,
+                           ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase) {
         this.issueInvoiceUseCase = issueInvoiceUseCase;
         this.getInvoiceUseCase = getInvoiceUseCase;
         this.listInvoicesUseCase = listInvoicesUseCase;
         this.lifecycleUseCase = lifecycleUseCase;
+        this.applyInvoicePaymentUseCase = applyInvoicePaymentUseCase;
     }
 
     // ==================== CREATE ====================
@@ -71,13 +68,22 @@ public class InvoiceResource {
         if (dto.invoiceNumber() == null || dto.invoiceNumber().isBlank()) {
             return error(400, "invoiceNumber required");
         }
+        if (dto.customerId() == null || dto.customerId().isBlank()) {
+            return error(400, "customerId required");
+        }
         if (dto.lines() == null || dto.lines().isEmpty()) {
             return error(400, "at least one line required");
         }
 
+        // customerRef optional — defaults to customerId in the command compact constructor
+        String customerRef = dto.customerRef() != null && !dto.customerRef().isBlank()
+                ? dto.customerRef()
+                : dto.customerId();
+
         var command = new IssueInvoiceUseCase.IssueInvoiceCommand(
                 dto.invoiceNumber(),
-                dto.customerRef(),
+                dto.customerId(),
+                customerRef,
                 dto.currencyCode() != null ? dto.currencyCode() : "USD",
                 dto.dueDate(),
                 dto.lines().stream()
@@ -181,16 +187,21 @@ public class InvoiceResource {
 
     @POST
     @Path("/{id}/payment")
-    @Operation(summary = "Apply payment status (ISSUED/PARTIALLY_PAID → PAID)")
+    @Operation(summary = "Apply payment to invoice (creates Payment + allocates)",
+            description = "Creates a real Payment and allocates it to this invoice. "
+                    + "Use fullyPaid=true (or omit amount) to pay remaining balance; "
+                    + "or provide amount for a partial payment.")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Payment applied"),
-        @APIResponse(responseCode = "400", description = "Invalid state"),
+        @APIResponse(responseCode = "400", description = "Invalid state or amount"),
         @APIResponse(responseCode = "404", description = "Not found")
     })
     public Response applyPayment(@PathParam("id") String id, PaymentDto dto) {
         var tenantId = TenantContext.getCurrentTenant();
         var invoiceId = InvoiceId.of(UUID.fromString(id));
-        return lifecycleUseCase.applyPayment(tenantId, invoiceId, dto.fullyPaid())
+        PaymentDto body = dto != null ? dto : new PaymentDto(null, null);
+        var command = new ApplyInvoicePaymentUseCase.ApplyPaymentCommand(body.amount(), body.fullyPaid());
+        return applyInvoicePaymentUseCase.apply(tenantId, invoiceId, command)
                 .map(inv -> Response.ok(toDto(inv)).build())
                 .orElse(Response.status(404).entity(new ErrorDto("NOT_FOUND", "Invoice not found")).build());
     }
@@ -226,6 +237,7 @@ public class InvoiceResource {
         return new InvoiceDto(
                 inv.getId().getValue().toString(),
                 inv.getInvoiceNumber(),
+                inv.getCustomerId() != null ? inv.getCustomerId().getValue().toString() : null,
                 inv.getCustomerRef(),
                 inv.getCurrencyCode(),
                 inv.getIssueDate(),
@@ -244,13 +256,14 @@ public class InvoiceResource {
     }
 
     // Records
-    public record InvoiceCreateDto(String invoiceNumber, String customerRef, String currencyCode, LocalDate dueDate, List<LineDto> lines) {}
-    public record LineDto(int sequence, String description, java.math.BigDecimal amount) {}
+    public record InvoiceCreateDto(String invoiceNumber, String customerId, String customerRef, String currencyCode, LocalDate dueDate, List<LineDto> lines) {}
+    public record LineDto(int sequence, String description, BigDecimal amount) {}
     public record InvoiceIdDto(String id) {}
-    public record InvoiceDto(String id, String invoiceNumber, String customerRef, String currencyCode, LocalDate issueDate, LocalDate dueDate, String status, java.math.BigDecimal total, java.time.Instant issuedAt, java.time.Instant writtenOffAt, long version, List<LineDto> lines) {}
+    public record InvoiceDto(String id, String invoiceNumber, String customerId, String customerRef, String currencyCode, LocalDate issueDate, LocalDate dueDate, String status, BigDecimal total, java.time.Instant issuedAt, java.time.Instant writtenOffAt, long version, List<LineDto> lines) {}
     public record PageDto(List<InvoiceDto> items, String nextCursor, long total) {}
     public record WriteOffDto(String reason) {}
-    public record PaymentDto(boolean fullyPaid) {}
+    /** amount optional when fullyPaid is true; fullyPaid defaults to true when amount is omitted. */
+    public record PaymentDto(Boolean fullyPaid, BigDecimal amount) {}
     public record DueDateDto(LocalDate dueDate) {}
     public record ErrorDto(String code, String message) {}
 }

@@ -92,18 +92,32 @@ public abstract class WorkflowTestBase {
         return UUID.fromString(resp.jsonPath().getString("id"));
     }
 
-    protected UUID createInvoice(String invoiceNumber, String customerRef, String dueDate, double amount) {
+    /**
+     * Create an invoice for an existing customer.
+     *
+     * @param invoiceNumber base invoice number (uniquified per tenant)
+     * @param customerId    customer UUID (required)
+     * @param dueDate       ISO date string
+     * @param amount        line amount
+     */
+    protected UUID createInvoice(String invoiceNumber, UUID customerId, String dueDate, double amount) {
+        return createInvoice(invoiceNumber, customerId, customerId.toString(), dueDate, amount);
+    }
+
+    protected UUID createInvoice(String invoiceNumber, UUID customerId, String customerRef,
+                                 String dueDate, double amount) {
         String uniqueNumber = invoiceNumber + "-" + uniqueSuffix();
         String body = String.format("""
             {
               "invoiceNumber": "%s",
+              "customerId": "%s",
               "customerRef": "%s",
               "currencyCode": "USD",
               "dueDate": "%s",
               "lines": [{"description": "Service", "amount": %s}]
             }
-            """, uniqueNumber, customerRef, dueDate, amount);
-        
+            """, uniqueNumber, customerId, customerRef, dueDate, amount);
+
         Response resp = post("/api/v1/invoices", body);
         resp.then().statusCode(201);
         return UUID.fromString(resp.jsonPath().getString("id"));

@@ -26,6 +26,10 @@ public class InvoiceEntity {
     @Column(name = "tenant_id", nullable = false, updatable = false)
     private UUID tenantId;
 
+    /** Strong FK to ar_customer.id. Nullable for legacy rows that only had customer_ref. */
+    @Column(name = "customer_id")
+    private UUID customerId;
+
     @Column(name = "customer_ref", nullable = false)
     private String customerRef;
 
@@ -102,6 +106,14 @@ public class InvoiceEntity {
 
     public void setTenantId(UUID tenantId) {
         this.tenantId = tenantId;
+    }
+
+    public UUID getCustomerId() {
+        return customerId;
+    }
+
+    public void setCustomerId(UUID customerId) {
+        this.customerId = customerId;
     }
 
     public String getCustomerRef() {

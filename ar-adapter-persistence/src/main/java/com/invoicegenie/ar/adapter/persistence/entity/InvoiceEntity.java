@@ -84,6 +84,10 @@ public class InvoiceEntity {
     @Column(name = "total", nullable = false, precision = 19, scale = 2)
     private BigDecimal total;
 
+    /** Outstanding balance (total - amount paid). Maps to schema amount_due. */
+    @Column(name = "amount_due", nullable = false, precision = 19, scale = 2)
+    private BigDecimal amountDue;
+
     public UUID getId() {
         return id;
     }
@@ -250,5 +254,13 @@ public class InvoiceEntity {
 
     public void setTotal(BigDecimal total) {
         this.total = total;
+    }
+
+    public BigDecimal getAmountDue() {
+        return amountDue;
+    }
+
+    public void setAmountDue(BigDecimal amountDue) {
+        this.amountDue = amountDue;
     }
 }

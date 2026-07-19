@@ -280,6 +280,98 @@ class InvoiceTest {
     }
 
     @Nested
+    @DisplayName("Balance Due and Payment Application")
+    class BalanceDueAndPaymentApplication {
+
+        @Test
+        @DisplayName("balance due equals total when nothing paid")
+        void balanceDueEqualsTotalWhenNothingPaid() {
+            invoice.addLine(createLine(1, Money.of("1000.00", "USD")));
+            invoice.issue();
+
+            assertEquals(Money.of("0.00", "USD"), invoice.getAmountPaid());
+            assertEquals(Money.of("1000.00", "USD"), invoice.getBalanceDue());
+        }
+
+        @Test
+        @DisplayName("two partial payments reach PAID only when sum covers total")
+        void twoPartialPaymentsReachPaidOnlyWhenCovered() {
+            invoice.addLine(createLine(1, Money.of("1000.00", "USD")));
+            invoice.issue();
+
+            invoice.recordPaymentApplied(Money.of("400.00", "USD"));
+            assertEquals(InvoiceStatus.PARTIALLY_PAID, invoice.getStatus());
+            assertEquals(Money.of("400.00", "USD"), invoice.getAmountPaid());
+            assertEquals(Money.of("600.00", "USD"), invoice.getBalanceDue());
+
+            invoice.recordPaymentApplied(Money.of("300.00", "USD"));
+            assertEquals(InvoiceStatus.PARTIALLY_PAID, invoice.getStatus());
+            assertEquals(Money.of("700.00", "USD"), invoice.getAmountPaid());
+            assertEquals(Money.of("300.00", "USD"), invoice.getBalanceDue());
+
+            invoice.recordPaymentApplied(Money.of("300.00", "USD"));
+            assertEquals(InvoiceStatus.PAID, invoice.getStatus());
+            assertEquals(Money.of("1000.00", "USD"), invoice.getAmountPaid());
+            assertEquals(Money.of("0.00", "USD"), invoice.getBalanceDue());
+        }
+
+        @Test
+        @DisplayName("over-allocation throws and leaves amount paid unchanged")
+        void overAllocationThrows() {
+            invoice.addLine(createLine(1, Money.of("1000.00", "USD")));
+            invoice.issue();
+            invoice.recordPaymentApplied(Money.of("700.00", "USD"));
+
+            IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                    () -> invoice.recordPaymentApplied(Money.of("400.00", "USD")));
+            assertTrue(ex.getMessage().contains("exceeds balance due"));
+            assertEquals(Money.of("700.00", "USD"), invoice.getAmountPaid());
+            assertEquals(Money.of("300.00", "USD"), invoice.getBalanceDue());
+            assertEquals(InvoiceStatus.PARTIALLY_PAID, invoice.getStatus());
+        }
+
+        @Test
+        @DisplayName("zero or negative allocation is rejected")
+        void zeroOrNegativeAllocationRejected() {
+            invoice.addLine(createLine(1, Money.of("100.00", "USD")));
+            invoice.issue();
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> invoice.recordPaymentApplied(Money.of("0.00", "USD")));
+            assertThrows(IllegalArgumentException.class,
+                    () -> invoice.recordPaymentApplied(Money.of("-10.00", "USD")));
+        }
+
+        @Test
+        @DisplayName("reverse allocation reduces amount paid")
+        void reverseAllocationReducesAmountPaid() {
+            invoice.addLine(createLine(1, Money.of("1000.00", "USD")));
+            invoice.issue();
+            invoice.recordPaymentApplied(Money.of("600.00", "USD"));
+
+            invoice.reverseAllocation(Money.of("200.00", "USD"));
+
+            assertEquals(Money.of("400.00", "USD"), invoice.getAmountPaid());
+            assertEquals(Money.of("600.00", "USD"), invoice.getBalanceDue());
+        }
+
+        @Test
+        @DisplayName("reopen clears amount paid")
+        void reopenClearsAmountPaid() {
+            invoice.addLine(createLine(1, Money.of("100.00", "USD")));
+            invoice.issue();
+            invoice.recordPaymentApplied(Money.of("100.00", "USD"));
+            assertEquals(InvoiceStatus.PAID, invoice.getStatus());
+
+            invoice.reopen("Cheque bounced");
+
+            assertEquals(InvoiceStatus.ISSUED, invoice.getStatus());
+            assertEquals(Money.of("0.00", "USD"), invoice.getAmountPaid());
+            assertEquals(Money.of("100.00", "USD"), invoice.getBalanceDue());
+        }
+    }
+
+    @Nested
     @DisplayName("Open Status")
     class OpenStatus {
 

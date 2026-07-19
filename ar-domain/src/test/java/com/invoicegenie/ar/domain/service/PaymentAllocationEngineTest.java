@@ -96,6 +96,24 @@ class PaymentAllocationEngineTest {
         }
 
         @Test
+        @DisplayName("should respect prior amountPaid when computing outstanding (no over-allocate)")
+        void shouldRespectPriorAmountPaid() {
+            Payment payment = createPayment(Money.of("800.00", "USD"));
+            Invoice invoice = createInvoice("INV-001", LocalDate.now().minusDays(30),
+                    LocalDate.now().plusDays(10), Money.of("1000.00", "USD"));
+            // Prior partial payment already recorded on aggregate
+            invoice.recordPaymentApplied(Money.of("600.00", "USD"));
+            assertEquals(Money.of("400.00", "USD"), invoice.getBalanceDue());
+
+            PaymentAllocationEngine.AllocationResult result = engine.autoAllocateFIFO(
+                    tenantId, payment, List.of(invoice), UUID.randomUUID());
+
+            assertEquals(1, result.allocations().size());
+            assertEquals(0, new BigDecimal("400.00").compareTo(result.totalAllocated().getAmount()));
+            assertEquals(0, new BigDecimal("400.00").compareTo(result.remainingUnallocated().getAmount()));
+        }
+
+        @Test
         @DisplayName("should skip invoices with different currency")
         void shouldSkipDifferentCurrency() {
             Payment payment = createPayment(Money.of("1000.00", "USD"));

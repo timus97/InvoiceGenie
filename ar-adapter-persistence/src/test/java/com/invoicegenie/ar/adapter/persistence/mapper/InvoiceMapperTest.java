@@ -31,17 +31,22 @@ class InvoiceMapperTest {
         Invoice invoice = new Invoice(invoiceId, "INV-001", "CUST-1", "USD",
                 LocalDate.of(2026, 3, 1), LocalDate.of(2026, 3, 31), List.of(line));
         invoice.issue();
-        invoice.markOverdue(LocalDate.of(2026, 4, 10));
-        invoice.writeOff("bad debt");
+        invoice.recordPaymentApplied(Money.of("50.00", "USD"));
 
         InvoiceMapper mapper = new InvoiceMapper();
         InvoiceEntity entity = mapper.toEntity(tenantId, invoice);
         List<InvoiceLineEntity> lineEntities = mapper.toLineEntities(tenantId, invoice);
+
+        // amount_due should be total - amountPaid
+        assertEquals(0, invoice.getBalanceDue().getAmount().compareTo(entity.getAmountDue()));
 
         Invoice restored = mapper.toDomain(entity, lineEntities);
         assertEquals(invoice.getInvoiceNumber(), restored.getInvoiceNumber());
         assertEquals(invoice.getCurrencyCode(), restored.getCurrencyCode());
         assertEquals(invoice.getLines().size(), restored.getLines().size());
         assertEquals(invoice.getTotal().getAmount(), restored.getTotal().getAmount());
+        assertEquals(invoice.getAmountPaid(), restored.getAmountPaid());
+        assertEquals(invoice.getBalanceDue(), restored.getBalanceDue());
+        assertEquals(InvoiceStatus.PARTIALLY_PAID, restored.getStatus());
     }
 }

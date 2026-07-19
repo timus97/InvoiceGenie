@@ -6,18 +6,109 @@ No UI in this repo; backend only. Extensible for future AP and GL modules.
 
 ---
 
+## Prerequisites
+
+| Tool | Version | Required? | Purpose |
+|------|---------|-----------|---------|
+| **JDK** | 17+ (17 recommended) | Yes | Compile & run Quarkus |
+| **Maven** | 3.9+ | Yes | Multi-module build |
+| **Git** | Any recent | Yes | Source control |
+| **Docker Desktop** (or Postgres 15+) | Recent | Optional | Postgres / full stack |
+| **curl** or **Postman** | — | Optional | API smoke tests |
+| **Kafka** | — | No (today) | Messaging is stubbed via outbox |
+
+**Check before first run:**
+
+```bash
+java -version   # must show 17+
+mvn -version    # must use the same JDK (JAVA_HOME)
+```
+
+**Windows notes:**
+
+- Always quote `-D` properties so PowerShell does not parse them:
+  ```powershell
+  mvn -pl ar-bootstrap "-Dquarkus.profile=dev" quarkus:dev
+  ```
+- Point `JAVA_HOME` at a JDK 17+ install. If `java -version` and `mvn -version` disagree, Maven will fail oddly.
+- This repo includes a `.mvn/` marker so Maven resolves the project root correctly on Windows.
+
+---
+
 ## Quick Start
+
+### Fastest path — H2 in-memory (no Postgres)
+
+Profile **`dev`** uses **H2** (`jdbc:h2:mem:testdb`). Data is ephemeral. Port **8080**.
 
 ```bash
 # Build
-mvn clean install
+mvn clean install -DskipTests
 
-# Run (requires PostgreSQL)
-mvn -pl ar-bootstrap quarkus:dev
+# Run (recommended local path)
+mvn -pl ar-bootstrap -Dquarkus.profile=dev -Dquarkus.kafka.devservices.enabled=false quarkus:dev
+```
 
-# Run with SQLite (dev fallback, no Postgres)
-# Note: sqlite profile listens on port 8081
-mvn -pl ar-bootstrap -Dquarkus.profile=sqlite quarkus:dev
+Or use the helper scripts:
+
+```bash
+# Linux / macOS / Git Bash
+./scripts/dev-up.sh
+
+# Windows PowerShell
+./scripts/dev-up.ps1
+```
+
+**Legacy alias:** `-Dquarkus.profile=sqlite` still works (same as `dev`); it is **not** a SQLite file database.
+
+### Postgres path (production-like)
+
+```bash
+# 1. Start Postgres
+docker compose up -d postgres
+
+# 2. Apply schema once (psql or any SQL client)
+# docker exec -i <postgres-container> psql -U ar -d invoicegenie < docs/sql/001_init_ar_schema.sql
+
+# 3. Build & run default profile
+mvn clean install -DskipTests
+mvn -pl ar-bootstrap -Dquarkus.kafka.devservices.enabled=false quarkus:dev
+```
+
+Default JDBC: `jdbc:postgresql://localhost:5432/invoicegenie` · user/pass `ar`/`ar`.
+
+### Full Docker stack
+
+```bash
+docker compose up -d --build
+```
+
+App: `http://localhost:8080` · Postgres: `localhost:5432`.
+
+### Endpoints once running
+
+| URL | Description |
+|-----|-------------|
+| `http://localhost:8080/api/v1/invoices` | REST API |
+| `http://localhost:8080/q/swagger-ui/` | Swagger UI |
+| `http://localhost:8080/q/openapi` | OpenAPI JSON |
+| `http://localhost:8080/q/health` | Health check |
+
+If port 8080 is busy:
+
+```bash
+mvn -pl ar-bootstrap -Dquarkus.profile=dev -Dquarkus.http.port=8082 quarkus:dev
+```
+
+### Smoke test
+
+```bash
+curl -s http://localhost:8080/q/health
+
+curl -s -X POST http://localhost:8080/api/v1/invoices \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: 00000000-0000-0000-0000-000000000001" \
+  -d '{"invoiceNumber":"INV-1","customerRef":"C1","currencyCode":"USD","dueDate":"2026-12-31","lines":[{"description":"Svc","amount":100}]}'
 ```
 
 ## Testing
@@ -33,7 +124,7 @@ mvn -pl ar-adapter-persistence test
 mvn -pl ar-domain test
 ```
 
-### Running the Application
+### Running the Application (detail)
 
 ```bash
 # Build all modules
@@ -42,28 +133,23 @@ mvn clean install -DskipTests
 # (Recommended before dev) Compile dependencies for hot reload
 mvn -pl ar-bootstrap -am compile -DskipTests
 
-# Start dev server (requires PostgreSQL)
-mvn -pl ar-bootstrap quarkus:dev
+# H2 dev profile (no Postgres) — preferred for local exploration
+mvn -pl ar-bootstrap -Dquarkus.profile=dev -Dquarkus.kafka.devservices.enabled=false quarkus:dev
 
-# Start with SQLite dev profile (no Postgres)
-# Note: sqlite profile listens on port 8081
-mvn -pl ar-bootstrap -Dquarkus.profile=sqlite quarkus:dev
-
-# Once running, access:
-# API (PostgreSQL profile): http://localhost:8080/api/v1/invoices
-# Swagger UI: http://localhost:8080/q/swagger-ui/
-# OpenAPI JSON: http://localhost:8080/q/openapi
-# API (SQLite profile): http://localhost:8081/api/v1/invoices
-# Swagger UI (SQLite): http://localhost:8081/q/swagger-ui/
-# OpenAPI JSON (SQLite): http://localhost:8081/q/openapi
+# Default profile (requires PostgreSQL on localhost:5432)
+mvn -pl ar-bootstrap -Dquarkus.kafka.devservices.enabled=false quarkus:dev
 ```
 
-### SQLite Dev Profile Notes
+### Dev profile notes (`dev` / legacy `sqlite`)
 
-```bash
-# Ensure the sqlite data directory exists (used by jdbc:sqlite:./data/invoicegenie.db)
-mkdir -p ar-bootstrap/data
-```
+| Fact | Detail |
+|------|--------|
+| Database | **H2 in-memory**, not SQLite file DB |
+| JDBC URL | `jdbc:h2:mem:testdb` |
+| Port | **8080** (same as default; override with `-Dquarkus.http.port`) |
+| Schema | Hibernate `generation: update` from entities |
+| Data | Lost on process exit |
+| Kafka | Not required; disable Dev Services with `-Dquarkus.kafka.devservices.enabled=false` |
 
 ### API Testing with cURL / Postman
 
@@ -318,8 +404,8 @@ TENANT_ID=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee ./scripts/test-api.sh
 # Using Docker Compose (recommended for persistence)
 docker-compose up -d
 
-# Or using SQLite profile
-mvn -pl ar-bootstrap -Dquarkus.profile=sqlite quarkus:dev
+# Or using H2 dev profile (no Postgres)
+mvn -pl ar-bootstrap -Dquarkus.profile=dev -Dquarkus.kafka.devservices.enabled=false quarkus:dev
 ```
 
 **2. Health Check**
@@ -424,7 +510,7 @@ curl -X POST http://localhost:8080/api/v1/credit-notes/{creditNoteId}/apply \
 ```
 
 **Design Docs:**
-- [docs/AR_BACKEND_DESIGN.md](docs/AR_BACKEND_DESIGN.md) — architecture, bounded contexts, package structure, tenant isolation, scale notes.
+- [docs/ONBOARDING.md](docs/ONBOARDING.md) — architecture blueprint, module map, known gaps, local runbook.
 - [docs/SCHEMA.md](docs/SCHEMA.md) — full SQL schema documentation, ER diagram, design decisions.
 - [docs/sql/001_init_ar_schema.sql](docs/sql/001_init_ar_schema.sql) — executable PostgreSQL migration.
 
@@ -432,7 +518,7 @@ curl -X POST http://localhost:8080/api/v1/credit-notes/{creditNoteId}/apply \
 
 ## Database Schema
 
-**Database:** PostgreSQL 15+ (SQLite fallback for dev)  
+**Database:** PostgreSQL 15+ (H2 in-memory via `dev` profile for local)  
 **Multi-tenancy:** Single DB, `tenant_id` column + RLS  
 **IDs:** UUID v7 (time-ordered)  
 **Currency:** ISO 4217 (3-char codes)

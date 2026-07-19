@@ -50,7 +50,10 @@ quarkus:
         max-file-size: 10M
         max-backup-index: 5
 
-"%sqlite":
+# Local / fast path: H2 in-memory (no Postgres required).
+# Preferred: -Dquarkus.profile=dev
+# Legacy alias: -Dquarkus.profile=sqlite (same parent config)
+"%dev":
   quarkus:
     http:
       port: 8080
@@ -81,6 +84,13 @@ quarkus:
       ar-application:
         group-id: com.invoicegenie
         artifact-id: ar-application
+
+# Deprecated alias for %dev (historical name; not SQLite). Remove after one release cycle.
+"%sqlite":
+  quarkus:
+    config:
+      profile:
+        parent: dev
 
 # Test profile - uses H2 in-memory database
 "%test":

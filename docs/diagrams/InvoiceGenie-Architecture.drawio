@@ -1,0 +1,485 @@
+<mxfile host="app.diagrams.net" agent="InvoiceGenie">
+  <diagram id="arch" name="Architecture">
+    <mxGraphModel dx="1000" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="title" value="InvoiceGenie — Hexagonal Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontStyle=1;fontSize=16;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="180" y="10" width="440" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="Java 17 · Quarkus 3.6 · DDD · Multi-tenant AR Backend" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=11;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="200" y="34" width="400" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- Client -->
+        <mxCell id="client" value="Clients&#xa;curl · Postman · Swagger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="300" y="60" width="200" height="48" as="geometry"/>
+        </mxCell>
+
+        <!-- Driving adapter swimlane -->
+        <mxCell id="drive" value="DRIVING ADAPTERS (Inbound)" style="swimlane;horizontal=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=10;startSize=28;" vertex="1" parent="1">
+          <mxGeometry x="40" y="130" width="720" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="filters" value="Filters&#xa;TenantFilter&#xa;Logging · Clear" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="drive">
+          <mxGeometry x="40" y="20" width="120" height="68" as="geometry"/>
+        </mxCell>
+        <mxCell id="rest" value="ar-adapter-api&#xa;InvoiceResource · PaymentResource&#xa;Cheque · Aging · Ledger · Customer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;fontStyle=1;" vertex="1" parent="drive">
+          <mxGeometry x="180" y="20" width="280" height="68" as="geometry"/>
+        </mxCell>
+        <mxCell id="err" value="GlobalException&#xa;Mapper&#xa;400 / 409 / 500" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="drive">
+          <mxGeometry x="480" y="20" width="120" height="68" as="geometry"/>
+        </mxCell>
+        <mxCell id="prod" value="CDI Producers&#xa;Cheque · Aging&#xa;Ledger · Payment" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="drive">
+          <mxGeometry x="620" y="20" width="90" height="68" as="geometry"/>
+        </mxCell>
+
+        <!-- Application -->
+        <mxCell id="app" value="APPLICATION LAYER — ar-application&#xa;Use Cases · Inbound / Outbound Ports" style="swimlane;horizontal=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=10;startSize=28;" vertex="1" parent="1">
+          <mxGeometry x="40" y="250" width="720" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc1" value="IssueInvoice&#xa;Get / List" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="app">
+          <mxGeometry x="40" y="18" width="100" height="58" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc2" value="InvoiceLifecycle&#xa;overdue · write-off" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="app">
+          <mxGeometry x="155" y="18" width="110" height="58" as="geometry"/>
+        </mxCell>
+        <mxCell id="uc3" value="RecordPayment&#xa;Allocation FIFO/Manual" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="app">
+          <mxGeometry x="280" y="18" width="130" height="58" as="geometry"/>
+        </mxCell>
+        <mxCell id="ports" value="Outbound Ports&#xa;EventPublisher · IdGenerator&#xa;+ Domain Repos" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="app">
+          <mxGeometry x="430" y="18" width="140" height="58" as="geometry"/>
+        </mxCell>
+        <mxCell id="orch" value="Orchestration only&#xa;no framework" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=9;fontColor=#333333;" vertex="1" parent="app">
+          <mxGeometry x="590" y="18" width="110" height="58" as="geometry"/>
+        </mxCell>
+
+        <!-- Domain -->
+        <mxCell id="dom" value="DOMAIN — ar-domain (pure business rules)" style="swimlane;horizontal=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=10;startSize=28;" vertex="1" parent="1">
+          <mxGeometry x="40" y="360" width="720" height="95" as="geometry"/>
+        </mxCell>
+        <mxCell id="agg1" value="Invoice + Lines&#xa;LifecycleEngine" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="dom">
+          <mxGeometry x="40" y="18" width="110" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="agg2" value="Payment&#xa;AllocationEngine" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="dom">
+          <mxGeometry x="165" y="18" width="110" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="agg3" value="Customer · Cheque&#xa;CreditNote" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="dom">
+          <mxGeometry x="290" y="18" width="110" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="agg4" value="LedgerService&#xa;AgingService" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="dom">
+          <mxGeometry x="415" y="18" width="110" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="agg5" value="Events&#xa;InvoiceIssued&#xa;Payment*" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="dom">
+          <mxGeometry x="540" y="18" width="100" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="agg6" value="Repo Ports&#xa;Outbox · Audit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="dom">
+          <mxGeometry x="655" y="18" width="55" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Driven adapters -->
+        <mxCell id="driven" value="DRIVEN ADAPTERS (Outbound)" style="swimlane;horizontal=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=10;startSize=28;" vertex="1" parent="1">
+          <mxGeometry x="40" y="475" width="720" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="pers" value="ar-adapter-persistence&#xa;JPA Entities · Mappers&#xa;*RepositoryAdapter&#xa;PostgreSQL / H2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontStyle=1;" vertex="1" parent="driven">
+          <mxGeometry x="40" y="15" width="200" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="msg" value="ar-adapter-messaging&#xa;KafkaEventPublisher (outbox write)&#xa;OutboxWorker (poll · publish stub)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontStyle=1;" vertex="1" parent="driven">
+          <mxGeometry x="260" y="15" width="230" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="infra" value="Infrastructure&#xa;Postgres · Kafka (opt)&#xa;UUID v7 · CDI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#999999;fontSize=10;" vertex="1" parent="driven">
+          <mxGeometry x="510" y="15" width="180" height="72" as="geometry"/>
+        </mxCell>
+
+        <!-- Bootstrap + kernel -->
+        <mxCell id="boot" value="ar-bootstrap · ArApplication (CDI wiring) · application.yml" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="590" width="340" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="kernel" value="shared-kernel · TenantId · Money · UuidV7 · TenantContext · DomainEvent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="590" width="360" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- Edges -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#6c8ebf;" edge="1" parent="1" source="client" target="drive">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e1l" value="X-Tenant-Id" style="edgeLabel;html=1;align=center;fontSize=9;fontColor=#6c8ebf;" vertex="1" connectable="0" parent="e1">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint as="offset"/></mxGeometry>
+        </mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" parent="1" source="drive" target="app">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#82b366;" edge="1" parent="1" source="app" target="dom">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#b85450;" edge="1" parent="1" source="dom" target="driven">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=0;dashed=1;strokeColor=#666666;" edge="1" parent="1" source="driven" target="boot">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="modules" name="Module Design">
+    <mxGraphModel dx="1000" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="t" value="Maven Module Dependency Design" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontStyle=1;fontSize=16;" vertex="1" parent="1">
+          <mxGeometry x="200" y="10" width="400" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="t2" value="Arrows mean depends-on (compile). Domain has zero infrastructure deps." style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="160" y="36" width="480" height="18" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="boot2" value="ar-bootstrap&#xa;Quarkus app · CDI wiring&#xa;application.yml" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="280" y="70" width="240" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="api2" value="ar-adapter-api&#xa;REST · Filters · Producers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="40" y="180" width="200" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="pers2" value="ar-adapter-persistence&#xa;JPA · Mappers · Adapters" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="300" y="180" width="200" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="msg2" value="ar-adapter-messaging&#xa;Outbox · KafkaEventPublisher" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="560" y="180" width="200" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="app2" value="ar-application&#xa;Use cases · Inbound/Outbound ports&#xa;IssueInvoice · Lifecycle · Payment*" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="200" y="300" width="400" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="dom2" value="ar-domain&#xa;Aggregates · Engines · Domain services · Repository ports · Events&#xa;NO JPA / HTTP / Kafka" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="200" y="420" width="400" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="sk2" value="shared-kernel&#xa;TenantId · Money · UuidV7 · DomainEvent · TenantContext · DbTenantContext" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="200" y="540" width="400" height="55" as="geometry"/>
+        </mxCell>
+
+        <!-- edges boot -> adapters -->
+        <mxCell id="m1" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#666666;strokeWidth=1.5;" edge="1" parent="1" source="boot2" target="api2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m2" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#666666;strokeWidth=1.5;" edge="1" parent="1" source="boot2" target="pers2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m3" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#666666;strokeWidth=1.5;" edge="1" parent="1" source="boot2" target="msg2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="m4" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#d79b00;strokeWidth=1.5;" edge="1" parent="1" source="api2" target="app2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m5" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#b85450;strokeWidth=1.5;" edge="1" parent="1" source="pers2" target="dom2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m6" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#b85450;strokeWidth=1.5;" edge="1" parent="1" source="msg2" target="app2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m7" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#9673a6;strokeWidth=2;" edge="1" parent="1" source="app2" target="dom2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="m8" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;endFill=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="dom2" target="sk2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="leg" value="Legend: orange = driving · red = driven · purple = application · green = domain · blue = shared" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=9;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="120" y="610" width="560" height="20" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="design" name="Invoice Flow Design">
+    <mxGraphModel dx="1000" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="dt" value="Design: Create / Issue Invoice (canonical vertical slice)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontStyle=1;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="120" y="8" width="560" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="dt2" value="POST /api/v1/invoices  +  X-Tenant-Id" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=11;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="220" y="30" width="360" height="18" as="geometry"/>
+        </mxCell>
+
+        <!-- Flow steps left to right, then down -->
+        <mxCell id="s1" value="1. TenantFilter&#xa;parse X-Tenant-Id&#xa;TenantContext.set" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="140" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="s2" value="2. InvoiceResource&#xa;map DTO → command&#xa;getCurrentTenant()" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="220" y="70" width="150" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="s3" value="3. IssueInvoiceService&#xa;IdGenerator (UuidV7)&#xa;build Invoice + lines" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="410" y="70" width="160" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="s4" value="4. Invoice.issue()&#xa;LifecycleEngine&#xa;DRAFT → ISSUED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="610" y="70" width="150" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="s5" value="5. InvoiceRepository.save&#xa;InvoiceRepositoryAdapter&#xa;Entity + Lines merge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="610" y="190" width="150" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="s6" value="6. AuditRepository.save&#xa;AuditEntry after-state&#xa;ar_audit_log" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="410" y="190" width="150" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="s7" value="7. EventPublisher&#xa;KafkaEventPublisher&#xa;OutboxEntry PENDING" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="220" y="190" width="150" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="s8" value="8. HTTP 201&#xa;{ id }&#xa;Clear TenantContext" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="190" width="140" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="async" value="ASYNC — OutboxWorker (@Scheduled every 5s)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=11;startSize=28;" vertex="1" parent="1">
+          <mxGeometry x="40" y="300" width="720" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="a1" value="findPending(batch)&#xa;ar_outbox" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="async">
+          <mxGeometry x="30" y="40" width="140" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="a2" value="mark PROCESSING&#xa;prevent duplicates" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="async">
+          <mxGeometry x="200" y="40" width="140" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="a3" value="Publish Kafka&#xa;(stub / commented)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=10;fontStyle=2;" vertex="1" parent="async">
+          <mxGeometry x="370" y="40" width="140" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="a4" value="PUBLISHED / FAILED&#xa;retry_count · cleanup" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="async">
+          <mxGeometry x="540" y="40" width="150" height="55" as="geometry"/>
+        </mxCell>
+
+        <!-- Same TX box -->
+        <mxCell id="tx" value="Same DB transaction (aggregate + audit + outbox write)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=10;fontStyle=2;fontColor=#b85450;" vertex="1" parent="1">
+          <mxGeometry x="220" y="270" width="400" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- Lifecycle mini -->
+        <mxCell id="lc" value="Invoice status machine (InvoiceLifecycleEngine)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=11;startSize=26;" vertex="1" parent="1">
+          <mxGeometry x="40" y="430" width="720" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="st1" value="DRAFT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;fontStyle=1;" vertex="1" parent="lc">
+          <mxGeometry x="20" y="40" width="70" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="st2" value="ISSUED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontStyle=1;" vertex="1" parent="lc">
+          <mxGeometry x="130" y="40" width="70" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="st3" value="PARTIALLY&#xa;PAID" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;fontStyle=1;" vertex="1" parent="lc">
+          <mxGeometry x="240" y="35" width="80" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="st4" value="PAID" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="lc">
+          <mxGeometry x="360" y="40" width="70" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="st5" value="OVERDUE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;fontStyle=1;" vertex="1" parent="lc">
+          <mxGeometry x="470" y="40" width="80" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="st6" value="WRITTEN&#xa;OFF" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;fontStyle=1;" vertex="1" parent="lc">
+          <mxGeometry x="590" y="35" width="80" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="se1" style="endArrow=block;endFill=1;strokeColor=#666666;" edge="1" parent="1" source="s1" target="s2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="se2" style="endArrow=block;endFill=1;strokeColor=#666666;" edge="1" parent="1" source="s2" target="s3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="se3" style="endArrow=block;endFill=1;strokeColor=#666666;" edge="1" parent="1" source="s3" target="s4"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="se4" style="endArrow=block;endFill=1;strokeColor=#666666;edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" source="s4" target="s5"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="se5" style="endArrow=block;endFill=1;strokeColor=#666666;" edge="1" parent="1" source="s5" target="s6"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="se6" style="endArrow=block;endFill=1;strokeColor=#666666;" edge="1" parent="1" source="s6" target="s7"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="se7" style="endArrow=block;endFill=1;strokeColor=#666666;" edge="1" parent="1" source="s7" target="s8"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="l1" style="endArrow=block;endFill=1;strokeColor=#82b366;" edge="1" parent="lc" source="st1" target="st2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="l2" style="endArrow=block;endFill=1;strokeColor=#82b366;" edge="1" parent="lc" source="st2" target="st3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="l3" style="endArrow=block;endFill=1;strokeColor=#82b366;" edge="1" parent="lc" source="st3" target="st4"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="l4" style="endArrow=block;endFill=1;strokeColor=#d79b00;" edge="1" parent="lc" source="st2" target="st5">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="165" y="95"/><mxPoint x="510" y="95"/></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="l5" style="endArrow=block;endFill=1;strokeColor=#b85450;" edge="1" parent="lc" source="st5" target="st6"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="note" value="Note: create API always issues immediately. PAID→ISSUED reopen used on cheque bounce." style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=9;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="120" y="540" width="560" height="20" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="data" name="Domain Data Design">
+    <mxGraphModel dx="1000" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="tt" value="Domain &amp; Data Design — Multi-tenant AR" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontStyle=1;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="180" y="8" width="440" height="24" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="tenant" value="ar_tenant&#xa;id · name · slug · base_currency" style="shape=table;startSize=0;container=0;collapsible=0;childLayout=tableLayout;fixedRows=1;rowLines=0;fontStyle=1;align=center;resizeLast=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="280" y="40" width="240" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="cust" value="Customer&#xa;ar_customer&#xa;code · credit_limit · status" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="130" width="140" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="inv" value="Invoice ★&#xa;ar_invoice&#xa;status · totals · version&#xa;customer_ref" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="240" y="130" width="150" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="pay" value="Payment ★&#xa;ar_payment&#xa;amount_unallocated&#xa;method · status" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="460" y="130" width="150" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="chq" value="Cheque&#xa;ar_cheque&#xa;RECEIVED→…→CLEARED" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="660" y="130" width="100" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="line" value="InvoiceLine&#xa;ar_invoice_line&#xa;(tenant, inv, seq)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="240" y="250" width="150" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="alloc" value="PaymentAllocation&#xa;ar_payment_allocation&#xa;payment ↔ invoice $" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="350" y="250" width="160" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="cn" value="CreditNote&#xa;ar_credit_note&#xa;EPD 2%" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="560" y="250" width="110" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="led" value="LedgerEntry&#xa;AR · REVENUE · BANK · EXPENSE&#xa;(domain enum; in-mem adapter)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=10;align=center;" vertex="1" parent="1">
+          <mxGeometry x="40" y="360" width="200" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="out" value="OutboxEntry&#xa;ar_outbox&#xa;PENDING→PUBLISHED" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="280" y="360" width="160" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="aud" value="AuditEntry&#xa;ar_audit_log&#xa;before/after state" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="480" y="360" width="150" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="fx" value="ExchangeRate&#xa;schema-only" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#eeeeee;strokeColor=#999999;fontSize=9;fontStyle=2;align=center;" vertex="1" parent="1">
+          <mxGeometry x="660" y="360" width="100" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- Multi-tenancy box -->
+        <mxCell id="mt" value="Multi-tenancy design" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=11;startSize=24;" vertex="1" parent="1">
+          <mxGeometry x="40" y="450" width="720" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="mt1" value="1. Header&#xa;X-Tenant-Id" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="mt">
+          <mxGeometry x="20" y="35" width="100" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="mt2" value="2. TenantContext&#xa;ThreadLocal" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="mt">
+          <mxGeometry x="150" y="35" width="110" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="mt3" value="3. Every repo&#xa;WHERE tenant_id=?" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="mt">
+          <mxGeometry x="290" y="35" width="120" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="mt4" value="4. RLS policies&#xa;(SQL ready)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="mt">
+          <mxGeometry x="440" y="35" width="110" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="mt5" value="5. Events&#xa;tenantId field" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="mt">
+          <mxGeometry x="580" y="35" width="110" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- relationships -->
+        <mxCell id="r1" style="endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#9673a6;" edge="1" parent="1" source="tenant" target="cust"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="r2" style="endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#82b366;" edge="1" parent="1" source="tenant" target="inv"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="r3" style="endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#82b366;" edge="1" parent="1" source="tenant" target="pay"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="r4" style="endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#82b366;" edge="1" parent="1" source="inv" target="line"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="r5" style="endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#d79b00;" edge="1" parent="1" source="inv" target="alloc"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="r6" style="endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#d79b00;" edge="1" parent="1" source="pay" target="alloc"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="r7" style="endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#9673a6;dashed=1;" edge="1" parent="1" source="cust" target="inv"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="r8" style="endArrow=ERmany;startArrow=ERone;endFill=0;startFill=0;strokeColor=#d6b656;" edge="1" parent="1" source="pay" target="chq"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="foot" value="★ Aggregate roots · All tables carry tenant_id · UUID v7 ids · Money NUMERIC(19,2)" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=9;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="140" y="560" width="520" height="18" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="payment" name="Payment Design">
+    <mxGraphModel dx="1000" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="pt" value="Design: Payment Record &amp; Allocation" style="text;html=1;strokeColor=none;fillColor=none;align=center;fontStyle=1;fontSize=15;" vertex="1" parent="1">
+          <mxGeometry x="180" y="10" width="440" height="24" as="geometry"/>
+        </mxCell>
+
+        <!-- Record path -->
+        <mxCell id="pr" value="Record Payment" style="swimlane;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=11;startSize=24;" vertex="1" parent="1">
+          <mxGeometry x="40" y="50" width="720" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="p1" value="POST /payments&#xa;PaymentResource" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="pr">
+          <mxGeometry x="20" y="35" width="120" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="p2" value="RecordPaymentService&#xa;load Customer&#xa;dup check number" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="pr">
+          <mxGeometry x="170" y="35" width="140" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="p3" value="new Payment&#xa;RECEIVED&#xa;amount_unallocated" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="pr">
+          <mxGeometry x="340" y="35" width="130" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="p4" value="PaymentRepository&#xa;+ Audit save" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="pr">
+          <mxGeometry x="500" y="35" width="120" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="p5" value="201&#xa;{id, number}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="pr">
+          <mxGeometry x="640" y="35" width="60" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- Allocation -->
+        <mxCell id="al" value="Allocation (FIFO or Manual)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=11;startSize=24;" vertex="1" parent="1">
+          <mxGeometry x="40" y="170" width="720" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="a1p" value="POST …/allocate/fifo&#xa;or …/allocate/manual&#xa;+ Idempotency-Key" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="al">
+          <mxGeometry x="20" y="40" width="140" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="a2p" value="PaymentAllocationService&#xa;idempotency cache&#xa;(in-memory ConcurrentMap)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="al">
+          <mxGeometry x="180" y="40" width="160" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="a3p" value="Load Payment&#xa;Load open Invoices&#xa;for customer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="al">
+          <mxGeometry x="360" y="40" width="140" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="a4p" value="PaymentAllocationEngine&#xa;FIFO: dueDate, issueDate&#xa;Manual: explicit amounts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;fontStyle=1;" vertex="1" parent="al">
+          <mxGeometry x="520" y="40" width="180" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="a5p" value="payment.allocate(...)&#xa;amount_unallocated ↓" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="al">
+          <mxGeometry x="100" y="120" width="160" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="a6p" value="Save Payment + Allocations&#xa;Update invoice status&#xa;PAID / PARTIALLY_PAID" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="al">
+          <mxGeometry x="300" y="120" width="180" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="a7p" value="Rules&#xa;amount &gt; 0&#xa;currency match&#xa;≤ unallocated" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="al">
+          <mxGeometry x="520" y="120" width="160" height="55" as="geometry"/>
+        </mxCell>
+
+        <!-- Cheque parallel -->
+        <mxCell id="cq" value="Cheque parallel path (instrument lifecycle)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1;fontSize=11;startSize=24;" vertex="1" parent="1">
+          <mxGeometry x="40" y="390" width="720" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="c1" value="RECEIVED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;fontStyle=1;" vertex="1" parent="cq">
+          <mxGeometry x="30" y="40" width="90" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="c2" value="DEPOSITED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;fontStyle=1;" vertex="1" parent="cq">
+          <mxGeometry x="180" y="40" width="90" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="c3" value="CLEARED&#xa;Dr Bank / Cr AR" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;fontStyle=1;" vertex="1" parent="cq">
+          <mxGeometry x="340" y="35" width="110" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="c4" value="BOUNCED&#xa;reverse + reopen inv" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;fontStyle=1;" vertex="1" parent="cq">
+          <mxGeometry x="510" y="35" width="130" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ce1" style="endArrow=block;endFill=1;strokeColor=#666666;" edge="1" parent="cq" source="c1" target="c2"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ce2" style="endArrow=block;endFill=1;strokeColor=#82b366;" edge="1" parent="cq" source="c2" target="c3"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ce3" style="endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;" edge="1" parent="cq" source="c2" target="c4">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="225" y="85"/><mxPoint x="575" y="85"/></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="pn" value="Shortcut: POST /invoices/{id}/payment only updates invoice status (no Payment aggregate)." style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=9;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="100" y="510" width="600" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="pn2" value="FIFO open-invoice query matches customerRef to customer UUID string." style="text;html=1;strokeColor=none;fillColor=none;align=center;fontSize=9;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="100" y="530" width="600" height="18" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

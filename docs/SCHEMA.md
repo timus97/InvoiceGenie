@@ -509,4 +509,4 @@ ar_outbox (standalone, tenant-scoped)
 - **Payment allocation**: One payment can allocate to N invoices; one invoice can receive allocations from N payments.
 - **Ledger**: Single-sided entries; double-entry validation in application layer or via trigger.
 - **Audit**: Every mutation should write to `ar_audit_log` via trigger or application service.
-- **SQLite fallback**: For dev/Docker without PostgreSQL, skip RLS and use `tenant_id` filter only.
+- **H2 dev fallback** (`quarkus.profile=dev`): For local runs without PostgreSQL; skip RLS and use app-level `tenant_id` filter only. (Legacy profile name `sqlite` is an alias — not a SQLite file DB.)

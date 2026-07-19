@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "InvoiceGenie AR API",
-    "description": "Postman collection for InvoiceGenie AR backend.\n\nAuth/Tenancy:\n- Tenant is required on every call: header `X-Tenant-Id: {{tenantId}}`.\n- Optional idempotency: `Idempotency-Key: {{idempotencyKey}}` on create.\n\nBase URL:\n- Default: {{baseUrl}} (e.g. http://localhost:8080)\n- SQLite profile runs on 8081 in application.yml.\n",
+    "description": "Postman collection for InvoiceGenie AR backend.\n\nAuth/Tenancy:\n- Tenant is required on every call: header `X-Tenant-Id: {{tenantId}}`.\n- Optional idempotency: `Idempotency-Key: {{idempotencyKey}}` on create.\n\nBase URL:\n- Default: {{baseUrl}} (e.g. http://localhost:8080)\n- Both default (Postgres) and dev (H2) profiles listen on 8080 unless overridden.\n",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "event": [

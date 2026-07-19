@@ -1,4 +1,4 @@
-# AR Bootstrap — multi-tenant backend
+# AR Bootstrap - multi-tenant backend
 quarkus:
   application:
     name: invoice-genie-ar
@@ -30,6 +30,10 @@ quarkus:
     ar-adapter-persistence:
       group-id: com.invoicegenie
       artifact-id: ar-adapter-persistence
+  # Kafka Dev Services off by default (no Docker required)
+  kafka:
+    devservices:
+      enabled: false
   log:
     level: INFO
     category:
@@ -68,6 +72,9 @@ quarkus:
     hibernate-orm:
       database:
         generation: update
+    kafka:
+      devservices:
+        enabled: false
     index-dependency:
       ar-domain:
         group-id: com.invoicegenie
@@ -108,6 +115,11 @@ quarkus:
     hibernate-orm:
       database:
         generation: update
+    kafka:
+      devservices:
+        enabled: false
+    devservices:
+      enabled: false
     index-dependency:
       ar-domain:
         group-id: com.invoicegenie
@@ -125,8 +137,8 @@ quarkus:
         group-id: com.invoicegenie
         artifact-id: ar-application
 
-# Kafka (optional — disabled by default, enable in production with Kafka running)
-# Uncomment the following when Kafka is available:
+# Kafka connectors (optional - enable in production with Kafka running)
+# Uncomment when Kafka is available AND outbox.kafka-enabled=true:
 # mp.messaging.outgoing.invoice-issued:
 #   connector: smallrye-kafka
 #   topic: ar.invoice.issued
@@ -141,12 +153,13 @@ quarkus:
 # Transactional Outbox Configuration
 outbox:
   enabled: true
+  # When true, OutboxWorker uses OutboxKafkaSender if a CDI bean is present; else logs
+  kafka-enabled: false
   batch-size: 100
   poll-interval: 5s
   delay-start: 10s
   cleanup-days: 7
   cleanup-cron: "0 0 0 * * ?"
 
-# RLS: set per-request in filter before using connection
-# app.current_tenant_id is set by TenantFilter or a dedicated DbTenantInterceptor
-
+# RLS: TenantFilter sets app.current_tenant_id via DbTenantContext.setTenantLocal(EntityManager)
+# when Postgres is in use. On H2 the call is a graceful no-op.

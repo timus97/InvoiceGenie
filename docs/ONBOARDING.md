@@ -2,7 +2,7 @@
 
 > **Audience:** Engineers joining the project, AI agents, and reviewers who need a map of the system before changing code.  
 > **Repo:** [timus97/InvoiceGenie](https://github.com/timus97/InvoiceGenie)  
-> **Stack:** Java 17 · Quarkus 3.6.4 · Maven multi-module · PostgreSQL 15+ (H2 for local/dev) · DDD + Hexagonal Architecture  
+> **Stack:** Java 17 · Quarkus 3.8.6 · Maven multi-module · PostgreSQL 15+ (H2 for local/dev) · DDD + Hexagonal Architecture  
 > **Scope:** Multi-tenant **Accounts Receivable (AR)** backend only — no UI. Designed to extend later toward AP and GL.
 
 ---
@@ -252,12 +252,21 @@ UseCase.method(TenantId, command)
 
 | Class | When | Behavior |
 |-------|------|----------|
-| `TenantFilter` | Request | Requires `X-Tenant-Id` header → `TenantId.of` → `TenantContext.setCurrentTenant`. Missing/invalid → **400** |
+| `TenantFilter` | Request | Requires `X-Tenant-Id` header → `TenantId.of` → `TenantContext.setCurrentTenant`. Also binds Postgres RLS GUC via `DbTenantContext.setTenantLocal(EntityManager, tenantId)` when EM is available. Missing/invalid → **400** |
 | `RequestLoggingFilter` | Request + response | Correlation-style request logging |
-| `TenantContextClearFilter` | Response | `TenantContext.clear()` so ThreadLocal does not leak across threads |
+| `TenantContextClearFilter` | Response | Clears RLS GUC (best-effort) + `TenantContext.clear()` so ThreadLocal does not leak across threads |
 | `GlobalExceptionMapper` | Errors | `IllegalArgumentException` → 400 `VALIDATION_ERROR`; `IllegalStateException` → 409 `STATE_ERROR`; else 500 |
 
-> **Note:** Postgres RLS session variable is **not** currently set in `TenantFilter` (commented/deferred). Isolation today is **application-level** (`tenant_id` on every query).
+#### Postgres RLS tenant hardening
+
+| Layer | Behavior |
+|-------|----------|
+| **App-level (always)** | Every repository query filters by `tenant_id`. This is the primary isolation mechanism. |
+| **DB-level (Postgres)** | Schema RLS policies read `app.current_tenant_id`. `TenantFilter` sets it with `SELECT set_config('app.current_tenant_id', :tid, true)` (transaction-local) via `DbTenantContext`. |
+| **H2 / local dev** | GUC calls fail and are **gracefully ignored** (no-op). App-level isolation still applies. |
+| **Helper** | `com.invoicegenie.shared.tenant.DbTenantContext` — JDBC `setTenant`/`clearTenant` and EntityManager `setTenantLocal`/`clearTenant`. |
+
+> **Note:** `SET LOCAL` / `set_config(..., true)` is most effective inside an active transaction on the same connection used by JPA. Connection pooling can limit effectiveness until a Hibernate statement inspector is added; app-level filters remain authoritative.
 
 #### REST resources → collaborators
 
@@ -313,18 +322,27 @@ Invoice use cases are produced in **`ar-bootstrap`** (`ArApplication`), not here
 
 | Class | Role |
 |-------|------|
-| `KafkaEventPublisher` | Implements `EventPublisher`. **Does not send to Kafka.** Serializes event → `OutboxEntry` → `OutboxRepository.save` in same transaction. |
-| `OutboxWorker` | `@Scheduled` poller (`outbox.poll-interval`, default 5s, delayed start). Loads PENDING → PROCESSING → PUBLISHED (or FAILED with retries). Kafka emit is logged / stubbed. Cleanup cron deletes old published rows. |
+| `KafkaEventPublisher` | Implements `EventPublisher`. Serializes domain events with **Jackson `ObjectMapper`** → `OutboxEntry` → `OutboxRepository.save` in same transaction. Aggregate type/id resolved via an **event type registry** (not long instanceof chains). |
+| `OutboxWorker` | `@Scheduled` poller (`outbox.poll-interval`, default 5s, delayed start). Loads PENDING → PROCESSING → PUBLISHED (or FAILED with retries). Cleanup cron deletes old published rows. |
+| `OutboxKafkaSender` | Optional CDI interface. When `outbox.kafka-enabled=true` **and** a bean is present, worker calls `send(entry)`; otherwise logs (safe default). |
 
-**Events handled for aggregate typing:**
+**Config (`application.yml`):**
 
-| Domain event | Aggregate type in outbox |
-|--------------|--------------------------|
-| `InvoiceIssued` | `INVOICE` |
-| `PaymentRecorded` | `PAYMENT` |
-| `PaymentAllocated` | `PAYMENT` |
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `outbox.enabled` | `true` | Worker poll loop on/off |
+| `outbox.kafka-enabled` | `false` | Attempt real Kafka emit via `OutboxKafkaSender` |
+| `outbox.batch-size` / `poll-interval` / `cleanup-*` | see yml | Worker tuning |
 
-Today, **`IssueInvoiceService` is the main path that publishes** into the outbox. Payment record/allocate do not consistently emit events yet.
+To enable Kafka in production: set `outbox.kafka-enabled=true`, provide an `OutboxKafkaSender` bean wired to `@Channel("outbox-events") Emitter`, and uncomment `mp.messaging.outgoing.outbox-events` (smallrye-kafka) in `application.yml`.
+
+**Events handled for aggregate typing (registry):**
+
+| Domain event | Aggregate type in outbox | Published by |
+|--------------|--------------------------|--------------|
+| `InvoiceIssued` | `INVOICE` | `IssueInvoiceService` |
+| `PaymentRecorded` | `PAYMENT` | `RecordPaymentService` |
+| `PaymentAllocated` | `PAYMENT` | `PaymentAllocationService` (FIFO + manual) |
 
 ---
 
@@ -440,7 +458,7 @@ Body: { allocatedBy, version?, allocations: [{ invoiceId, amount, notes? }] }
 ```
 
 **Modules:** api → application → domain engines → persistence.  
-**Events:** allocation path does not fully wire `PaymentAllocated` / outbox today.
+**Events:** `RecordPaymentService` publishes `PaymentRecorded`; allocation paths publish `PaymentAllocated` into the outbox via `EventPublisher`.
 
 ---
 
@@ -663,9 +681,25 @@ mvn test
 mvn -pl ar-domain test
 mvn -pl ar-adapter-persistence test
 mvn -pl ar-bootstrap test
+
+# Coverage (JaCoCo — reports only; minimum not enforced yet)
+./scripts/coverage.sh          # Linux/macOS/Git Bash
+./scripts/coverage.ps1         # Windows PowerShell
+# Reports: */target/site/jacoco/index.html and target/site/jacoco-aggregate/
+
+# Dependency hygiene
+mvn dependency:tree
+mvn versions:display-dependency-updates
+mvn -Psecurity-scan dependency-check:check   # OWASP; optional, can be slow (NVD download)
 ```
 
-Manual: Postman collection under `postman/`, or `scripts/test-api.sh http://localhost:8080`.
+Manual: Postman collection under `postman/`, or API scripts:
+
+```bash
+# Start with profile=dev (H2), then:
+./scripts/test-api.sh http://localhost:8080
+./scripts/test-api.ps1 -BaseUrl http://localhost:8080   # Windows
+```
 
 ---
 
@@ -693,7 +727,7 @@ mvn clean install -DskipTests
 | JDK | 17+ | Yes |
 | Maven | 3.9+ | Yes |
 | Docker / Postgres 15+ | — | Optional (default profile only) |
-| Kafka | — | No (outbox stubbed) |
+| Kafka | — | No (`outbox.kafka-enabled=false` by default) |
 
 ### Run (H2 — no Postgres, preferred)
 

@@ -1,4 +1,4 @@
-# Test configuration for QuarkusTest — uses H2 in-memory DB
+# Test configuration for QuarkusTest - uses H2 in-memory DB
 quarkus:
   http:
     port: 0  # random available port for tests
@@ -16,7 +16,13 @@ quarkus:
       sql: false
   log:
     level: WARN
+  kafka:
+    devservices:
+      enabled: false
+  devservices:
+    enabled: false
 
 # Disable outbox worker in tests (no Kafka)
 outbox:
   enabled: false
+  kafka-enabled: false

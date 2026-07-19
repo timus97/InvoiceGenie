@@ -10,7 +10,7 @@
     </parent>
     <artifactId>ar-adapter-api</artifactId>
     <name>AR Adapter API</name>
-    <description>REST resources and filters — driving adapters</description>
+    <description>REST resources and filters - driving adapters</description>
     <dependencies>
         <dependency>
             <groupId>com.invoicegenie</groupId>
@@ -30,6 +30,10 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-resteasy-reactive</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-hibernate-orm</artifactId>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>

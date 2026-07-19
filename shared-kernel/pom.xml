@@ -10,8 +10,13 @@
     </parent>
     <artifactId>shared-kernel</artifactId>
     <name>Shared Kernel</name>
-    <description>TenantId, Money, base types — shared by AR, AP, GL</description>
+    <description>TenantId, Money, base types - shared by AR, AP, GL</description>
     <dependencies>
+        <dependency>
+            <groupId>jakarta.persistence</groupId>
+            <artifactId>jakarta.persistence-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>

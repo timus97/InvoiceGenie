@@ -4,25 +4,27 @@ import com.invoicegenie.ar.domain.model.ledger.Account;
 import com.invoicegenie.ar.domain.model.ledger.EntryType;
 import com.invoicegenie.ar.domain.model.ledger.LedgerEntry;
 import com.invoicegenie.ar.domain.model.payment.Cheque;
+import com.invoicegenie.ar.domain.model.payment.ChequeLifecycleEngine;
 import com.invoicegenie.ar.domain.model.payment.ChequeStatus;
 import com.invoicegenie.shared.domain.Money;
 import com.invoicegenie.shared.domain.TenantId;
 
-import jakarta.enterprise.inject.Vetoed;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 /**
  * Domain service for cheque processing operations.
- * 
+ *
+ * <p>Plain Java (no CDI). Wired via producers / application layer.
+ *
  * <p>Cheque lifecycle:
  * <ol>
  *   <li>RECEIVED → DEPOSITED (deposit to bank)</li>
  *   <li>DEPOSITED → CLEARED (bank confirmed)</li>
  *   <li>DEPOSITED → BOUNCED (bank returned)</li>
  * </ol>
- * 
+ *
  * <p>On Bounce:
  * <ul>
  *   <li>Create reverse ledger entries: Debit AR, Credit Bank</li>
@@ -30,8 +32,9 @@ import java.util.UUID;
  *   <li>Remove payment allocations if any</li>
  * </ul>
  */
-@Vetoed
 public class ChequeService {
+
+    private static final ChequeLifecycleEngine LIFECYCLE = new ChequeLifecycleEngine();
 
     /**
      * Result of cheque deposit operation.
@@ -151,23 +154,7 @@ public class ChequeService {
      * Get valid state transitions from current state.
      */
     public List<ChequeStatus> getValidTransitions(ChequeStatus currentStatus) {
-        List<ChequeStatus> transitions = new ArrayList<>();
-        
-        switch (currentStatus) {
-            case RECEIVED:
-                transitions.add(ChequeStatus.DEPOSITED);
-                break;
-            case DEPOSITED:
-                transitions.add(ChequeStatus.CLEARED);
-                transitions.add(ChequeStatus.BOUNCED);
-                break;
-            case CLEARED:
-            case BOUNCED:
-                // Terminal states - no transitions
-                break;
-        }
-        
-        return transitions;
+        return new ArrayList<>(LIFECYCLE.getValidTransitions(currentStatus));
     }
 
     /**

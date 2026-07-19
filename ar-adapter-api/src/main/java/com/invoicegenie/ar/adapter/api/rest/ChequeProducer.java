@@ -10,8 +10,8 @@ import jakarta.inject.Inject;
 
 /**
  * CDI producer for ChequeService.
- * 
- * <p>ChequeService is @Vetoed to prevent auto-discovery.
+ *
+ * <p>Domain services are plain Java (no CDI annotations).
  * This producer is the single source of the ChequeService bean.
  */
 @ApplicationScoped

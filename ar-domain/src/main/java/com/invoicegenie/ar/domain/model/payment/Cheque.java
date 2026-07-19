@@ -34,6 +34,8 @@ import java.util.UUID;
  */
 public final class Cheque {
 
+    private static final ChequeLifecycleEngine LIFECYCLE = new ChequeLifecycleEngine();
+
     private final UUID id;
     private final String chequeNumber;
     private final CustomerId customerId;
@@ -131,9 +133,7 @@ public final class Cheque {
      * Deposit cheque to bank.
      */
     public void deposit() {
-        if (!status.canDeposit()) {
-            throw new IllegalStateException("Cannot deposit cheque in state: " + status);
-        }
+        LIFECYCLE.assertTransitionAllowed(status, ChequeStatus.DEPOSITED);
         this.status = ChequeStatus.DEPOSITED;
         this.depositedDate = LocalDate.now();
         touch();
@@ -143,9 +143,7 @@ public final class Cheque {
      * Clear cheque (bank confirmed payment).
      */
     public ChequeClearedResult clear() {
-        if (!status.canClear()) {
-            throw new IllegalStateException("Cannot clear cheque in state: " + status);
-        }
+        LIFECYCLE.assertTransitionAllowed(status, ChequeStatus.CLEARED);
         this.status = ChequeStatus.CLEARED;
         this.clearedDate = LocalDate.now();
         touch();
@@ -156,9 +154,7 @@ public final class Cheque {
      * Bounce cheque (bank returned cheque).
      */
     public ChequeBouncedResult bounce(String reason) {
-        if (!status.canBounce()) {
-            throw new IllegalStateException("Cannot bounce cheque in state: " + status);
-        }
+        LIFECYCLE.assertTransitionAllowed(status, ChequeStatus.BOUNCED);
         if (reason == null || reason.isBlank()) {
             throw new IllegalArgumentException("Bounce reason is required");
         }

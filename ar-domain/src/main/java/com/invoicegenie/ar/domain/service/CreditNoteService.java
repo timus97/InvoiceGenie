@@ -4,24 +4,24 @@ import com.invoicegenie.ar.domain.model.payment.CreditNote;
 import com.invoicegenie.shared.domain.Money;
 import com.invoicegenie.shared.domain.TenantId;
 
-import jakarta.enterprise.context.ApplicationScoped;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 /**
  * Domain service for credit note operations.
- * 
+ *
+ * <p>Plain Java (no CDI). Wired via producers / application layer.
+ *
  * <p>Credit notes are used for:
  * <ul>
  *   <li>Early payment discounts (2% when paid within 30 days)</li>
  *   <li>Adjustments</li>
  *   <li>Refunds</li>
  * </ul>
- * 
+ *
  * <p>Credit notes can be applied to short payments or future invoices.
  */
-@ApplicationScoped
 public class CreditNoteService {
 
     /**

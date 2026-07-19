@@ -119,19 +119,22 @@ class ChequeTest {
         @DisplayName("should throw when depositing non-received cheque")
         void shouldThrowWhenDepositingNonReceived() {
             cheque.deposit();
-            assertThrows(IllegalStateException.class, () -> cheque.deposit());
+            assertThrows(com.invoicegenie.ar.domain.exception.InvalidStateTransitionException.class,
+                    () -> cheque.deposit());
         }
 
         @Test
         @DisplayName("should throw when clearing non-deposited cheque")
         void shouldThrowWhenClearingNonDeposited() {
-            assertThrows(IllegalStateException.class, () -> cheque.clear());
+            assertThrows(com.invoicegenie.ar.domain.exception.InvalidStateTransitionException.class,
+                    () -> cheque.clear());
         }
 
         @Test
         @DisplayName("should throw when bouncing non-deposited cheque")
         void shouldThrowWhenBouncingNonDeposited() {
-            assertThrows(IllegalStateException.class, () -> cheque.bounce("Reason"));
+            assertThrows(com.invoicegenie.ar.domain.exception.InvalidStateTransitionException.class,
+                    () -> cheque.bounce("Reason"));
         }
 
         @Test

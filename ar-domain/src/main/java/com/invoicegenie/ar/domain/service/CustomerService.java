@@ -6,7 +6,6 @@ import com.invoicegenie.ar.domain.model.customer.CustomerRepository;
 import com.invoicegenie.ar.domain.model.customer.CustomerStatus;
 import com.invoicegenie.shared.domain.TenantId;
 
-import jakarta.enterprise.context.ApplicationScoped;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
@@ -14,14 +13,16 @@ import java.util.UUID;
 
 /**
  * Domain service for customer management operations.
- * 
+ *
+ * <p>Plain Java (no CDI). Wired via producers / application layer.
+ *
  * <p>Customer lifecycle:
  * <ol>
  *   <li>ACTIVE: Can receive invoices, make payments</li>
  *   <li>BLOCKED: Can view data but cannot receive new invoices</li>
  *   <li>DELETED: Soft-deleted, retained for audit</li>
  * </ol>
- * 
+ *
  * <p>Business rules:
  * <ul>
  *   <li>Customer code must be unique per tenant</li>
@@ -30,7 +31,6 @@ import java.util.UUID;
  *   <li>BLOCKED customers cannot be invoiced</li>
  * </ul>
  */
-@ApplicationScoped
 public class CustomerService {
 
     /**
@@ -106,30 +106,12 @@ public class CustomerService {
             }
 
             Customer customer = opt.get();
-            // Unblocking is setting status back to ACTIVE
             if (customer.getStatus() != CustomerStatus.BLOCKED) {
                 return new StatusResult(customer, false, "Customer is not blocked (status: " + customer.getStatus() + ")");
             }
-            // Create new customer instance with ACTIVE status (immutable pattern)
-            Customer active = new Customer(
-                    customer.getId(),
-                    customer.getCustomerCode(),
-                    customer.getLegalName(),
-                    customer.getDisplayName(),
-                    customer.getEmail(),
-                    customer.getPhone(),
-                    customer.getBillingAddress(),
-                    customer.getCurrency(),
-                    customer.getCreditLimit(),
-                    customer.getPaymentTerms(),
-                    customer.getTaxId(),
-                    CustomerStatus.ACTIVE,
-                    customer.getCreatedAt(),
-                    java.time.Instant.now(),
-                    customer.getVersion() + 1
-            );
-            repository.save(tenantId, active);
-            return new StatusResult(active, true, "Customer unblocked");
+            customer.unblock();
+            repository.save(tenantId, customer);
+            return new StatusResult(customer, true, "Customer unblocked");
         } catch (Exception e) {
             return new StatusResult(null, false, e.getMessage());
         }

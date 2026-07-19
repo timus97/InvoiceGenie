@@ -145,11 +145,16 @@ public final class Customer {
     }
 
     /**
-     * Unblocks the customer.
+     * Unblocks a blocked customer (status → ACTIVE).
+     *
+     * @throws IllegalStateException if customer is deleted or not currently blocked
      */
     public void unblock() {
         if (status == CustomerStatus.DELETED) {
             throw new IllegalStateException("Cannot unblock deleted customer");
+        }
+        if (status != CustomerStatus.BLOCKED) {
+            throw new IllegalStateException("Customer is not blocked (status: " + status + ")");
         }
         this.status = CustomerStatus.ACTIVE;
         touch();

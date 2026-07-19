@@ -221,6 +221,19 @@ class CustomerTest {
         }
 
         @Test
+        @DisplayName("should throw when unblocking active customer")
+        void shouldThrowWhenUnblockingActive() {
+            assertThrows(IllegalStateException.class, () -> customer.unblock());
+        }
+
+        @Test
+        @DisplayName("should throw when unblocking deleted customer")
+        void shouldThrowWhenUnblockingDeleted() {
+            customer.delete();
+            assertThrows(IllegalStateException.class, () -> customer.unblock());
+        }
+
+        @Test
         @DisplayName("should delete customer")
         void shouldDeleteCustomer() {
             customer.delete();

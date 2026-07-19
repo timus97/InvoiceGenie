@@ -1,7 +1,10 @@
 #!/bin/bash
 # InvoiceGenie API Test Script - Comprehensive
-# Tests: Customer, Invoice, Cheque, CreditNote, Outbox workflows
+# Tests: Customer, Invoice, Payment, Aging, Cheque, CreditNote, Outbox workflows
+# Prefer local H2: start with profile=dev
+#   mvn -pl ar-bootstrap quarkus:dev -Dquarkus.profile=dev
 # Usage: ./scripts/test-api.sh [base_url]
+# Windows: ./scripts/test-api.ps1
 
 set -e
 
@@ -12,6 +15,7 @@ echo "=========================================="
 echo "InvoiceGenie Comprehensive API Test Suite"
 echo "Base URL: $BASE_URL"
 echo "Tenant: $TENANT_ID"
+echo "Tip: use -Dquarkus.profile=dev (H2) for local runs"
 echo "=========================================="
 
 # Colors
@@ -215,8 +219,69 @@ echo "=== 2.3 List Invoices ==="
 test_endpoint "List Invoices" "GET" "/api/v1/invoices?limit=10" "" "200"
 
 echo ""
-echo "=== 2.4 Apply Payment ==="
-test_endpoint "Payment" "POST" "/api/v1/invoices/$INVOICE_ID/payment" '{"fullyPaid": true}' "200"
+echo "=== 2.4 Apply Payment (invoice status helper) ==="
+test_endpoint "Invoice Payment Status" "POST" "/api/v1/invoices/$INVOICE_ID/payment" '{"fullyPaid": false}' "200"
+
+echo ""
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}   SECTION 2b: PAYMENT RECORD + ALLOCATE${NC}"
+echo -e "${BLUE}========================================${NC}"
+
+PAYMENT_ID=""
+echo ""
+echo "=== 2b.1 Record Payment ==="
+CREATE_PAYMENT='{
+  "paymentNumber": "PAY-TEST-'$(date +%s)'",
+  "customerId": "'$CUSTOMER_ID'",
+  "amount": 1000.00,
+  "currencyCode": "USD",
+  "paymentDate": "'$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)'",
+  "method": "BANK_TRANSFER",
+  "reference": "REF-API-TEST",
+  "notes": "test-api payment"
+}'
+CREATE_PAY_RESP=$(curl -s -w "%{http_code}" -X POST \
+    -H "Content-Type: application/json" \
+    -H "X-Tenant-Id: $TENANT_ID" \
+    -d "$CREATE_PAYMENT" \
+    "$BASE_URL/api/v1/payments")
+CREATE_PAY_CODE="${CREATE_PAY_RESP: -3}"
+CREATE_PAY_JSON="${CREATE_PAY_RESP%???}"
+echo -n "[Record Payment] POST /api/v1/payments ... "
+if [[ "$CREATE_PAY_CODE" == "201" ]]; then
+    echo -e "${GREEN}PASS${NC} ($CREATE_PAY_CODE)"
+    PASS=$((PASS + 1))
+    PAYMENT_ID=$(json_get_id "$CREATE_PAY_JSON")
+    echo "  Payment ID: $PAYMENT_ID"
+else
+    echo -e "${RED}FAIL${NC} (expected 201, got $CREATE_PAY_CODE)"
+    pretty_json "$CREATE_PAY_JSON"
+    FAIL=$((FAIL + 1))
+fi
+
+if [ -n "$PAYMENT_ID" ] && [ -n "$INVOICE_ID" ]; then
+    echo ""
+    echo "=== 2b.2 Manual Allocate ==="
+    test_endpoint "Manual Allocate" "POST" "/api/v1/payments/$PAYMENT_ID/allocate/manual" \
+        '{"allocatedBy":"11111111-1111-1111-1111-111111111111","allocations":[{"invoiceId":"'"$INVOICE_ID"'","amount":500.00,"notes":"partial"}]}' "200"
+
+    echo ""
+    echo "=== 2b.3 Get Payment Allocations ==="
+    test_endpoint "Get Allocations" "GET" "/api/v1/payments/$PAYMENT_ID/allocations" "" "200"
+fi
+
+echo ""
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}   SECTION 2c: AGING${NC}"
+echo -e "${BLUE}========================================${NC}"
+
+echo ""
+echo "=== 2c.1 Aging Report ==="
+test_endpoint "Aging Report" "GET" "/api/v1/aging" "" "200"
+
+echo ""
+echo "=== 2c.2 Aging Buckets ==="
+test_endpoint "Aging Buckets" "GET" "/api/v1/aging/buckets" "" "200"
 
 echo ""
 echo -e "${BLUE}========================================${NC}"

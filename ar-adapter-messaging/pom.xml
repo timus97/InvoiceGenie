@@ -10,7 +10,7 @@
     </parent>
     <artifactId>ar-adapter-messaging</artifactId>
     <name>AR Adapter Messaging</name>
-    <description>Event publisher — Kafka with transactional outbox pattern</description>
+    <description>Event publisher - Kafka with transactional outbox pattern</description>
     <dependencies>
         <dependency>
             <groupId>com.invoicegenie</groupId>
@@ -25,6 +25,10 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-jackson</artifactId>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>

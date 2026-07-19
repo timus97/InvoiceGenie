@@ -8,25 +8,14 @@ import java.sql.Statement;
 
 /**
  * Utility for setting PostgreSQL RLS (Row Level Security) session variable.
- * 
+ *
  * <p>PostgreSQL RLS policies defined in the schema expect the session variable
  * <code>app.current_tenant_id</code> to be set. This utility provides methods
- * to set and clear this variable on a JDBC connection.
- * 
- * <p>Usage in application services or repository adapters:
- * <pre>
- * try (Connection conn = dataSource.getConnection()) {
- *     DbTenantContext.setTenant(conn, TenantContext.getCurrentTenant());
- *     // Execute queries - RLS policies now enforce tenant isolation
- * }
- * </pre>
- * 
- * <p>For JPA EntityManager, use inline native queries:
- * <pre>
- * em.createNativeQuery("SELECT set_config('app.current_tenant_id', ?, true)")
- *     .setParameter(1, tenantId.getValue().toString())
- *     .getSingleResult();
- * </pre>
+ * to set and clear this variable on a JDBC connection or JPA EntityManager.
+ *
+ * <p>Callers should only invoke EntityManager helpers when running against
+ * PostgreSQL. On H2, skip the call (see {@link #isPostgresDbKind(String)}) so
+ * failed native SQL does not mark the JPA transaction rollback-only.
  */
 public final class DbTenantContext {
 
@@ -36,7 +25,6 @@ public final class DbTenantContext {
 
     /**
      * Sets the tenant ID session variable on the given JDBC connection.
-     * This enables PostgreSQL RLS policies to enforce tenant isolation.
      *
      * @param connection JDBC connection
      * @param tenantId the tenant ID to set
@@ -74,6 +62,80 @@ public final class DbTenantContext {
                 return rs.getString(1);
             }
             return null;
+        }
+    }
+
+    /**
+     * Returns true when the configured DB kind is PostgreSQL.
+     *
+     * @param dbKind value of {@code quarkus.datasource.db-kind} (may be null)
+     */
+    public static boolean isPostgresDbKind(String dbKind) {
+        if (dbKind == null || dbKind.isBlank()) {
+            return false;
+        }
+        String k = dbKind.trim().toLowerCase();
+        return k.equals("postgresql") || k.equals("pgsql") || k.equals("postgres");
+    }
+
+    /**
+     * Sets {@code app.current_tenant_id} for the current Postgres transaction via
+     * {@code SET LOCAL}. Safe no-op when {@code entityManager} is null or not an
+     * EntityManager; callers should gate on {@link #isPostgresDbKind(String)}.
+     *
+     * @param entityManager JPA EntityManager (may be null — ignored)
+     * @param tenantId tenant to bind
+     * @return true if the GUC was set successfully, false if skipped/failed
+     */
+    public static boolean setTenantLocal(Object entityManager, TenantId tenantId) {
+        if (entityManager == null || tenantId == null) {
+            return false;
+        }
+        if (!(entityManager instanceof jakarta.persistence.EntityManager jpaEm)) {
+            return false;
+        }
+        String uuid = tenantId.getValue().toString();
+        // Prefer set_config(..., true) for transaction-local scope; fall back to SET LOCAL.
+        try {
+            jpaEm.createNativeQuery("SELECT set_config('" + SESSION_VAR + "', :tid, true)")
+                    .setParameter("tid", uuid)
+                    .getSingleResult();
+            return true;
+        } catch (Exception primary) {
+            try {
+                jpaEm.createNativeQuery("SET LOCAL " + SESSION_VAR + " = '" + uuid + "'")
+                        .executeUpdate();
+                return true;
+            } catch (Exception secondary) {
+                return false;
+            }
+        }
+    }
+
+    /**
+     * Clears {@code app.current_tenant_id} via EntityManager.
+     *
+     * @param entityManager JPA EntityManager (may be null — ignored)
+     * @return true if cleared successfully
+     */
+    public static boolean clearTenant(Object entityManager) {
+        if (entityManager == null) {
+            return false;
+        }
+        if (!(entityManager instanceof jakarta.persistence.EntityManager jpaEm)) {
+            return false;
+        }
+        try {
+            jpaEm.createNativeQuery("SELECT set_config('" + SESSION_VAR + "', '', true)")
+                    .getSingleResult();
+            return true;
+        } catch (Exception primary) {
+            try {
+                jpaEm.createNativeQuery("RESET " + SESSION_VAR).executeUpdate();
+                return true;
+            } catch (Exception secondary) {
+                return false;
+            }
         }
     }
 

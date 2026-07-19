@@ -91,7 +91,7 @@ public class InvoiceResource {
                         .toList()
         );
         var tenantId = TenantContext.getCurrentTenant();
-        var id = issueInvoiceUseCase.issue(tenantId, command);
+        var id = issueInvoiceUseCase.issue(tenantId, command, idempotencyKey);
         return Response.created(URI.create("/api/v1/invoices/" + id.getValue()))
                 .entity(new InvoiceIdDto(id.getValue().toString()))
                 .build();

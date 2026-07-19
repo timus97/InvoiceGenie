@@ -2,6 +2,7 @@ package com.invoicegenie.ar.application.service;
 
 import com.invoicegenie.ar.application.port.inbound.PaymentAllocationUseCase;
 import com.invoicegenie.ar.application.port.outbound.EventPublisher;
+import com.invoicegenie.ar.application.port.outbound.IdempotencyStore;
 import com.invoicegenie.ar.domain.event.PaymentAllocated;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
@@ -14,14 +15,18 @@ import com.invoicegenie.ar.domain.service.PaymentAllocationEngine;
 import com.invoicegenie.shared.domain.Money;
 import com.invoicegenie.shared.domain.TenantId;
 
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.util.stream.Collectors;
 
 /**
  * Application service: payment allocation operations.
@@ -30,7 +35,7 @@ import java.util.concurrent.ConcurrentMap;
  * <ul>
  *   <li>FIFO auto-allocation</li>
  *   <li>Manual allocation</li>
- *   <li>Idempotency support</li>
+ *   <li>Durable idempotency support</li>
  *   <li>Concurrency safety via optimistic locking</li>
  *   <li>One payment can be allocated to multiple invoices</li>
  *   <li>Cumulative {@code amountPaid} on invoices (prevents over-allocation)</li>
@@ -42,18 +47,18 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
     private final PaymentRepository paymentRepository;
     private final InvoiceRepository invoiceRepository;
     private final EventPublisher eventPublisher;
+    private final IdempotencyStore idempotencyStore;
     private final PaymentAllocationEngine allocationEngine;
-
-    // Simple in-memory idempotency store (in production, use database table)
-    private final ConcurrentMap<String, AllocationResult> idempotencyCache = new ConcurrentHashMap<>();
 
     public PaymentAllocationService(
             PaymentRepository paymentRepository,
             InvoiceRepository invoiceRepository,
-            EventPublisher eventPublisher) {
+            EventPublisher eventPublisher,
+            IdempotencyStore idempotencyStore) {
         this.paymentRepository = paymentRepository;
         this.invoiceRepository = invoiceRepository;
         this.eventPublisher = eventPublisher;
+        this.idempotencyStore = idempotencyStore;
         this.allocationEngine = new PaymentAllocationEngine();
     }
 
@@ -64,11 +69,14 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
             UUID allocatedBy,
             String idempotencyKey) {
 
+        String storeKey = null;
+        String requestHash = null;
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            String key = tenantId.getValue() + ":" + paymentId.getValue() + ":" + idempotencyKey;
-            AllocationResult cached = idempotencyCache.get(key);
-            if (cached != null) {
-                return Optional.of(cached);
+            storeKey = "alloc:" + paymentId.getValue() + ":" + idempotencyKey;
+            requestHash = hash("auto|" + paymentId.getValue());
+            Optional<AllocationResult> cached = loadCached(tenantId, storeKey, requestHash);
+            if (cached.isPresent()) {
+                return cached;
             }
         }
 
@@ -102,12 +110,7 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
         }
 
         AllocationResult result = toResult(payment, engineResult);
-
-        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            String key = tenantId.getValue() + ":" + paymentId.getValue() + ":" + idempotencyKey;
-            idempotencyCache.put(key, result);
-        }
-
+        storeIfNeeded(tenantId, storeKey, requestHash, result);
         return Optional.of(result);
     }
 
@@ -119,11 +122,14 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
             UUID allocatedBy,
             String idempotencyKey) {
 
+        String storeKey = null;
+        String requestHash = null;
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            String key = tenantId.getValue() + ":" + paymentId.getValue() + ":" + idempotencyKey;
-            AllocationResult cached = idempotencyCache.get(key);
-            if (cached != null) {
-                return Optional.of(cached);
+            storeKey = "alloc:" + paymentId.getValue() + ":" + idempotencyKey;
+            requestHash = hash("manual|" + paymentId.getValue() + "|" + requests);
+            Optional<AllocationResult> cached = loadCached(tenantId, storeKey, requestHash);
+            if (cached.isPresent()) {
+                return cached;
             }
         }
 
@@ -209,20 +215,12 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
                     allErrors,
                     payment.getVersion()
             );
-            if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-                String key = tenantId.getValue() + ":" + paymentId.getValue() + ":" + idempotencyKey;
-                idempotencyCache.put(key, result);
-            }
+            storeIfNeeded(tenantId, storeKey, requestHash, result);
             return Optional.of(result);
         }
 
         AllocationResult result = toResult(payment, engineResult);
-
-        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            String key = tenantId.getValue() + ":" + paymentId.getValue() + ":" + idempotencyKey;
-            idempotencyCache.put(key, result);
-        }
-
+        storeIfNeeded(tenantId, storeKey, requestHash, result);
         return Optional.of(result);
     }
 
@@ -279,5 +277,87 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
                 errors,
                 payment.getVersion()
         );
+    }
+
+    private Optional<AllocationResult> loadCached(TenantId tenantId, String storeKey, String requestHash) {
+        return idempotencyStore.find(tenantId, storeKey)
+                .map(record -> {
+                    if (!record.requestHash().equals(requestHash)) {
+                        throw new IllegalArgumentException(
+                                "Idempotency-Key reused with different request payload: " + storeKey);
+                    }
+                    return deserialize(record.responseJson());
+                });
+    }
+
+    private void storeIfNeeded(TenantId tenantId, String storeKey, String requestHash, AllocationResult result) {
+        if (storeKey != null && requestHash != null) {
+            idempotencyStore.put(tenantId, storeKey, requestHash, serialize(result));
+        }
+    }
+
+    /**
+     * Compact pipe-delimited serialization (no Jackson dependency in ar-application).
+     * Format: paymentId|currency|total|remaining|version|errorCount|err1;err2|allocCount|inv,amt,allocId;...
+     */
+    static String serialize(AllocationResult result) {
+        String currency = result.totalAllocated().getCurrencyCode();
+        String errors = result.errors().stream()
+                .map(e -> e.replace(";", "%3B").replace("|", "%7C"))
+                .collect(Collectors.joining(";"));
+        String allocs = result.allocations().stream()
+                .map(a -> a.invoiceId().getValue() + "," + a.amount().getAmount().toPlainString()
+                        + "," + a.allocationId())
+                .collect(Collectors.joining(";"));
+        return result.paymentId().getValue()
+                + "|" + currency
+                + "|" + result.totalAllocated().getAmount().toPlainString()
+                + "|" + result.remainingUnallocated().getAmount().toPlainString()
+                + "|" + result.paymentVersion()
+                + "|" + result.errors().size()
+                + "|" + errors
+                + "|" + result.allocations().size()
+                + "|" + allocs;
+    }
+
+    static AllocationResult deserialize(String json) {
+        String[] parts = json.split("\\|", -1);
+        if (parts.length < 9) {
+            throw new IllegalStateException("Corrupt idempotency payload");
+        }
+        PaymentId paymentId = PaymentId.of(UUID.fromString(parts[0]));
+        String currency = parts[1];
+        Money total = Money.of(parts[2], currency);
+        Money remaining = Money.of(parts[3], currency);
+        long version = Long.parseLong(parts[4]);
+        List<String> errors = new ArrayList<>();
+        if (!parts[6].isBlank()) {
+            for (String e : parts[6].split(";", -1)) {
+                if (!e.isBlank()) {
+                    errors.add(e.replace("%3B", ";").replace("%7C", "|"));
+                }
+            }
+        }
+        List<AllocationResult.AllocationDetail> details = new ArrayList<>();
+        if (!parts[8].isBlank()) {
+            for (String a : parts[8].split(";", -1)) {
+                if (a.isBlank()) continue;
+                String[] f = a.split(",", -1);
+                details.add(new AllocationResult.AllocationDetail(
+                        InvoiceId.of(UUID.fromString(f[0])),
+                        Money.of(new BigDecimal(f[1]), currency),
+                        UUID.fromString(f[2])));
+            }
+        }
+        return new AllocationResult(paymentId, details, total, remaining, errors, version);
+    }
+
+    private static String hash(String payload) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(md.digest(payload.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            return Integer.toHexString(payload.hashCode());
+        }
     }
 }

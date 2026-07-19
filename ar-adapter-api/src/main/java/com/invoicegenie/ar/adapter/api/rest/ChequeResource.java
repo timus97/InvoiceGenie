@@ -1,4 +1,4 @@
-package com.invoicegenie.ar.adapter.api.rest;
+﻿package com.invoicegenie.ar.adapter.api.rest;
 
 import com.invoicegenie.ar.adapter.api.dto.ErrorResponse;
 import com.invoicegenie.ar.application.port.inbound.ChequeUseCase;

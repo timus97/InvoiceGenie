@@ -18,6 +18,12 @@ public interface IssueInvoiceUseCase {
      */
     InvoiceId issue(TenantId tenantId, IssueInvoiceCommand command);
 
+    /**
+     * Issue with optional durable {@code Idempotency-Key}.
+     * When the key is present and was seen before with the same payload, returns the prior invoice id.
+     */
+    InvoiceId issue(TenantId tenantId, IssueInvoiceCommand command, String idempotencyKey);
+
     record IssueInvoiceCommand(
             String invoiceNumber,
             String customerId,
@@ -47,4 +53,3 @@ public interface IssueInvoiceUseCase {
         public record LineItem(String description, BigDecimal amount) {}
     }
 }
-

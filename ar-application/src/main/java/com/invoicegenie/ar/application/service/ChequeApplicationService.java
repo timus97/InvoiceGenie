@@ -1,9 +1,10 @@
-package com.invoicegenie.ar.application.service;
+﻿package com.invoicegenie.ar.application.service;
 
 import com.invoicegenie.ar.application.port.inbound.ChequeUseCase;
 import com.invoicegenie.ar.application.port.inbound.InvoiceLifecycleUseCase;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
+import com.invoicegenie.ar.domain.model.ledger.LedgerRepository;
 import com.invoicegenie.ar.domain.model.payment.Cheque;
 import com.invoicegenie.ar.domain.model.payment.ChequeRepository;
 import com.invoicegenie.ar.domain.model.payment.ChequeStatus;
@@ -16,20 +17,23 @@ import java.util.UUID;
 /**
  * Application service: cheque lifecycle use cases.
  *
- * <p>On bounce, reopens affected invoices via {@link InvoiceLifecycleUseCase}.
+ * <p>On clear/bounce, persists durable ledger entries. On bounce, reopens affected invoices.
  */
 public class ChequeApplicationService implements ChequeUseCase {
 
     private final ChequeService chequeService;
     private final ChequeRepository chequeRepository;
     private final InvoiceLifecycleUseCase invoiceLifecycleUseCase;
+    private final LedgerRepository ledgerRepository;
 
     public ChequeApplicationService(ChequeService chequeService,
                                     ChequeRepository chequeRepository,
-                                    InvoiceLifecycleUseCase invoiceLifecycleUseCase) {
+                                    InvoiceLifecycleUseCase invoiceLifecycleUseCase,
+                                    LedgerRepository ledgerRepository) {
         this.chequeService = chequeService;
         this.chequeRepository = chequeRepository;
         this.invoiceLifecycleUseCase = invoiceLifecycleUseCase;
+        this.ledgerRepository = ledgerRepository;
     }
 
     @Override
@@ -67,6 +71,9 @@ public class ChequeApplicationService implements ChequeUseCase {
                     ChequeService.ClearResult result = chequeService.clear(tenantId, cheque);
                     if (result.success()) {
                         chequeRepository.save(tenantId, cheque);
+                        if (result.ledgerEntries() != null && !result.ledgerEntries().isEmpty()) {
+                            ledgerRepository.saveAll(tenantId, result.ledgerEntries());
+                        }
                     }
                     return result;
                 });
@@ -79,6 +86,9 @@ public class ChequeApplicationService implements ChequeUseCase {
                     ChequeService.BounceResult result = chequeService.bounce(tenantId, cheque, reason);
                     if (result.success()) {
                         chequeRepository.save(tenantId, cheque);
+                        if (result.reverseEntries() != null && !result.reverseEntries().isEmpty()) {
+                            ledgerRepository.saveAll(tenantId, result.reverseEntries());
+                        }
                         for (UUID invoiceId : result.affectedInvoiceIds()) {
                             invoiceLifecycleUseCase.reopen(
                                     tenantId,

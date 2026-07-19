@@ -4,6 +4,7 @@ import com.invoicegenie.ar.application.port.inbound.ChequeUseCase;
 import com.invoicegenie.ar.application.port.inbound.InvoiceLifecycleUseCase;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
+import com.invoicegenie.ar.domain.model.ledger.LedgerRepository;
 import com.invoicegenie.ar.domain.model.payment.Cheque;
 import com.invoicegenie.ar.domain.model.payment.ChequeRepository;
 import com.invoicegenie.ar.domain.model.payment.ChequeStatus;
@@ -35,6 +36,7 @@ class ChequeApplicationServiceTest {
 
     @Mock private ChequeRepository chequeRepository;
     @Mock private InvoiceLifecycleUseCase invoiceLifecycleUseCase;
+    @Mock private LedgerRepository ledgerRepository;
     private ChequeService chequeService;
     private ChequeApplicationService service;
     private TenantId tenantId;
@@ -43,7 +45,7 @@ class ChequeApplicationServiceTest {
     @BeforeEach
     void setUp() {
         chequeService = new ChequeService();
-        service = new ChequeApplicationService(chequeService, chequeRepository, invoiceLifecycleUseCase);
+        service = new ChequeApplicationService(chequeService, chequeRepository, invoiceLifecycleUseCase, ledgerRepository);
         tenantId = TenantId.of(UUID.randomUUID());
         customerUuid = UUID.randomUUID();
     }

@@ -1,12 +1,14 @@
-package com.invoicegenie.ar.application.service;
+﻿package com.invoicegenie.ar.application.service;
 
 import com.invoicegenie.ar.application.port.inbound.ApplyInvoicePaymentUseCase;
 import com.invoicegenie.ar.application.port.inbound.InvoiceLifecycleUseCase;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
+import com.invoicegenie.ar.domain.model.ledger.LedgerRepository;
 import com.invoicegenie.ar.domain.model.outbox.AuditEntry;
 import com.invoicegenie.ar.domain.model.outbox.AuditRepository;
+import com.invoicegenie.ar.domain.service.LedgerService;
 import com.invoicegenie.shared.domain.TenantId;
 
 import java.time.LocalDate;
@@ -20,13 +22,19 @@ public class InvoiceLifecycleService implements InvoiceLifecycleUseCase {
     private final InvoiceRepository invoiceRepository;
     private final AuditRepository auditRepository;
     private final ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase;
+    private final LedgerService ledgerService;
+    private final LedgerRepository ledgerRepository;
 
     public InvoiceLifecycleService(InvoiceRepository invoiceRepository,
                                    AuditRepository auditRepository,
-                                   ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase) {
+                                   ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase,
+                                   LedgerService ledgerService,
+                                   LedgerRepository ledgerRepository) {
         this.invoiceRepository = invoiceRepository;
         this.auditRepository = auditRepository;
         this.applyInvoicePaymentUseCase = applyInvoicePaymentUseCase;
+        this.ledgerService = ledgerService;
+        this.ledgerRepository = ledgerRepository;
     }
 
     @Override
@@ -36,6 +44,13 @@ public class InvoiceLifecycleService implements InvoiceLifecycleUseCase {
                     String before = String.format("{\"status\":\"%s\"}", inv.getStatus());
                     inv.issue();
                     invoiceRepository.save(tenantId, inv);
+
+                    // Durable ledger when issuing an existing draft
+                    LedgerService.TransactionResult ledgerTx = ledgerService.recordInvoiceIssued(
+                            tenantId, invoiceId.getValue(), inv.getInvoiceNumber(), inv.getTotal());
+                    ledgerService.assertBalanced(ledgerTx.entries());
+                    ledgerRepository.saveAll(tenantId, ledgerTx.entries());
+
                     String after = String.format("{\"status\":\"%s\"}", inv.getStatus());
                     auditRepository.save(tenantId, AuditEntry.transition(tenantId, "INVOICE", invoiceId.getValue(),
                             inv.getInvoiceNumber(), null, "ISSUE", before, after));
@@ -62,8 +77,19 @@ public class InvoiceLifecycleService implements InvoiceLifecycleUseCase {
         return invoiceRepository.findByTenantAndId(tenantId, invoiceId)
                 .map(inv -> {
                     String before = String.format("{\"status\":\"%s\"}", inv.getStatus());
+                    // Capture outstanding balance before write-off
+                    var writeOffAmount = inv.getBalanceDue();
                     inv.writeOff(reason);
                     invoiceRepository.save(tenantId, inv);
+
+                    // Durable ledger: Dr Bad Debt Expense / Cr AR
+                    if (writeOffAmount.getAmount().signum() > 0) {
+                        LedgerService.TransactionResult ledgerTx = ledgerService.recordWriteOff(
+                                tenantId, invoiceId.getValue(), inv.getInvoiceNumber(), writeOffAmount);
+                        ledgerService.assertBalanced(ledgerTx.entries());
+                        ledgerRepository.saveAll(tenantId, ledgerTx.entries());
+                    }
+
                     String after = String.format("{\"status\":\"%s\",\"reason\":\"%s\"}", inv.getStatus(), reason);
                     auditRepository.save(tenantId, AuditEntry.transition(tenantId, "INVOICE", invoiceId.getValue(),
                             inv.getInvoiceNumber(), null, "WRITE_OFF", before, after));

@@ -1,7 +1,9 @@
 package com.invoicegenie.ar.application.service;
 
 import com.invoicegenie.ar.application.port.inbound.RecordPaymentUseCase;
+import com.invoicegenie.ar.application.port.outbound.EventPublisher;
 import com.invoicegenie.ar.application.port.outbound.IdGenerator;
+import com.invoicegenie.ar.domain.event.PaymentRecorded;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.customer.CustomerRepository;
 import com.invoicegenie.ar.domain.model.outbox.AuditEntry;
@@ -15,9 +17,10 @@ import java.util.Optional;
 
 /**
  * Application service: records a new payment received from a customer.
- * 
+ *
  * <p>Validates that the customer exists before creating the payment.
  * Creates audit log entry for compliance.
+ * Publishes {@link PaymentRecorded} after successful save.
  */
 public class RecordPaymentService implements RecordPaymentUseCase {
 
@@ -25,22 +28,25 @@ public class RecordPaymentService implements RecordPaymentUseCase {
     private final CustomerRepository customerRepository;
     private final IdGenerator idGenerator;
     private final AuditRepository auditRepository;
+    private final EventPublisher eventPublisher;
 
     public RecordPaymentService(PaymentRepository paymentRepository,
                                 CustomerRepository customerRepository,
                                 IdGenerator idGenerator,
-                                AuditRepository auditRepository) {
+                                AuditRepository auditRepository,
+                                EventPublisher eventPublisher) {
         this.paymentRepository = paymentRepository;
         this.customerRepository = customerRepository;
         this.idGenerator = idGenerator;
         this.auditRepository = auditRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
     public PaymentId record(TenantId tenantId, RecordPaymentCommand command) {
         // Validate customer exists
         CustomerId customerId = CustomerId.of(java.util.UUID.fromString(command.customerId()));
-        Optional<com.invoicegenie.ar.domain.model.customer.Customer> customerOpt = 
+        Optional<com.invoicegenie.ar.domain.model.customer.Customer> customerOpt =
                 customerRepository.findByTenantAndId(tenantId, customerId);
         if (customerOpt.isEmpty()) {
             throw new IllegalArgumentException("Customer not found: " + command.customerId());
@@ -55,7 +61,7 @@ public class RecordPaymentService implements RecordPaymentUseCase {
         // Create payment aggregate (uses full constructor for all fields)
         PaymentId paymentId = PaymentId.of(idGenerator.newUuid());
         String currency = command.currencyCode() != null ? command.currencyCode() : "USD";
-        
+
         Payment payment = new Payment(
                 paymentId,
                 command.paymentNumber(),
@@ -80,11 +86,20 @@ public class RecordPaymentService implements RecordPaymentUseCase {
         // Audit log
         String afterState = String.format(
                 "{\"id\":\"%s\",\"number\":\"%s\",\"customerId\":\"%s\",\"amount\":%s,\"method\":\"%s\"}",
-                paymentId.getValue(), command.paymentNumber(), command.customerId(), 
+                paymentId.getValue(), command.paymentNumber(), command.customerId(),
                 command.amount(), command.method());
-        AuditEntry audit = AuditEntry.create(tenantId, "PAYMENT", paymentId.getValue(), 
+        AuditEntry audit = AuditEntry.create(tenantId, "PAYMENT", paymentId.getValue(),
                 command.paymentNumber(), null, afterState);
         auditRepository.save(tenantId, audit);
+
+        // Publish PaymentRecorded for GL / downstream consumers
+        eventPublisher.publish(new PaymentRecorded(
+                tenantId,
+                paymentId,
+                command.customerId(),
+                payment.getAmount(),
+                payment.getReceivedAt()
+        ));
 
         return paymentId;
     }

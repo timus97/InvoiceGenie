@@ -1,6 +1,8 @@
 package com.invoicegenie.ar.application.service;
 
 import com.invoicegenie.ar.application.port.inbound.PaymentAllocationUseCase;
+import com.invoicegenie.ar.application.port.outbound.EventPublisher;
+import com.invoicegenie.ar.domain.event.PaymentAllocated;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
@@ -42,6 +44,9 @@ class PaymentAllocationServiceTest {
     @Mock
     private InvoiceRepository invoiceRepository;
 
+    @Mock
+    private EventPublisher eventPublisher;
+
     private PaymentAllocationService service;
     private TenantId tenantId;
     private CustomerId customerId;
@@ -49,7 +54,7 @@ class PaymentAllocationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new PaymentAllocationService(paymentRepository, invoiceRepository);
+        service = new PaymentAllocationService(paymentRepository, invoiceRepository, eventPublisher);
         tenantId = TenantId.of(UUID.randomUUID());
         customerId = CustomerId.of(UUID.randomUUID());
         paymentId = PaymentId.generate();
@@ -87,6 +92,7 @@ class PaymentAllocationServiceTest {
             assertTrue(result.isPresent());
             assertEquals(1, result.get().allocations().size());
             verify(paymentRepository).save(eq(tenantId), any());
+            verify(eventPublisher).publish(any(PaymentAllocated.class));
         }
 
         @Test
@@ -98,6 +104,7 @@ class PaymentAllocationServiceTest {
                     tenantId, paymentId, UUID.randomUUID(), null);
 
             assertFalse(result.isPresent());
+            verifyNoInteractions(eventPublisher);
         }
 
         @Test
@@ -122,6 +129,25 @@ class PaymentAllocationServiceTest {
             assertEquals(result1.get().paymentId(), result2.get().paymentId());
             // Repository should only be called once due to caching
             verify(paymentRepository, times(1)).save(eq(tenantId), any());
+            // Event published only once (not on cache hit)
+            verify(eventPublisher, times(1)).publish(any(PaymentAllocated.class));
+        }
+
+        @Test
+        @DisplayName("should not publish when no allocations made")
+        void shouldNotPublishWhenNoAllocations() {
+            Payment payment = createPayment(Money.of("500.00", "USD"));
+
+            when(paymentRepository.findByTenantAndId(tenantId, paymentId)).thenReturn(Optional.of(payment));
+            when(invoiceRepository.findOpenByTenantAndCustomer(tenantId, customerId)).thenReturn(List.of());
+
+            Optional<PaymentAllocationUseCase.AllocationResult> result = service.autoAllocateFIFO(
+                    tenantId, paymentId, UUID.randomUUID(), null);
+
+            assertTrue(result.isPresent());
+            assertEquals(0, result.get().allocations().size());
+            verify(paymentRepository, never()).save(any(), any());
+            verifyNoInteractions(eventPublisher);
         }
     }
 
@@ -146,6 +172,32 @@ class PaymentAllocationServiceTest {
                     tenantId, paymentId, requests, UUID.randomUUID(), null);
 
             assertTrue(result.isPresent());
+            assertEquals(1, result.get().allocations().size());
+            verify(eventPublisher).publish(any(PaymentAllocated.class));
+        }
+
+        @Test
+        @DisplayName("should use payment currency for allocation amounts")
+        void shouldUsePaymentCurrency() {
+            Payment payment = createPayment(Money.of("1000.00", "EUR"));
+            Invoice invoice1 = createInvoice("INV-001", Money.of("1000.00", "EUR"));
+
+            when(paymentRepository.findByTenantAndId(tenantId, paymentId)).thenReturn(Optional.of(payment));
+            when(invoiceRepository.findByTenantAndId(eq(tenantId), eq(invoice1.getId()))).thenReturn(Optional.of(invoice1));
+
+            // Request uses wrong currency (as REST layer might hardcode USD)
+            List<PaymentAllocationUseCase.ManualAllocationRequest> requests = List.of(
+                    new PaymentAllocationUseCase.ManualAllocationRequest(
+                            invoice1.getId(), Money.of("500.00", "USD"), "Payment 1")
+            );
+
+            Optional<PaymentAllocationUseCase.AllocationResult> result = service.manualAllocate(
+                    tenantId, paymentId, requests, UUID.randomUUID(), null);
+
+            assertTrue(result.isPresent());
+            assertEquals(1, result.get().allocations().size());
+            assertEquals("EUR", result.get().allocations().get(0).amount().getCurrencyCode());
+            verify(eventPublisher).publish(any(PaymentAllocated.class));
         }
     }
 
@@ -229,11 +281,11 @@ class PaymentAllocationServiceTest {
         void shouldCreateAllocationDetail() {
             InvoiceId invoiceId = InvoiceId.generate();
             UUID allocationId = UUID.randomUUID();
-            
-            PaymentAllocationUseCase.AllocationResult.AllocationDetail detail = 
+
+            PaymentAllocationUseCase.AllocationResult.AllocationDetail detail =
                     new PaymentAllocationUseCase.AllocationResult.AllocationDetail(
                             invoiceId, Money.of("500.00", "USD"), allocationId);
-            
+
             assertEquals(invoiceId, detail.invoiceId());
             assertEquals(Money.of("500.00", "USD"), detail.amount());
             assertEquals(allocationId, detail.allocationId());
@@ -248,11 +300,11 @@ class PaymentAllocationServiceTest {
         @DisplayName("should create request with all fields")
         void shouldCreateRequestWithAllFields() {
             InvoiceId invoiceId = InvoiceId.generate();
-            
-            PaymentAllocationUseCase.ManualAllocationRequest request = 
+
+            PaymentAllocationUseCase.ManualAllocationRequest request =
                     new PaymentAllocationUseCase.ManualAllocationRequest(
                             invoiceId, Money.of("500.00", "USD"), "Test notes");
-            
+
             assertEquals(invoiceId, request.invoiceId());
             assertEquals(Money.of("500.00", "USD"), request.amount());
             assertEquals("Test notes", request.notes());
@@ -262,11 +314,11 @@ class PaymentAllocationServiceTest {
         @DisplayName("should create request with null notes")
         void shouldCreateRequestWithNullNotes() {
             InvoiceId invoiceId = InvoiceId.generate();
-            
-            PaymentAllocationUseCase.ManualAllocationRequest request = 
+
+            PaymentAllocationUseCase.ManualAllocationRequest request =
                     new PaymentAllocationUseCase.ManualAllocationRequest(
                             invoiceId, Money.of("500.00", "USD"), null);
-            
+
             assertEquals(invoiceId, request.invoiceId());
             assertNull(request.notes());
         }

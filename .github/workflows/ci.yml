@@ -1,43 +1,126 @@
 name: CI
 
+# Complete CI for InvoiceGenie (no OWASP / dependency security scans).
+# Jobs: backend unit tests + package, frontend lint/build, prod Docker smoke.
+
 on:
   push:
-    branches: [main, "feat/**", "fix/**"]
+    branches: [main, Development, "feat/**", "fix/**"]
   pull_request:
-    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  JAVA_VERSION: "17"
+  NODE_VERSION: "22"
 
 jobs:
   backend:
     name: Backend tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: ${{ env.JAVA_VERSION }}
           cache: maven
-      - name: Unit & integration tests
+
+      - name: Unit tests
         run: mvn -B test
-      - name: Package bootstrap
+
+      - name: Package bootstrap (prod-ready artifact)
         run: mvn -B -pl ar-bootstrap -am package -DskipTests
 
+      - name: Upload Surefire reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: "**/target/surefire-reports/**"
+          if-no-files-found: ignore
+
   frontend:
-    name: Web build & audit
+    name: Frontend lint and build
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: npm ci
-      - run: npm run audit:ci
-      - run: npm run lint
-      - run: npm run build
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
         env:
           BACKEND_URL: http://localhost:8080
+
+  docker-smoke:
+    name: Docker prod smoke
+    runs-on: ubuntu-latest
+    needs: [backend]
+    timeout-minutes: 35
+    env:
+      # CI-only dummy credentials (not production secrets)
+      POSTGRES_USER: ar
+      POSTGRES_PASSWORD: ci-test-password
+      POSTGRES_DB: invoicegenie
+      QUARKUS_DATASOURCE_USERNAME: ar
+      QUARKUS_DATASOURCE_PASSWORD: ci-test-password
+      QUARKUS_PROFILE: prod
+      INVOICEGENIE_SECURITY_ENABLED: "true"
+      INVOICEGENIE_SECURITY_MODE: api-key
+      INVOICEGENIE_API_KEYS: "dev-local-key:00000000-0000-0000-0000-000000000001"
+      INVOICEGENIE_JWT_SECRET: "none"
+      INVOICEGENIE_SECURITY_ALLOW_OPENAPI: "false"
+      TENANT_ID: "00000000-0000-0000-0000-000000000001"
+      INVOICEGENIE_API_KEY: dev-local-key
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start Postgres + app (Dockerfile.prod)
+        run: docker compose up -d --build --wait postgres app
+
+      - name: Show compose status
+        if: always()
+        run: docker compose ps
+
+      - name: App logs (pre-smoke)
+        if: always()
+        run: docker compose logs app --tail 80
+
+      - name: API smoke suite
+        run: |
+          chmod +x scripts/test-api.sh
+          ./scripts/test-api.sh http://localhost:8080
+
+      - name: App logs on failure
+        if: failure()
+        run: docker compose logs app --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

@@ -552,7 +552,42 @@ curl -X POST http://localhost:8080/api/v1/credit-notes/{creditNoteId}/apply \
 **Design Docs:**
 - [docs/ONBOARDING.md](docs/ONBOARDING.md) — architecture blueprint, module map, known gaps, local runbook.
 - [docs/SCHEMA.md](docs/SCHEMA.md) — full SQL schema documentation, ER diagram, design decisions.
+- [docs/FEATURE_PRIORITY_BACKLOG.md](docs/FEATURE_PRIORITY_BACKLOG.md) — prioritized incomplete/missing features & refactors.
+- [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) — production requirements + local machine verification.
 - [docs/sql/001_init_ar_schema.sql](docs/sql/001_init_ar_schema.sql) — executable PostgreSQL migration.
+
+---
+
+## Dependency security scanning
+
+Backend (OWASP Dependency-Check) and frontend (`npm audit`) are wired into the repo.
+
+```bash
+# Windows PowerShell
+./scripts/security-scan.ps1              # fail on High/Critical (CVSS >= 7) + npm audit
+./scripts/security-scan.ps1 -ReportOnly  # generate reports without failing
+
+# Linux / macOS / Git Bash
+./scripts/security-scan.sh
+./scripts/security-scan.sh --report-only
+```
+
+Maven-only (aggregate report under `target/dependency-check/`):
+
+```bash
+mvn -Psecurity-scan org.owasp:dependency-check-maven:aggregate
+```
+
+Frontend-only:
+
+```bash
+cd web
+npm run audit        # production deps
+npm run audit:all    # all deps
+npm run audit:ci     # fail on high+
+```
+
+Optional: set `NVD_API_KEY` for faster/full NVD updates with OWASP Dependency-Check.
 
 ---
 

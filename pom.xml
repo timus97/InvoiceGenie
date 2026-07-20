@@ -14,13 +14,20 @@
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <!-- Quarkus 3.8.x is the LTS line after 3.6; pin patch for reproducible builds -->
-        <quarkus.platform.version>3.8.6</quarkus.platform.version>
+        <!-- Quarkus 3.8.6.1: last community security patch for 3.8 LTS (EOL Feb 2025).
+             Plan migration to a supported LTS (3.27 / 3.33) — see docs/FEATURE_PRIORITY_BACKLOG.md -->
+        <quarkus.platform.version>3.8.6.1</quarkus.platform.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <jacoco.version>0.8.11</jacoco.version>
-        <versions.maven.plugin.version>2.16.2</versions.maven.plugin.version>
+        <jacoco.version>0.8.12</jacoco.version>
+        <versions.maven.plugin.version>2.18.0</versions.maven.plugin.version>
+        <dependency.check.version>12.1.0</dependency.check.version>
         <!-- Production gate: line coverage must stay above 80% -->
         <jacoco.minimum.coverage>0.80</jacoco.minimum.coverage>
+        <!-- OWASP Dependency-Check: fail on CVSS >= 7 (High/Critical). Override with -DfailBuildOnCVSS=11 to report-only. -->
+        <dependency.check.failBuildOnCVSS>7</dependency.check.failBuildOnCVSS>
+        <dependency.check.skip>false</dependency.check.skip>
+        <!-- Empty by default; pass -DnvdApiKey=... or scripts load NVD_API_KEY from .env -->
+        <nvdApiKey></nvdApiKey>
     </properties>
 
     <modules>
@@ -107,6 +114,33 @@
                     <artifactId>versions-maven-plugin</artifactId>
                     <version>${versions.maven.plugin.version}</version>
                 </plugin>
+                <plugin>
+                    <groupId>org.owasp</groupId>
+                    <artifactId>dependency-check-maven</artifactId>
+                    <version>${dependency.check.version}</version>
+                    <configuration>
+                        <skip>${dependency.check.skip}</skip>
+                        <failBuildOnCVSS>${dependency.check.failBuildOnCVSS}</failBuildOnCVSS>
+                        <formats>
+                            <format>HTML</format>
+                            <format>JSON</format>
+                        </formats>
+                        <prettyPrint>true</prettyPrint>
+                        <outputDirectory>${project.build.directory}/dependency-check</outputDirectory>
+                        <!-- Faster local/CI defaults; NVD can be re-enabled when an NVD API key is available -->
+                        <assemblyAnalyzerEnabled>false</assemblyAnalyzerEnabled>
+                        <nodeAnalyzerEnabled>false</nodeAnalyzerEnabled>
+                        <nodeAuditAnalyzerEnabled>false</nodeAuditAnalyzerEnabled>
+                        <retireJsAnalyzerEnabled>false</retireJsAnalyzerEnabled>
+                        <nuspecAnalyzerEnabled>false</nuspecAnalyzerEnabled>
+                        <nugetconfAnalyzerEnabled>false</nugetconfAnalyzerEnabled>
+                        <bundleAuditAnalyzerEnabled>false</bundleAuditAnalyzerEnabled>
+                        <centralAnalyzerEnabled>true</centralAnalyzerEnabled>
+                        <ossindexAnalyzerEnabled>true</ossindexAnalyzerEnabled>
+                        <!-- Pass -DnvdApiKey=... or env NVD_API_KEY via scripts/security-scan.* -->
+                        <nvdApiKey>${nvdApiKey}</nvdApiKey>
+                    </configuration>
+                </plugin>
             </plugins>
         </pluginManagement>
 
@@ -116,6 +150,30 @@
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
             </plugin>
+            <!-- Security scan is opt-in via profile `security-scan` (NVD download is large). -->
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>security-scan</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.owasp</groupId>
+                        <artifactId>dependency-check-maven</artifactId>
+                        <executions>
+                            <execution>
+                                <id>dependency-check-aggregate</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>aggregate</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

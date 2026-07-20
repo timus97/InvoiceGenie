@@ -1,22 +1,27 @@
 # AR Bootstrap - multi-tenant backend
+# Secrets: prefer env vars (see .env.example). Defaults are for local only.
 quarkus:
   application:
     name: invoice-genie-ar
   http:
-    port: 8080
+    port: ${QUARKUS_HTTP_PORT:8080}
     host: 0.0.0.0
   datasource:
     db-kind: postgresql
-    username: ar
-    password: ar
+    username: ${QUARKUS_DATASOURCE_USERNAME:ar}
+    password: ${QUARKUS_DATASOURCE_PASSWORD:ar}
     jdbc:
-      url: jdbc:postgresql://localhost:5432/invoicegenie
-      max-size: 32
+      url: ${QUARKUS_DATASOURCE_JDBC_URL:jdbc:postgresql://localhost:5432/invoicegenie}
+      max-size: ${QUARKUS_DATASOURCE_JDBC_MAX_SIZE:32}
   hibernate-orm:
     database:
       generation: none
     log:
       sql: false
+  flyway:
+    migrate-at-start: ${QUARKUS_FLYWAY_MIGRATE_AT_START:true}
+    baseline-on-migrate: true
+    locations: db/migration
   index-dependency:
     ar-domain:
       group-id: com.invoicegenie
@@ -34,6 +39,8 @@ quarkus:
   kafka:
     devservices:
       enabled: false
+  swagger-ui:
+    always-include: true
   log:
     level: INFO
     category:
@@ -54,6 +61,17 @@ quarkus:
         max-file-size: 10M
         max-backup-index: 5
 
+# API security (disabled by default for local/dev/test)
+invoicegenie:
+  security:
+    enabled: ${INVOICEGENIE_SECURITY_ENABLED:false}
+    mode: ${INVOICEGENIE_SECURITY_MODE:api-key}
+    # Format: apiKey:tenantUuid,otherKey:otherTenantUuid
+    api-keys: ${INVOICEGENIE_API_KEYS:none}
+    jwt:
+      secret: ${INVOICEGENIE_JWT_SECRET:none}
+    allow-openapi: ${INVOICEGENIE_SECURITY_ALLOW_OPENAPI:true}
+
 # Local / fast path: H2 in-memory (no Postgres required).
 # Preferred: -Dquarkus.profile=dev
 # Legacy alias: -Dquarkus.profile=sqlite (same parent config)
@@ -72,6 +90,8 @@ quarkus:
     hibernate-orm:
       database:
         generation: update
+    flyway:
+      migrate-at-start: false
     kafka:
       devservices:
         enabled: false
@@ -91,6 +111,9 @@ quarkus:
       ar-application:
         group-id: com.invoicegenie
         artifact-id: ar-application
+  invoicegenie:
+    security:
+      enabled: false
 
 # Deprecated alias for %dev (historical name; not SQLite). Remove after one release cycle.
 "%sqlite":
@@ -115,6 +138,8 @@ quarkus:
     hibernate-orm:
       database:
         generation: update
+    flyway:
+      migrate-at-start: false
     kafka:
       devservices:
         enabled: false
@@ -136,6 +161,36 @@ quarkus:
       ar-application:
         group-id: com.invoicegenie
         artifact-id: ar-application
+  invoicegenie:
+    security:
+      enabled: false
+
+# Production profile: secrets required, Flyway on, OpenAPI locked down, auth on
+"%prod":
+  quarkus:
+    hibernate-orm:
+      database:
+        generation: none
+    flyway:
+      migrate-at-start: true
+      baseline-on-migrate: true
+    swagger-ui:
+      enable: false
+      always-include: false
+    smallrye-openapi:
+      enable: false
+    log:
+      level: INFO
+      category:
+        "com.invoicegenie":
+          level: INFO
+      file:
+        enable: false
+  invoicegenie:
+    security:
+      enabled: true
+      mode: ${INVOICEGENIE_SECURITY_MODE:api-key}
+      allow-openapi: false
 
 # Kafka connectors (optional - enable in production with Kafka running)
 # Uncomment when Kafka is available AND outbox.kafka-enabled=true:

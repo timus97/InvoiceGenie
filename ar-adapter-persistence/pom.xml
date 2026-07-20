@@ -30,11 +30,8 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-jdbc-postgresql</artifactId>
         </dependency>
-        <dependency>
-            <groupId>io.quarkiverse.jdbc</groupId>
-            <artifactId>quarkus-jdbc-sqlite</artifactId>
-            <version>3.0.7</version>
-        </dependency>
+        <!-- H2 is provided by ar-bootstrap for %dev/%test; Postgres for default profile.
+             quarkus-jdbc-sqlite removed: legacy profile name "sqlite" is an H2 alias only. -->
 
         <!-- Test dependencies -->
         <dependency>
@@ -45,13 +42,13 @@
         <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
-            <version>3.24.2</version>
+            <version>3.27.3</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
-            <version>5.11.0</version>
+            <version>5.14.2</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

@@ -39,6 +39,11 @@ export async function apiFetch<T>(
     Accept: "application/json",
     "X-Tenant-Id": tenantId.trim(),
   };
+  // Optional browser-side API key for prod-like security (NEXT_PUBLIC_API_KEY)
+  const apiKey = process.env.NEXT_PUBLIC_API_KEY?.trim();
+  if (apiKey) {
+    headers["X-API-Key"] = apiKey;
+  }
   if (body !== undefined) {
     headers["Content-Type"] = "application/json";
   }

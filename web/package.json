@@ -7,15 +7,18 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
-    "gen:api": "openapi-typescript http://localhost:8080/q/openapi -o src/types/api.d.ts"
+    "gen:api": "openapi-typescript http://localhost:8080/q/openapi -o src/types/api.d.ts",
+    "audit": "npm audit --omit=dev",
+    "audit:all": "npm audit",
+    "audit:ci": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.2",
     "clsx": "^2.1.1",
     "lucide-react": "^1.25.0",
     "next": "15.5.20",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
+    "react": "19.1.8",
+    "react-dom": "19.1.8",
     "sonner": "^2.0.7"
   },
   "devDependencies": {
@@ -28,5 +31,8 @@
     "eslint-config-next": "15.5.20",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "postcss": "^8.5.10"
   }
 }

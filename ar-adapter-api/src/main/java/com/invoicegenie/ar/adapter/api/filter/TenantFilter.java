@@ -1,5 +1,7 @@
 package com.invoicegenie.ar.adapter.api.filter;
 
+import com.invoicegenie.ar.adapter.api.dto.ErrorResponse;
+import com.invoicegenie.ar.adapter.api.security.SecurityConstants;
 import com.invoicegenie.shared.domain.TenantId;
 import com.invoicegenie.shared.tenant.DbTenantContext;
 import com.invoicegenie.shared.tenant.TenantContext;
@@ -7,6 +9,7 @@ import com.invoicegenie.shared.tenant.TenantContext;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
+import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.core.Response;
@@ -18,7 +21,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 /**
- * Resolves tenant from header (or JWT in production) and sets TenantContext.
+ * Resolves tenant from authenticated credentials and/or {@code X-Tenant-Id}, then sets TenantContext.
  * Single point of tenant resolution — no use case runs without tenant.
  *
  * <p>Also attempts to set PostgreSQL RLS session variable
@@ -28,10 +31,11 @@ import org.jboss.logging.Logger;
  * tenant filtering remains authoritative.
  */
 @Provider
+@jakarta.annotation.Priority(Priorities.AUTHORIZATION)
 public class TenantFilter implements ContainerRequestFilter {
 
     private static final Logger LOG = Logger.getLogger(TenantFilter.class);
-    private static final String TENANT_HEADER = "X-Tenant-Id";
+    private static final String TENANT_HEADER = SecurityConstants.HEADER_TENANT;
 
     /**
      * Optional — present when Hibernate is on the runtime classpath (bootstrap).
@@ -51,7 +55,13 @@ public class TenantFilter implements ContainerRequestFilter {
         } catch (IllegalArgumentException e) {
             requestContext.abortWith(
                     Response.status(Response.Status.BAD_REQUEST)
-                            .entity("Invalid or missing tenant")
+                            .entity(new ErrorResponse("TENANT_ERROR",
+                                    e.getMessage() != null ? e.getMessage() : "Invalid or missing tenant"))
+                            .build());
+        } catch (SecurityException e) {
+            requestContext.abortWith(
+                    Response.status(Response.Status.FORBIDDEN)
+                            .entity(new ErrorResponse("TENANT_MISMATCH", e.getMessage()))
                             .build());
         }
     }
@@ -84,10 +94,22 @@ public class TenantFilter implements ContainerRequestFilter {
     }
 
     private TenantId resolveTenant(ContainerRequestContext requestContext) {
-        String value = requestContext.getHeaderString(TENANT_HEADER);
-        return Optional.ofNullable(value)
+        Object authTenant = requestContext.getProperty(SecurityConstants.AUTH_TENANT_PROPERTY);
+        String headerValue = requestContext.getHeaderString(TENANT_HEADER);
+
+        Optional<String> headerTenant = Optional.ofNullable(headerValue)
                 .map(String::trim)
-                .filter(s -> !s.isEmpty())
+                .filter(s -> !s.isEmpty());
+
+        if (authTenant instanceof String authTenantId && !authTenantId.isBlank()) {
+            if (headerTenant.isPresent() && !headerTenant.get().equals(authTenantId)) {
+                throw new SecurityException(
+                        "X-Tenant-Id does not match authenticated tenant");
+            }
+            return TenantId.of(authTenantId);
+        }
+
+        return headerTenant
                 .map(TenantId::of)
                 .orElseThrow(() -> new IllegalArgumentException("Missing " + TENANT_HEADER));
     }

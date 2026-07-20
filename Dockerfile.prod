@@ -1,0 +1,41 @@
+# Multi-stage production image for InvoiceGenie AR API (Quarkus JVM)
+# Build: docker build -f Dockerfile.prod -t invoicegenie-ar:latest .
+# Run:   docker run --rm -p 8080:8080 --env-file .env invoicegenie-ar:latest
+
+FROM maven:3.9.9-eclipse-temurin-17 AS build
+WORKDIR /workspace
+COPY pom.xml .
+COPY shared-kernel/pom.xml shared-kernel/pom.xml
+COPY ar-domain/pom.xml ar-domain/pom.xml
+COPY ar-application/pom.xml ar-application/pom.xml
+COPY ar-adapter-api/pom.xml ar-adapter-api/pom.xml
+COPY ar-adapter-persistence/pom.xml ar-adapter-persistence/pom.xml
+COPY ar-adapter-messaging/pom.xml ar-adapter-messaging/pom.xml
+COPY ar-bootstrap/pom.xml ar-bootstrap/pom.xml
+# Warm dependency cache (best-effort; full resolve happens on package)
+RUN mvn -B -q -DskipTests dependency:go-offline || true
+COPY . .
+RUN mvn -B -pl ar-bootstrap -am package -DskipTests
+
+FROM eclipse-temurin:17-jre-jammy AS runtime
+WORKDIR /app
+ENV JAVA_OPTS="-Djava.security.egd=file:/dev/./urandom -XX:MaxRAMPercentage=75.0"
+ENV QUARKUS_HTTP_HOST=0.0.0.0
+# Prefer prod profile; override with -e QUARKUS_PROFILE=dev for demos
+ENV QUARKUS_PROFILE=prod
+RUN groupadd -r app && useradd -r -g app app
+COPY --from=build /workspace/ar-bootstrap/target/quarkus-app/lib/ /app/lib/
+COPY --from=build /workspace/ar-bootstrap/target/quarkus-app/*.jar /app/
+COPY --from=build /workspace/ar-bootstrap/target/quarkus-app/app/ /app/app/
+COPY --from=build /workspace/ar-bootstrap/target/quarkus-app/quarkus/ /app/quarkus/
+USER app
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:8080/q/health || exit 1
+# curl may be missing on slim JRE — install minimal client
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && chown -R app:app /app
+USER app
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/quarkus-run.jar"]

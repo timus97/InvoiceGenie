@@ -20,4 +20,7 @@ public interface ChequeRepository {
     List<Cheque> findByTenantAndCustomer(TenantId tenantId, com.invoicegenie.ar.domain.model.customer.CustomerId customerId);
 
     List<Cheque> findByTenantAndStatus(TenantId tenantId, ChequeStatus status);
+
+    /** All cheques for the tenant (unfiltered list). Ordered by received date desc. */
+    List<Cheque> findByTenant(TenantId tenantId);
 }

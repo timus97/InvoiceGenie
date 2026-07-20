@@ -5,6 +5,7 @@ import com.invoicegenie.ar.application.port.outbound.EventPublisher;
 import com.invoicegenie.ar.application.port.outbound.IdGenerator;
 import com.invoicegenie.ar.application.port.outbound.IdempotencyStore;
 import com.invoicegenie.ar.domain.event.InvoiceIssued;
+import com.invoicegenie.ar.domain.exception.IdempotencyConflictException;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.customer.CustomerRepository;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
@@ -65,15 +66,16 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
 
     @Override
     public InvoiceId issue(TenantId tenantId, IssueInvoiceCommand command, String idempotencyKey) {
+        boolean issueNow = command.shouldIssueImmediately();
         String storeKey = null;
         String requestHash = null;
         if (idempotencyKey != null && !idempotencyKey.isBlank()) {
-            storeKey = "invoice:" + idempotencyKey;
+            storeKey = (issueNow ? "invoice:" : "invoice-draft:") + idempotencyKey;
             requestHash = hashRequest(command);
             var existing = idempotencyStore.find(tenantId, storeKey);
             if (existing.isPresent()) {
                 if (!existing.get().requestHash().equals(requestHash)) {
-                    throw new IllegalArgumentException(
+                    throw new IdempotencyConflictException(
                             "Idempotency-Key reused with different request payload: " + idempotencyKey);
                 }
                 return InvoiceId.of(UUID.fromString(existing.get().responseJson()));
@@ -101,26 +103,39 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
                 .toList();
         Invoice invoice = new Invoice(id, command.invoiceNumber(), customerId, command.customerRef(), currency,
                 command.dueDate(), command.dueDate(), lines);
-        invoice.issue();
-        invoiceRepository.save(tenantId, invoice);
 
-        // Durable ledger: Dr AR / Cr Revenue
-        LedgerService.TransactionResult ledgerTx = ledgerService.recordInvoiceIssued(
-                tenantId, id.getValue(), command.invoiceNumber(), invoice.getTotal());
-        ledgerService.assertBalanced(ledgerTx.entries());
-        ledgerRepository.saveAll(tenantId, ledgerTx.entries());
+        if (issueNow) {
+            invoice.issue();
+            invoiceRepository.save(tenantId, invoice);
 
-        // Audit: record invoice creation
-        String afterState = String.format(
-                "{\"id\":\"%s\",\"number\":\"%s\",\"customerId\":\"%s\",\"customer\":\"%s\",\"total\":%s}",
-                id.getValue(), command.invoiceNumber(), command.customerId(), command.customerRef(),
-                invoice.getTotal().getAmount());
-        AuditEntry audit = AuditEntry.create(tenantId, "INVOICE", id.getValue(), command.invoiceNumber(),
-                null, afterState);
-        auditRepository.save(tenantId, audit);
+            // Durable ledger: Dr AR / Cr Revenue
+            LedgerService.TransactionResult ledgerTx = ledgerService.recordInvoiceIssued(
+                    tenantId, id.getValue(), command.invoiceNumber(), invoice.getTotal());
+            ledgerService.assertBalanced(ledgerTx.entries());
+            ledgerRepository.saveAll(tenantId, ledgerTx.entries());
 
-        eventPublisher.publish(new InvoiceIssued(tenantId, id, command.customerRef(), invoice.getTotal(),
-                command.dueDate().atStartOfDay(java.time.ZoneOffset.UTC).toInstant()));
+            String afterState = String.format(
+                    "{\"id\":\"%s\",\"number\":\"%s\",\"customerId\":\"%s\",\"customer\":\"%s\",\"total\":%s,\"status\":\"ISSUED\"}",
+                    id.getValue(), command.invoiceNumber(), command.customerId(), command.customerRef(),
+                    invoice.getTotal().getAmount());
+            AuditEntry audit = AuditEntry.create(tenantId, "INVOICE", id.getValue(), command.invoiceNumber(),
+                    null, afterState);
+            auditRepository.save(tenantId, audit);
+
+            eventPublisher.publish(new InvoiceIssued(tenantId, id, command.customerRef(), invoice.getTotal(),
+                    command.dueDate().atStartOfDay(java.time.ZoneOffset.UTC).toInstant()));
+        } else {
+            // Pure DRAFT: no ledger, no InvoiceIssued
+            invoiceRepository.save(tenantId, invoice);
+
+            String afterState = String.format(
+                    "{\"id\":\"%s\",\"number\":\"%s\",\"customerId\":\"%s\",\"customer\":\"%s\",\"total\":%s,\"status\":\"DRAFT\"}",
+                    id.getValue(), command.invoiceNumber(), command.customerId(), command.customerRef(),
+                    invoice.getTotal().getAmount());
+            AuditEntry audit = AuditEntry.create(tenantId, "INVOICE", id.getValue(), command.invoiceNumber(),
+                    null, afterState);
+            auditRepository.save(tenantId, audit);
+        }
 
         if (storeKey != null) {
             idempotencyStore.put(tenantId, storeKey, requestHash, id.getValue().toString());
@@ -131,7 +146,8 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
 
     private static String hashRequest(IssueInvoiceCommand command) {
         String payload = command.invoiceNumber() + "|" + command.customerId() + "|" + command.customerRef() + "|"
-                + command.currencyCode() + "|" + command.dueDate() + "|" + command.lines();
+                + command.currencyCode() + "|" + command.dueDate() + "|" + command.lines() + "|"
+                + command.shouldIssueImmediately();
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] digest = md.digest(payload.getBytes(StandardCharsets.UTF_8));

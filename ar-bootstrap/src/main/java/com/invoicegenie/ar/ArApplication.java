@@ -113,9 +113,10 @@ public class ArApplication {
                                                      AuditRepository auditRepository,
                                                      EventPublisher eventPublisher,
                                                      LedgerService ledgerService,
-                                                     LedgerRepository ledgerRepository) {
+                                                     LedgerRepository ledgerRepository,
+                                                     IdempotencyStore idempotencyStore) {
         return new RecordPaymentService(paymentRepository, customerRepository, idGenerator, auditRepository,
-                eventPublisher, ledgerService, ledgerRepository);
+                eventPublisher, ledgerService, ledgerRepository, idempotencyStore);
     }
 
     @Produces

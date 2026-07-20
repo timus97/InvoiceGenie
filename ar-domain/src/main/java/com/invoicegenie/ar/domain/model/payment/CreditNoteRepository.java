@@ -19,5 +19,8 @@ public interface CreditNoteRepository {
 
     List<CreditNote> findByTenantAndStatus(TenantId tenantId, CreditNote.CreditNoteStatus status);
 
+    /** All credit notes for the tenant (unfiltered list). */
+    List<CreditNote> findByTenant(TenantId tenantId);
+
     List<CreditNote> findAvailableByTenantAndCustomer(TenantId tenantId, com.invoicegenie.ar.domain.model.customer.CustomerId customerId);
 }

@@ -50,27 +50,40 @@ class PaymentResourceTest {
     @DisplayName("create returns 201")
     void createOk() {
         PaymentId id = PaymentId.of(UUID.randomUUID());
-        when(recordPaymentUseCase.record(eq(tenantId), any())).thenReturn(id);
+        when(recordPaymentUseCase.record(eq(tenantId), any(), isNull())).thenReturn(id);
 
         var dto = new PaymentResource.CreatePaymentRequestDto(
                 "PAY-1", UUID.randomUUID().toString(), new BigDecimal("50.00"), "USD",
                 LocalDate.now(), PaymentMethod.BANK_TRANSFER, "ref", null);
 
-        Response r = resource.create(dto);
+        Response r = resource.create(null, dto);
         assertEquals(201, r.getStatus());
     }
 
     @Test
-    @DisplayName("create returns 400 on validation error")
+    @DisplayName("create with idempotency key returns 201")
+    void createWithIdempotency() {
+        PaymentId id = PaymentId.of(UUID.randomUUID());
+        when(recordPaymentUseCase.record(eq(tenantId), any(), eq("pay-key"))).thenReturn(id);
+
+        var dto = new PaymentResource.CreatePaymentRequestDto(
+                "PAY-1", UUID.randomUUID().toString(), new BigDecimal("50.00"), "USD",
+                LocalDate.now(), PaymentMethod.BANK_TRANSFER, "ref", null);
+
+        assertEquals(201, resource.create("pay-key", dto).getStatus());
+    }
+
+    @Test
+    @DisplayName("create propagates validation error for global mapper")
     void createBad() {
-        when(recordPaymentUseCase.record(eq(tenantId), any()))
+        when(recordPaymentUseCase.record(eq(tenantId), any(), any()))
                 .thenThrow(new IllegalArgumentException("bad"));
 
         var dto = new PaymentResource.CreatePaymentRequestDto(
                 "PAY-1", UUID.randomUUID().toString(), new BigDecimal("50.00"), "USD",
                 LocalDate.now(), PaymentMethod.BANK_TRANSFER, null, null);
 
-        assertEquals(400, resource.create(dto).getStatus());
+        assertThrows(IllegalArgumentException.class, () -> resource.create(null, dto));
     }
 
     @Test

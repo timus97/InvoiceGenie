@@ -3,7 +3,9 @@ package com.invoicegenie.ar.application.service;
 import com.invoicegenie.ar.application.port.inbound.RecordPaymentUseCase;
 import com.invoicegenie.ar.application.port.outbound.EventPublisher;
 import com.invoicegenie.ar.application.port.outbound.IdGenerator;
+import com.invoicegenie.ar.application.port.outbound.IdempotencyStore;
 import com.invoicegenie.ar.domain.event.PaymentRecorded;
+import com.invoicegenie.ar.domain.exception.IdempotencyConflictException;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.customer.CustomerRepository;
 import com.invoicegenie.ar.domain.model.ledger.LedgerRepository;
@@ -15,7 +17,12 @@ import com.invoicegenie.ar.domain.model.payment.PaymentRepository;
 import com.invoicegenie.ar.domain.service.LedgerService;
 import com.invoicegenie.shared.domain.TenantId;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Application service: records a new payment received from a customer.
@@ -34,6 +41,7 @@ public class RecordPaymentService implements RecordPaymentUseCase {
     private final EventPublisher eventPublisher;
     private final LedgerService ledgerService;
     private final LedgerRepository ledgerRepository;
+    private final IdempotencyStore idempotencyStore;
 
     public RecordPaymentService(PaymentRepository paymentRepository,
                                 CustomerRepository customerRepository,
@@ -41,7 +49,8 @@ public class RecordPaymentService implements RecordPaymentUseCase {
                                 AuditRepository auditRepository,
                                 EventPublisher eventPublisher,
                                 LedgerService ledgerService,
-                                LedgerRepository ledgerRepository) {
+                                LedgerRepository ledgerRepository,
+                                IdempotencyStore idempotencyStore) {
         this.paymentRepository = paymentRepository;
         this.customerRepository = customerRepository;
         this.idGenerator = idGenerator;
@@ -49,12 +58,33 @@ public class RecordPaymentService implements RecordPaymentUseCase {
         this.eventPublisher = eventPublisher;
         this.ledgerService = ledgerService;
         this.ledgerRepository = ledgerRepository;
+        this.idempotencyStore = idempotencyStore;
     }
 
     @Override
     public PaymentId record(TenantId tenantId, RecordPaymentCommand command) {
+        return record(tenantId, command, null);
+    }
+
+    @Override
+    public PaymentId record(TenantId tenantId, RecordPaymentCommand command, String idempotencyKey) {
+        String storeKey = null;
+        String requestHash = null;
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            storeKey = "payment:" + idempotencyKey;
+            requestHash = hashRequest(command);
+            var existingKey = idempotencyStore.find(tenantId, storeKey);
+            if (existingKey.isPresent()) {
+                if (!existingKey.get().requestHash().equals(requestHash)) {
+                    throw new IdempotencyConflictException(
+                            "Idempotency-Key reused with different request payload: " + idempotencyKey);
+                }
+                return PaymentId.of(UUID.fromString(existingKey.get().responseJson()));
+            }
+        }
+
         // Validate customer exists
-        CustomerId customerId = CustomerId.of(java.util.UUID.fromString(command.customerId()));
+        CustomerId customerId = CustomerId.of(UUID.fromString(command.customerId()));
         Optional<com.invoicegenie.ar.domain.model.customer.Customer> customerOpt =
                 customerRepository.findByTenantAndId(tenantId, customerId);
         if (customerOpt.isEmpty()) {
@@ -116,6 +146,23 @@ public class RecordPaymentService implements RecordPaymentUseCase {
                 payment.getReceivedAt()
         ));
 
+        if (storeKey != null) {
+            idempotencyStore.put(tenantId, storeKey, requestHash, paymentId.getValue().toString());
+        }
+
         return paymentId;
+    }
+
+    private static String hashRequest(RecordPaymentCommand command) {
+        String payload = command.paymentNumber() + "|" + command.customerId() + "|"
+                + command.amount() + "|" + command.currencyCode() + "|" + command.paymentDate() + "|"
+                + command.method() + "|" + command.reference() + "|" + command.notes();
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(payload.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            return Integer.toHexString(payload.hashCode());
+        }
     }
 }

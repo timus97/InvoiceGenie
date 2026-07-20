@@ -55,11 +55,13 @@ public class InvoiceResource {
     // ==================== CREATE ====================
 
     @POST
-    @Operation(summary = "Create and issue a new invoice", description = "Creates DRAFT then immediately issues it. Returns 201 with Location.")
+    @Operation(summary = "Create an invoice",
+            description = "By default creates and issues immediately (backward compatible). "
+                    + "Set issueImmediately=false to create a pure DRAFT with no ledger posting.")
     @APIResponses({
         @APIResponse(responseCode = "201", description = "Invoice created"),
         @APIResponse(responseCode = "400", description = "Validation error"),
-        @APIResponse(responseCode = "409", description = "Duplicate idempotency key")
+        @APIResponse(responseCode = "409", description = "Idempotency key conflict")
     })
     public Response create(
             @HeaderParam("Idempotency-Key") String idempotencyKey,
@@ -80,6 +82,8 @@ public class InvoiceResource {
                 ? dto.customerRef()
                 : dto.customerId();
 
+        boolean issueImmediately = dto.issueImmediately() == null || dto.issueImmediately();
+
         var command = new IssueInvoiceUseCase.IssueInvoiceCommand(
                 dto.invoiceNumber(),
                 dto.customerId(),
@@ -88,7 +92,8 @@ public class InvoiceResource {
                 dto.dueDate(),
                 dto.lines().stream()
                         .map(l -> new IssueInvoiceUseCase.IssueInvoiceCommand.LineItem(l.description(), l.amount()))
-                        .toList()
+                        .toList(),
+                issueImmediately
         );
         var tenantId = TenantContext.getCurrentTenant();
         var id = issueInvoiceUseCase.issue(tenantId, command, idempotencyKey);
@@ -256,7 +261,18 @@ public class InvoiceResource {
     }
 
     // Records
-    public record InvoiceCreateDto(String invoiceNumber, String customerId, String customerRef, String currencyCode, LocalDate dueDate, List<LineDto> lines) {}
+    /**
+     * @param issueImmediately null or true → issue immediately (default); false → pure DRAFT
+     */
+    public record InvoiceCreateDto(
+            String invoiceNumber,
+            String customerId,
+            String customerRef,
+            String currencyCode,
+            LocalDate dueDate,
+            List<LineDto> lines,
+            Boolean issueImmediately
+    ) {}
     public record LineDto(int sequence, String description, BigDecimal amount) {}
     public record InvoiceIdDto(String id) {}
     public record InvoiceDto(String id, String invoiceNumber, String customerId, String customerRef, String currencyCode, LocalDate issueDate, LocalDate dueDate, String status, BigDecimal total, java.time.Instant issuedAt, java.time.Instant writtenOffAt, long version, List<LineDto> lines) {}

@@ -3,6 +3,7 @@ package com.invoicegenie.ar.application.service;
 import com.invoicegenie.ar.application.port.inbound.RecordPaymentUseCase;
 import com.invoicegenie.ar.application.port.outbound.EventPublisher;
 import com.invoicegenie.ar.application.port.outbound.IdGenerator;
+import com.invoicegenie.ar.application.port.outbound.IdempotencyStore;
 import com.invoicegenie.ar.domain.event.PaymentRecorded;
 import com.invoicegenie.ar.domain.model.customer.Customer;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
@@ -46,6 +47,7 @@ class RecordPaymentServiceTest {
     @Mock private AuditRepository auditRepository;
     @Mock private EventPublisher eventPublisher;
     @Mock private LedgerRepository ledgerRepository;
+    @Mock private IdempotencyStore idempotencyStore;
 
     private RecordPaymentService service;
     private TenantId tenantId;
@@ -54,7 +56,7 @@ class RecordPaymentServiceTest {
     @BeforeEach
     void setUp() {
         service = new RecordPaymentService(paymentRepository, customerRepository, idGenerator, auditRepository,
-                eventPublisher, new LedgerService(), ledgerRepository);
+                eventPublisher, new LedgerService(), ledgerRepository, idempotencyStore);
         tenantId = TenantId.of(UUID.randomUUID());
         customerId = CustomerId.of(UUID.randomUUID());
     }
@@ -175,6 +177,49 @@ class RecordPaymentServiceTest {
             assertTrue(ex.getMessage().contains("Payment number already exists"));
             verifyNoInteractions(eventPublisher);
             verifyNoInteractions(ledgerRepository);
+        }
+    }
+
+    @Nested
+    @DisplayName("Idempotency")
+    class Idempotency {
+
+        @Test
+        @DisplayName("should return cached payment id for same key and payload")
+        void shouldReturnCachedPayment() {
+            UUID cached = UUID.randomUUID();
+            when(idempotencyStore.find(eq(tenantId), eq("payment:pay-key")))
+                    .thenReturn(Optional.of(new IdempotencyStore.IdempotencyRecord(
+                            "payment:pay-key",
+                            // hash recomputed inside service — stub to match by using any and return same
+                            // We need the real hash; call twice with empty first then full path
+                            "placeholder",
+                            cached.toString(),
+                            java.time.Instant.now())));
+
+            // First call: empty store so we capture hash
+            reset(idempotencyStore);
+            when(idempotencyStore.find(eq(tenantId), eq("payment:pay-key"))).thenReturn(Optional.empty());
+            var customer = mock(Customer.class);
+            when(customerRepository.findByTenantAndId(eq(tenantId), eq(customerId)))
+                    .thenReturn(Optional.of(customer));
+            when(idGenerator.newUuid()).thenReturn(cached);
+            when(paymentRepository.findByTenantAndNumber(eq(tenantId), anyString()))
+                    .thenReturn(Optional.empty());
+
+            service.record(tenantId, createCommand(), "pay-key");
+
+            ArgumentCaptor<String> hashCaptor = ArgumentCaptor.forClass(String.class);
+            verify(idempotencyStore).put(eq(tenantId), eq("payment:pay-key"), hashCaptor.capture(), anyString());
+            String hash = hashCaptor.getValue();
+
+            when(idempotencyStore.find(eq(tenantId), eq("payment:pay-key")))
+                    .thenReturn(Optional.of(new IdempotencyStore.IdempotencyRecord(
+                            "payment:pay-key", hash, cached.toString(), java.time.Instant.now())));
+
+            PaymentId second = service.record(tenantId, createCommand(), "pay-key");
+            assertEquals(cached, second.getValue());
+            verify(paymentRepository, times(1)).save(eq(tenantId), any());
         }
     }
 

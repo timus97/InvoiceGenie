@@ -47,32 +47,28 @@ public class PaymentResource {
     @APIResponses({
         @APIResponse(responseCode = "201", description = "Payment created"),
         @APIResponse(responseCode = "400", description = "Validation error"),
-        @APIResponse(responseCode = "409", description = "Duplicate payment number")
+        @APIResponse(responseCode = "409", description = "Idempotency conflict or duplicate payment number")
     })
-    public Response create(CreatePaymentRequestDto dto) {
+    public Response create(
+            @HeaderParam("Idempotency-Key") String idempotencyKey,
+            CreatePaymentRequestDto dto) {
         var tenantId = TenantContext.getCurrentTenant();
-        
-        try {
-            var command = new RecordPaymentUseCase.RecordPaymentCommand(
-                    dto.paymentNumber(),
-                    dto.customerId(),
-                    dto.amount(),
-                    dto.currencyCode(),
-                    dto.paymentDate(),
-                    dto.method(),
-                    dto.reference(),
-                    dto.notes()
-            );
-            
-            var paymentId = recordPaymentUseCase.record(tenantId, command);
-            return Response.status(201)
-                    .entity(new PaymentCreatedDto(paymentId.getValue().toString(), dto.paymentNumber()))
-                    .build();
-        } catch (IllegalArgumentException e) {
-            return Response.status(400)
-                    .entity(new ErrorDto("VALIDATION_ERROR", e.getMessage()))
-                    .build();
-        }
+
+        var command = new RecordPaymentUseCase.RecordPaymentCommand(
+                dto.paymentNumber(),
+                dto.customerId(),
+                dto.amount(),
+                dto.currencyCode(),
+                dto.paymentDate(),
+                dto.method(),
+                dto.reference(),
+                dto.notes()
+        );
+
+        var paymentId = recordPaymentUseCase.record(tenantId, command, idempotencyKey);
+        return Response.status(201)
+                .entity(new PaymentCreatedDto(paymentId.getValue().toString(), dto.paymentNumber()))
+                .build();
     }
 
     // ==================== ALLOCATION ====================

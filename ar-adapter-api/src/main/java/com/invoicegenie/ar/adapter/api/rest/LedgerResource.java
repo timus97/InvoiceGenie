@@ -83,9 +83,53 @@ public class LedgerResource {
 
     @POST
     @Path("/validate")
-    @Operation(summary = "Validate that debits equal credits for a set of entries")
+    @Operation(summary = "Validate that debits equal credits for a transaction or reference")
     public Response validateEntries(ValidateRequestDto dto) {
-        return Response.ok(new ValidationResultDto(true, "Validation endpoint - implement with actual entries")).build();
+        if (dto == null) {
+            return Response.status(400)
+                    .entity(new ErrorResponse("VALIDATION_ERROR", "request body required"))
+                    .build();
+        }
+
+        var tenantId = TenantContext.getCurrentTenant();
+        List<LedgerEntry> entries;
+
+        if (dto.transactionId() != null && !dto.transactionId().isBlank()) {
+            entries = ledgerQueryUseCase.getTransaction(tenantId, UUID.fromString(dto.transactionId()));
+        } else if (dto.referenceType() != null && !dto.referenceType().isBlank()
+                && dto.referenceId() != null && !dto.referenceId().isBlank()) {
+            entries = ledgerQueryUseCase.getByReference(
+                    tenantId, dto.referenceType().toUpperCase(), UUID.fromString(dto.referenceId()));
+        } else {
+            return Response.status(400)
+                    .entity(new ErrorResponse("VALIDATION_ERROR",
+                            "Provide transactionId or referenceType+referenceId"))
+                    .build();
+        }
+
+        if (entries.isEmpty()) {
+            return Response.status(404)
+                    .entity(new ErrorResponse("NOT_FOUND", "No ledger entries found for the given criteria"))
+                    .build();
+        }
+
+        boolean balanced = ledgerQueryUseCase.validateBalanced(entries);
+        BigDecimal totalDebit = entries.stream()
+                .filter(e -> e.getEntryType() == com.invoicegenie.ar.domain.model.ledger.EntryType.DEBIT)
+                .map(e -> e.getAmount().getAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalCredit = entries.stream()
+                .filter(e -> e.getEntryType() == com.invoicegenie.ar.domain.model.ledger.EntryType.CREDIT)
+                .map(e -> e.getAmount().getAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return Response.ok(new ValidationResultDto(
+                balanced,
+                balanced ? "Debits equal credits" : "Debits do not equal credits",
+                entries.size(),
+                totalDebit,
+                totalCredit
+        )).build();
     }
 
     private TransactionDto toTransactionDto(List<LedgerEntry> entries) {
@@ -117,6 +161,12 @@ public class LedgerResource {
     public record EntryDto(String id, String account, BigDecimal amount, String entryType,
                           String description, String transactionId, String referenceType,
                           String referenceId, java.time.Instant createdAt) {}
-    public record ValidateRequestDto() {}
-    public record ValidationResultDto(boolean balanced, String message) {}
+    public record ValidateRequestDto(String transactionId, String referenceType, String referenceId) {}
+    public record ValidationResultDto(
+            boolean balanced,
+            String message,
+            int entryCount,
+            BigDecimal totalDebit,
+            BigDecimal totalCredit
+    ) {}
 }

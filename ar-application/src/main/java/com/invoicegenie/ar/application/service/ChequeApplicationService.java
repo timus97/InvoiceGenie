@@ -115,7 +115,6 @@ public class ChequeApplicationService implements ChequeUseCase {
                 return ListResult.invalidStatus("Unknown status: " + status);
             }
         }
-        // No full-list endpoint on repository — return empty when unfiltered
-        return ListResult.ok(java.util.List.of());
+        return ListResult.ok(chequeRepository.findByTenant(tenantId));
     }
 }

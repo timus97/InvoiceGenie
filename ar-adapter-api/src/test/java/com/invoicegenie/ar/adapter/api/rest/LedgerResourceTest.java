@@ -91,8 +91,24 @@ class LedgerResourceTest {
     }
 
     @Test
-    @DisplayName("validate")
+    @DisplayName("validate by reference")
     void validate() {
-        assertEquals(200, resource.validateEntries(new LedgerResource.ValidateRequestDto()).getStatus());
+        UUID refId = UUID.randomUUID();
+        UUID tx = UUID.randomUUID();
+        LedgerEntry debit = new LedgerEntry(Account.AR, Money.of("10", "USD"),
+                EntryType.DEBIT, "desc", tx, "INVOICE", refId);
+        LedgerEntry credit = new LedgerEntry(Account.REVENUE, Money.of("10", "USD"),
+                EntryType.CREDIT, "desc", tx, "INVOICE", refId);
+        when(ledgerQueryUseCase.getByReference(eq(tenantId), eq("INVOICE"), eq(refId)))
+                .thenReturn(List.of(debit, credit));
+        when(ledgerQueryUseCase.validateBalanced(any())).thenReturn(true);
+        var dto = new LedgerResource.ValidateRequestDto(null, "INVOICE", refId.toString());
+        assertEquals(200, resource.validateEntries(dto).getStatus());
+    }
+
+    @Test
+    @DisplayName("validate missing criteria")
+    void validateMissing() {
+        assertEquals(400, resource.validateEntries(new LedgerResource.ValidateRequestDto(null, null, null)).getStatus());
     }
 }

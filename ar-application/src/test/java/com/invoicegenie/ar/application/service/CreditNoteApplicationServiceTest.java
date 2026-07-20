@@ -108,5 +108,16 @@ class CreditNoteApplicationServiceTest {
             var result = service.list(tenantId, "BAD");
             assertFalse(result.success());
         }
+
+        @Test
+        @DisplayName("should list all credit notes when status is null")
+        void shouldListAllWhenStatusNull() {
+            when(creditNoteRepository.findByTenant(tenantId)).thenReturn(List.of());
+
+            var result = service.list(tenantId, null);
+
+            assertTrue(result.success());
+            verify(creditNoteRepository).findByTenant(tenantId);
+        }
     }
 }

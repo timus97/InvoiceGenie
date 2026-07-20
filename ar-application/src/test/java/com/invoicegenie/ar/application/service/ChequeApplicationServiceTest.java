@@ -158,5 +158,17 @@ class ChequeApplicationServiceTest {
             var result = service.list(tenantId, "NOPE");
             assertFalse(result.success());
         }
+
+        @Test
+        @DisplayName("should list all cheques when status is null")
+        void shouldListAllWhenStatusNull() {
+            when(chequeRepository.findByTenant(tenantId)).thenReturn(List.of(newCheque()));
+
+            var result = service.list(tenantId, null);
+
+            assertTrue(result.success());
+            assertEquals(1, result.cheques().size());
+            verify(chequeRepository).findByTenant(tenantId);
+        }
     }
 }

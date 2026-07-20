@@ -71,21 +71,21 @@ class InvoiceResourceTest {
         @Test
         void missingNumber() {
             var dto = new InvoiceResource.InvoiceCreateDto(null, UUID.randomUUID().toString(), null, "USD",
-                    LocalDate.now(), List.of(new InvoiceResource.LineDto(1, "x", new BigDecimal("1"))));
+                    LocalDate.now(), List.of(new InvoiceResource.LineDto(1, "x", new BigDecimal("1"))), null);
             assertEquals(400, resource.create(null, dto).getStatus());
         }
 
         @Test
         void missingCustomer() {
             var dto = new InvoiceResource.InvoiceCreateDto("INV", null, null, "USD",
-                    LocalDate.now(), List.of(new InvoiceResource.LineDto(1, "x", new BigDecimal("1"))));
+                    LocalDate.now(), List.of(new InvoiceResource.LineDto(1, "x", new BigDecimal("1"))), null);
             assertEquals(400, resource.create(null, dto).getStatus());
         }
 
         @Test
         void emptyLines() {
             var dto = new InvoiceResource.InvoiceCreateDto("INV", UUID.randomUUID().toString(), null, "USD",
-                    LocalDate.now(), List.of());
+                    LocalDate.now(), List.of(), null);
             assertEquals(400, resource.create(null, dto).getStatus());
         }
 
@@ -95,7 +95,7 @@ class InvoiceResourceTest {
             when(issueInvoiceUseCase.issue(eq(tenantId), any(), isNull())).thenReturn(id);
             var dto = new InvoiceResource.InvoiceCreateDto("INV-1", UUID.randomUUID().toString(), "Acme", "USD",
                     LocalDate.now().plusDays(10),
-                    List.of(new InvoiceResource.LineDto(1, "Svc", new BigDecimal("100.00"))));
+                    List.of(new InvoiceResource.LineDto(1, "Svc", new BigDecimal("100.00"))), null);
             Response r = resource.create(null, dto);
             assertEquals(201, r.getStatus());
             assertTrue(r.getLocation().toString().contains(id.getValue().toString()));
@@ -107,8 +107,18 @@ class InvoiceResourceTest {
             when(issueInvoiceUseCase.issue(eq(tenantId), any(), eq("key-1"))).thenReturn(id);
             var dto = new InvoiceResource.InvoiceCreateDto("INV-1", UUID.randomUUID().toString(), null, "USD",
                     LocalDate.now().plusDays(10),
-                    List.of(new InvoiceResource.LineDto(1, "Svc", new BigDecimal("100.00"))));
+                    List.of(new InvoiceResource.LineDto(1, "Svc", new BigDecimal("100.00"))), true);
             assertEquals(201, resource.create("key-1", dto).getStatus());
+        }
+
+        @Test
+        void draftCreate() {
+            InvoiceId id = InvoiceId.of(UUID.randomUUID());
+            when(issueInvoiceUseCase.issue(eq(tenantId), any(), isNull())).thenReturn(id);
+            var dto = new InvoiceResource.InvoiceCreateDto("INV-DRAFT", UUID.randomUUID().toString(), null, "USD",
+                    LocalDate.now().plusDays(10),
+                    List.of(new InvoiceResource.LineDto(1, "Svc", new BigDecimal("50.00"))), false);
+            assertEquals(201, resource.create(null, dto).getStatus());
         }
     }
 

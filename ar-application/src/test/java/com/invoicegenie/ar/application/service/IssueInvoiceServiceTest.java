@@ -176,5 +176,27 @@ class IssueInvoiceServiceTest {
             assertThrows(IllegalArgumentException.class, () -> service.issue(tenantId, command));
             verify(invoiceRepository, never()).save(any(), any());
         }
+
+        @Test
+        @DisplayName("should create pure DRAFT without ledger or InvoiceIssued")
+        void shouldCreateDraftWithoutLedger() {
+            InvoiceId expectedId = InvoiceId.generate();
+            when(idGenerator.newInvoiceId()).thenReturn(expectedId);
+            stubCustomerExists();
+
+            IssueInvoiceUseCase.IssueInvoiceCommand command = new IssueInvoiceUseCase.IssueInvoiceCommand(
+                    "INV-DRAFT", customerId.getValue().toString(), "Acme", "USD", LocalDate.now().plusDays(30),
+                    List.of(new IssueInvoiceUseCase.IssueInvoiceCommand.LineItem("Service", new BigDecimal("75.00"))),
+                    false
+            );
+
+            InvoiceId result = service.issue(tenantId, command);
+
+            assertEquals(expectedId, result);
+            verify(invoiceRepository).save(eq(tenantId), any());
+            verify(auditRepository).save(eq(tenantId), any());
+            verify(ledgerRepository, never()).saveAll(any(), any());
+            verify(eventPublisher, never()).publish(any());
+        }
     }
 }

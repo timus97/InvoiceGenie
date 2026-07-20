@@ -81,4 +81,15 @@ public class ChequeRepositoryAdapter implements ChequeRepository {
                 .map(mapper::toDomain)
                 .toList();
     }
+
+    @Override
+    public List<Cheque> findByTenant(TenantId tenantId) {
+        return em.createQuery(
+                        "SELECT c FROM ChequeEntity c WHERE c.tenantId = :tenantId ORDER BY c.receivedDate DESC, c.chequeNumber ASC",
+                        ChequeEntity.class)
+                .setParameter("tenantId", tenantId.getValue())
+                .getResultStream()
+                .map(mapper::toDomain)
+                .toList();
+    }
 }

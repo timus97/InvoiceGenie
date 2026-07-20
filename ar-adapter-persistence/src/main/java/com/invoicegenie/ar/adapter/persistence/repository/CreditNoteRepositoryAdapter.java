@@ -71,6 +71,17 @@ public class CreditNoteRepositoryAdapter implements CreditNoteRepository {
     }
 
     @Override
+    public List<CreditNote> findByTenant(TenantId tenantId) {
+        return em.createQuery(
+                        "SELECT c FROM CreditNoteEntity c WHERE c.tenantId = :tenantId ORDER BY c.issueDate DESC, c.creditNoteNumber ASC",
+                        CreditNoteEntity.class)
+                .setParameter("tenantId", tenantId.getValue())
+                .getResultStream()
+                .map(mapper::toDomain)
+                .toList();
+    }
+
+    @Override
     public List<CreditNote> findAvailableByTenantAndCustomer(TenantId tenantId, CustomerId customerId) {
         return em.createQuery(
                         "SELECT c FROM CreditNoteEntity c WHERE c.tenantId = :tenantId AND c.customerId = :customerId " +

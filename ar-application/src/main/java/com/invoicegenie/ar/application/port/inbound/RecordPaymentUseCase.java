@@ -35,6 +35,13 @@ public interface RecordPaymentUseCase {
     PaymentId record(TenantId tenantId, RecordPaymentCommand command);
 
     /**
+     * Record payment with optional durable {@code Idempotency-Key}.
+     * When the key was seen before with the same payload, returns the prior payment id.
+     * When the key was seen with a different payload, throws {@code IdempotencyConflictException}.
+     */
+    PaymentId record(TenantId tenantId, RecordPaymentCommand command, String idempotencyKey);
+
+    /**
      * Command to record a payment.
      */
     record RecordPaymentCommand(

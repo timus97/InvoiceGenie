@@ -62,6 +62,6 @@ public class CreditNoteApplicationService implements CreditNoteUseCase {
                 return ListResult.invalidStatus("Unknown status: " + status);
             }
         }
-        return ListResult.ok(List.of());
+        return ListResult.ok(creditNoteRepository.findByTenant(tenantId));
     }
 }

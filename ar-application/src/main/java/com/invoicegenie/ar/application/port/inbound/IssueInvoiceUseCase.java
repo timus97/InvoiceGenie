@@ -24,13 +24,18 @@ public interface IssueInvoiceUseCase {
      */
     InvoiceId issue(TenantId tenantId, IssueInvoiceCommand command, String idempotencyKey);
 
+    /**
+     * @param issueImmediately when null or true, create as ISSUED with ledger (default, backward compatible).
+     *                         When false, persist pure DRAFT with no ledger / InvoiceIssued event.
+     */
     record IssueInvoiceCommand(
             String invoiceNumber,
             String customerId,
             String customerRef,
             String currencyCode,
             LocalDate dueDate,
-            List<LineItem> lines
+            List<LineItem> lines,
+            Boolean issueImmediately
     ) {
         public IssueInvoiceCommand {
             if (invoiceNumber == null || invoiceNumber.isBlank()) {
@@ -49,7 +54,26 @@ public interface IssueInvoiceUseCase {
             if (customerRef == null || customerRef.isBlank()) {
                 customerRef = customerId;
             }
+            if (issueImmediately == null) {
+                issueImmediately = Boolean.TRUE;
+            }
         }
+
+        /** Backward-compatible constructor — issues immediately. */
+        public IssueInvoiceCommand(
+                String invoiceNumber,
+                String customerId,
+                String customerRef,
+                String currencyCode,
+                LocalDate dueDate,
+                List<LineItem> lines) {
+            this(invoiceNumber, customerId, customerRef, currencyCode, dueDate, lines, true);
+        }
+
+        public boolean shouldIssueImmediately() {
+            return issueImmediately == null || issueImmediately;
+        }
+
         public record LineItem(String description, BigDecimal amount) {}
     }
 }

@@ -5,6 +5,11 @@ import com.invoicegenie.ar.domain.model.customer.Customer;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.customer.CustomerRepository;
 import com.invoicegenie.ar.domain.model.customer.CustomerStatus;
+import com.invoicegenie.ar.domain.model.invoice.Invoice;
+import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
+import com.invoicegenie.ar.domain.model.invoice.InvoiceLine;
+import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
+import com.invoicegenie.shared.domain.Money;
 import com.invoicegenie.ar.domain.service.CustomerService;
 import com.invoicegenie.shared.domain.TenantId;
 
@@ -17,6 +22,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -30,6 +36,7 @@ import static org.mockito.Mockito.*;
 class CustomerManagementServiceTest {
 
     @Mock private CustomerRepository customerRepository;
+    @Mock private InvoiceRepository invoiceRepository;
     private CustomerService customerService;
     private CustomerManagementService service;
     private TenantId tenantId;
@@ -205,6 +212,93 @@ class CustomerManagementServiceTest {
                     new CustomerUseCase.UpdateCustomerCommand("X", null, null, null, null, null));
 
             assertTrue(result.isEmpty());
+        }
+    }
+    @Nested
+    @DisplayName("arSummary / credit with system AR")
+    class ArSummary {
+        @Test
+        @DisplayName("empty when customer not found")
+        void notFound() {
+            when(customerRepository.findByTenantAndId(tenantId, customerId)).thenReturn(Optional.empty());
+            assertTrue(service.arSummary(tenantId, customerId).isEmpty());
+        }
+
+        @Test
+        @DisplayName("zero summary without invoice repository")
+        void noInvoiceRepo() {
+            Customer customer = new Customer(customerId, "C001", "Acme", "USD");
+            when(customerRepository.findByTenantAndId(tenantId, customerId)).thenReturn(Optional.of(customer));
+
+            var summary = service.arSummary(tenantId, customerId);
+
+            assertTrue(summary.isPresent());
+            assertEquals(0, summary.get().openInvoiceCount());
+            assertEquals(0, summary.get().totalBalanceBaseCurrency().signum());
+        }
+
+        @Test
+        @DisplayName("aggregates open invoices by currency")
+        void aggregates() {
+            service = new CustomerManagementService(customerService, customerRepository, invoiceRepository);
+            Customer customer = new Customer(customerId, "C001", "Acme", "USD");
+            when(customerRepository.findByTenantAndId(tenantId, customerId)).thenReturn(Optional.of(customer));
+
+            Invoice usd = new Invoice(InvoiceId.generate(), "INV-1", customerId, "C001", "USD",
+                    LocalDate.now(), LocalDate.now().plusDays(10), List.of());
+            usd.addLine(new InvoiceLine(1, "A", Money.of("100.00", "USD")));
+            usd.issue();
+            usd.recordPaymentApplied(Money.of("40.00", "USD"));
+
+            Invoice eur = new Invoice(InvoiceId.generate(), "INV-2", customerId, "C001", "EUR",
+                    LocalDate.now(), LocalDate.now().plusDays(10), List.of());
+            eur.addLine(new InvoiceLine(1, "B", Money.of("50.00", "EUR")));
+            eur.issue();
+
+            when(invoiceRepository.findOpenByTenantAndCustomer(tenantId, customerId))
+                    .thenReturn(List.of(usd, eur));
+
+            var summary = service.arSummary(tenantId, customerId);
+
+            assertTrue(summary.isPresent());
+            assertEquals(2, summary.get().openInvoiceCount());
+            assertEquals("MIXED", summary.get().baseCurrency());
+            assertTrue(summary.get().byCurrency().containsKey("USD"));
+            assertTrue(summary.get().byCurrency().containsKey("EUR"));
+            assertEquals(0, new BigDecimal("60.00").compareTo(summary.get().byCurrency().get("USD").balance()));
+        }
+
+        @Test
+        @DisplayName("empty open invoices uses USD base")
+        void emptyOpen() {
+            service = new CustomerManagementService(customerService, customerRepository, invoiceRepository);
+            Customer customer = new Customer(customerId, "C001", "Acme", "USD");
+            when(customerRepository.findByTenantAndId(tenantId, customerId)).thenReturn(Optional.of(customer));
+            when(invoiceRepository.findOpenByTenantAndCustomer(tenantId, customerId)).thenReturn(List.of());
+
+            var summary = service.arSummary(tenantId, customerId);
+            assertTrue(summary.isPresent());
+            assertEquals("USD", summary.get().baseCurrency());
+            assertEquals(0, summary.get().openInvoiceCount());
+        }
+
+        @Test
+        @DisplayName("checkCredit uses system AR when outstanding is zero")
+        void creditUsesSystemAr() {
+            service = new CustomerManagementService(customerService, customerRepository, invoiceRepository);
+            Customer customer = new Customer(customerId, "C001", "Acme", "USD");
+            customer.setCreditLimit(new BigDecimal("1000"));
+            when(customerRepository.findByTenantAndId(tenantId, customerId)).thenReturn(Optional.of(customer));
+
+            Invoice inv = new Invoice(InvoiceId.generate(), "INV-3", customerId, "C001", "USD",
+                    LocalDate.now(), LocalDate.now().plusDays(10), List.of());
+            inv.addLine(new InvoiceLine(1, "A", Money.of("900.00", "USD")));
+            inv.issue();
+            when(invoiceRepository.findOpenByTenantAndCustomer(tenantId, customerId)).thenReturn(List.of(inv));
+
+            var result = service.checkCredit(tenantId, customerId, BigDecimal.ZERO, new BigDecimal("200"));
+            // 900 outstanding + 200 invoice > 1000 limit
+            assertFalse(result.canInvoice());
         }
     }
 }

@@ -23,6 +23,11 @@ public interface CreditNoteUseCase {
 
     ListResult list(TenantId tenantId, String status);
 
+    /**
+     * Available (ISSUED, not expired) credit notes for a customer — payment UI (STORY-007).
+     */
+    List<CreditNote> findAvailableByCustomer(TenantId tenantId, UUID customerId);
+
     record ListResult(List<CreditNote> creditNotes, boolean success, String errorMessage) {
         public static ListResult ok(List<CreditNote> creditNotes) {
             return new ListResult(creditNotes, true, null);

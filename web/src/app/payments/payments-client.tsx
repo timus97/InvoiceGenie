@@ -21,6 +21,7 @@ import {
   listPayments,
   reversePayment,
 } from "@/lib/api/payments";
+import { listAvailableCredits } from "@/lib/api/credit-notes";
 import { formatMoney } from "@/lib/money";
 import { ApiError } from "@/lib/errors";
 import type { PaymentMethod } from "@/types/ar";
@@ -68,6 +69,13 @@ export default function PaymentsClient() {
     queryKey: ["payments", tenantId],
     enabled: ready,
     queryFn: ({ signal }) => listPayments(tenantId, { limit: 50, signal }),
+  });
+
+  const availableCredits = useQuery({
+    queryKey: ["credit-notes", tenantId, "available", customerId],
+    enabled: ready && !!customerId,
+    queryFn: ({ signal }) =>
+      listAvailableCredits(tenantId, customerId, signal),
   });
 
   const openInvoices = useQuery({
@@ -277,6 +285,26 @@ export default function PaymentsClient() {
                   </option>
                 ))}
               </Select>
+              {customerId && availableCredits.data?.length ? (
+                <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50/60 p-2 text-xs dark:border-emerald-900 dark:bg-emerald-950/30">
+                  <p className="mb-1 font-semibold text-emerald-800 dark:text-emerald-200">
+                    Available credit notes
+                  </p>
+                  <ul className="space-y-0.5 text-emerald-700 dark:text-emerald-300">
+                    {availableCredits.data.map((cn) => (
+                      <li key={cn.id}>
+                        {cn.creditNoteNumber}:{" "}
+                        {formatMoney(cn.amount, cn.currencyCode)} (
+                        {cn.type})
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : customerId && availableCredits.isSuccess ? (
+                <p className="mt-1 text-xs text-zinc-500">
+                  No available credit notes for this customer.
+                </p>
+              ) : null}
             </div>
             <div>
               <Label htmlFor="pay-amt">Amount</Label>

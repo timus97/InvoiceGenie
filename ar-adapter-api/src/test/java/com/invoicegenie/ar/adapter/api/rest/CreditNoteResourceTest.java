@@ -90,7 +90,17 @@ class CreditNoteResourceTest {
     void listOk() {
         when(creditNoteUseCase.list(eq(tenantId), isNull()))
                 .thenReturn(CreditNoteUseCase.ListResult.ok(List.of(sample())));
-        assertEquals(200, resource.listCreditNotes(null).getStatus());
+        assertEquals(200, resource.listCreditNotes(null, null, false).getStatus());
+    }
+
+    @Test
+    @DisplayName("list available by customer")
+    void listAvailable() {
+        UUID cust = UUID.randomUUID();
+        when(creditNoteUseCase.findAvailableByCustomer(eq(tenantId), eq(cust)))
+                .thenReturn(List.of(sample()));
+        assertEquals(200, resource.listCreditNotes(null, cust.toString(), true).getStatus());
+        verify(creditNoteUseCase).findAvailableByCustomer(eq(tenantId), eq(cust));
     }
 
     @Test

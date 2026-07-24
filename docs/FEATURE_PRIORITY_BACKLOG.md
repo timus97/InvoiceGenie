@@ -146,7 +146,7 @@ Wave 4 (P3): Webhooks + audit UI/export + Playwright smoke               ✅
 
 | ID | Residual |
 |----|----------|
-| **P0-03** | Migrate Quarkus `3.8.6.1` → supported LTS (3.27/3.33) — dedicated PR (not in 2026-07-24 pass) |
+| **P0-03** | ~~Migrate Quarkus~~ **Done** — on **3.27.3** LTS |
 | **P0-01** | Phase-1 JWT `roles[]` + path RBAC + prod fail-closed **landed**; OIDC provider + web login still open |
 | **P0-07** | Wire TLS into compose/K8s edge (ops); nginx sample already in docs |
 | **P2-03** | Delete `%sqlite` profile alias after notice period |

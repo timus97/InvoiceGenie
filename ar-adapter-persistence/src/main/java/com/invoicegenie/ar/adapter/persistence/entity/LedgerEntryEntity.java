@@ -35,9 +35,13 @@ public class LedgerEntryEntity {
     @Column(name = "posting_date", nullable = false)
     private LocalDate postingDate;
 
-    /** Account enum name (e.g. AR, BANK, REVENUE) — domain has no account UUID. */
+    /** Account enum name (e.g. AR, BANK, REVENUE) — primary domain key. */
     @Column(name = "account", nullable = false, length = 64)
     private String account;
+
+    /** Optional FK to ar_account when COA is seeded (STORY-020 enum bridge). */
+    @Column(name = "account_id")
+    private UUID accountId;
 
     @Column(name = "invoice_id")
     private UUID invoiceId;
@@ -90,6 +94,8 @@ public class LedgerEntryEntity {
     public void setPostingDate(LocalDate postingDate) { this.postingDate = postingDate; }
     public String getAccount() { return account; }
     public void setAccount(String account) { this.account = account; }
+    public UUID getAccountId() { return accountId; }
+    public void setAccountId(UUID accountId) { this.accountId = accountId; }
     public UUID getInvoiceId() { return invoiceId; }
     public void setInvoiceId(UUID invoiceId) { this.invoiceId = invoiceId; }
     public UUID getPaymentId() { return paymentId; }

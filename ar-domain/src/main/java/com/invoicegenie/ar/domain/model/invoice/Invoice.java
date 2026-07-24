@@ -43,6 +43,8 @@ public final class Invoice {
     private final Instant createdAt;
     private Instant updatedAt;
     private long version;
+    /** Version loaded from persistence (0 for brand-new aggregates). Optimistic lock expected version. */
+    private final long originalVersion;
 
     private String notes;
     private String terms;
@@ -119,6 +121,7 @@ public final class Invoice {
         this.createdAt = Objects.requireNonNull(createdAt);
         this.updatedAt = Objects.requireNonNull(updatedAt);
         this.version = version;
+        this.originalVersion = version;
         this.notes = notes;
         this.terms = terms;
         this.status = status == null ? InvoiceStatus.DRAFT : status;
@@ -160,6 +163,13 @@ public final class Invoice {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public long getVersion() { return version; }
+
+    /**
+     * Version as loaded from persistence (before in-memory mutations).
+     * Repository conditional updates use this as the expected DB version (STORY-019).
+     */
+    public long getOriginalVersion() { return originalVersion; }
+
     public String getNotes() { return notes; }
     public String getTerms() { return terms; }
     public InvoiceStatus getStatus() { return status; }
@@ -237,6 +247,22 @@ public final class Invoice {
         if (!removed) {
             throw new IllegalArgumentException("Line not found: " + sequence);
         }
+        touch();
+    }
+
+    /**
+     * Replaces all lines on a DRAFT invoice (STORY-011).
+     */
+    public void replaceLines(List<InvoiceLine> newLines) {
+        assertDraft();
+        if (newLines == null || newLines.isEmpty()) {
+            throw new IllegalArgumentException("at least one line is required");
+        }
+        for (InvoiceLine line : newLines) {
+            requireSameCurrency(line.getAmount());
+        }
+        lines.clear();
+        lines.addAll(newLines);
         touch();
     }
 

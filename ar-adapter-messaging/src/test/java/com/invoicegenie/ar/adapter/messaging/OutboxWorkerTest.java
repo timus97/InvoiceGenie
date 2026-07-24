@@ -52,6 +52,13 @@ class OutboxWorkerTest {
             kafkaField.setAccessible(true);
             kafkaField.set(worker, kafkaSenderInstance);
 
+            var webhookField = OutboxWorker.class.getDeclaredField("webhookDispatcher");
+            webhookField.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            Instance<WebhookDispatcher> emptyWebhook = mock(Instance.class);
+            lenient().when(emptyWebhook.isUnsatisfied()).thenReturn(true);
+            webhookField.set(worker, emptyWebhook);
+
             var batchSizeField = OutboxWorker.class.getDeclaredField("batchSize");
             batchSizeField.setAccessible(true);
             batchSizeField.set(worker, 100);

@@ -86,16 +86,44 @@ public class CreditNoteResource {
     }
 
     @GET
-    @Operation(summary = "List credit notes")
-    public Response listCreditNotes(@QueryParam("status") String status) {
+    @Operation(summary = "List credit notes (optional status; availableOnly+customerId for payment UI)")
+    public Response listCreditNotes(
+            @QueryParam("status") String status,
+            @QueryParam("customerId") String customerId,
+            @QueryParam("availableOnly") @DefaultValue("false") boolean availableOnly) {
         var tenantId = TenantContext.getCurrentTenant();
+
+        if (availableOnly) {
+            if (customerId == null || customerId.isBlank()) {
+                return Response.status(400)
+                        .entity(new ErrorResponse("VALIDATION_ERROR", "customerId is required when availableOnly=true"))
+                        .build();
+            }
+            try {
+                var notes = creditNoteUseCase.findAvailableByCustomer(tenantId, UUID.fromString(customerId.trim()));
+                return Response.ok(notes.stream().map(this::toDto).collect(Collectors.toList())).build();
+            } catch (IllegalArgumentException e) {
+                return Response.status(400)
+                        .entity(new ErrorResponse("VALIDATION_ERROR", "Invalid customerId"))
+                        .build();
+            }
+        }
+
         var result = creditNoteUseCase.list(tenantId, status);
 
         if (!result.success()) {
             return Response.status(400).entity(new ErrorResponse("INVALID_STATUS", result.errorMessage())).build();
         }
 
-        return Response.ok(result.creditNotes().stream().map(this::toDto).collect(Collectors.toList())).build();
+        var notes = result.creditNotes();
+        if (customerId != null && !customerId.isBlank()) {
+            String cid = customerId.trim();
+            notes = notes.stream()
+                    .filter(cn -> cn.getCustomerId().getValue().toString().equals(cid))
+                    .toList();
+        }
+
+        return Response.ok(notes.stream().map(this::toDto).collect(Collectors.toList())).build();
     }
 
     private CreditNoteDto toDto(CreditNote creditNote) {

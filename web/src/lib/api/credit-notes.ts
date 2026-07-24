@@ -7,12 +7,34 @@ import type {
 
 export function listCreditNotes(
   tenantId: string,
-  opts?: { status?: string; signal?: AbortSignal },
+  opts?: {
+    status?: string;
+    customerId?: string;
+    availableOnly?: boolean;
+    signal?: AbortSignal;
+  },
 ) {
   return apiFetch<CreditNoteDto[]>(apiPaths.creditNotes, {
     tenantId,
     signal: opts?.signal,
-    query: { status: opts?.status },
+    query: {
+      status: opts?.status,
+      customerId: opts?.customerId,
+      availableOnly: opts?.availableOnly ? "true" : undefined,
+    },
+  });
+}
+
+/** Available ISSUED credit notes for a customer (payment UI / STORY-007). */
+export function listAvailableCredits(
+  tenantId: string,
+  customerId: string,
+  signal?: AbortSignal,
+) {
+  return listCreditNotes(tenantId, {
+    customerId,
+    availableOnly: true,
+    signal,
   });
 }
 

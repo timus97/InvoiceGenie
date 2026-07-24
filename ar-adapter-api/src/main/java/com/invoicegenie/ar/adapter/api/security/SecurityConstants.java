@@ -7,6 +7,8 @@ public final class SecurityConstants {
     public static final String AUTH_TENANT_PROPERTY = "invoicegenie.auth.tenantId";
     public static final String AUTH_SUBJECT_PROPERTY = "invoicegenie.auth.subject";
     public static final String AUTH_METHOD_PROPERTY = "invoicegenie.auth.method";
+    /** Request property holding {@code Set<String>} of roles. */
+    public static final String AUTH_ROLES_PROPERTY = "invoicegenie.auth.roles";
 
     public static final String HEADER_API_KEY = "X-API-Key";
     public static final String HEADER_TENANT = "X-Tenant-Id";

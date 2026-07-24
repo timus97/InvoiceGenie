@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Upload, FileScan, Loader2 } from "lucide-react";
@@ -13,6 +13,7 @@ import { Input, Label, Select } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { useTenant } from "@/components/tenant-provider";
 import { listCustomers } from "@/lib/api/customers";
+import { listInvoices } from "@/lib/api/invoices";
 import {
   bounceCheque,
   bulkCreateCheques,
@@ -30,9 +31,20 @@ import {
 } from "@/lib/cheque-ocr-client";
 import { formatMoney } from "@/lib/money";
 import { ApiError } from "@/lib/errors";
-import type { CreateChequeRequest, ExtractedChequeDto } from "@/types/ar";
+import type {
+  ChequeDto,
+  CreateChequeRequest,
+  ExtractedChequeDto,
+} from "@/types/ar";
 
 const STATUSES = ["RECEIVED", "DEPOSITED", "CLEARED", "BOUNCED"] as const;
+
+/** Mirrors invoicegenie.ocr.min-confidence default; overridable via NEXT_PUBLIC_OCR_MIN_CONFIDENCE. */
+const MIN_OCR_CONFIDENCE = (() => {
+  const raw = process.env.NEXT_PUBLIC_OCR_MIN_CONFIDENCE;
+  const n = raw != null && raw !== "" ? Number(raw) : 0.45;
+  return Number.isFinite(n) ? n : 0.45;
+})();
 
 type ReviewRow = {
   key: string;
@@ -46,10 +58,12 @@ type ReviewRow = {
   chequeDate: string;
   notes: string;
   confidence: number;
+  payeeHint: string;
   selected: boolean;
 };
 
 function toReviewRow(c: ExtractedChequeDto, idx: number): ReviewRow {
+  const confidence = c.confidence ?? 0;
   return {
     key: `${c.sourceFile ?? "src"}-${c.segmentIndex ?? idx}-${idx}`,
     sourceFile: c.sourceFile ?? "",
@@ -61,9 +75,32 @@ function toReviewRow(c: ExtractedChequeDto, idx: number): ReviewRow {
     bankBranch: c.bankBranch ?? "",
     chequeDate: c.chequeDate ?? new Date().toISOString().slice(0, 10),
     notes: c.notes ?? "",
-    confidence: c.confidence ?? 0,
-    selected: !!(c.chequeNumber && c.amount),
+    confidence,
+    payeeHint: c.payeeHint ?? "",
+    selected: !!(c.chequeNumber && c.amount) && confidence >= MIN_OCR_CONFIDENCE,
   };
+}
+
+function matchCustomerId(
+  payeeHint: string,
+  customers: { id: string; displayName?: string | null; legalName?: string | null; code?: string | null }[],
+): string {
+  if (!payeeHint?.trim() || !customers?.length) return "";
+  const hint = payeeHint.trim().toLowerCase();
+  const exact = customers.find((c) => {
+    const names = [c.displayName, c.legalName, c.code]
+      .filter(Boolean)
+      .map((s) => String(s).trim().toLowerCase());
+    return names.some((n) => n === hint);
+  });
+  if (exact) return exact.id;
+  const partial = customers.find((c) => {
+    const names = [c.displayName, c.legalName, c.code]
+      .filter(Boolean)
+      .map((s) => String(s).trim().toLowerCase());
+    return names.some((n) => n.includes(hint) || hint.includes(n));
+  });
+  return partial?.id ?? "";
 }
 
 export default function ChequesPage() {
@@ -75,6 +112,9 @@ export default function ChequesPage() {
   const [showOcr, setShowOcr] = useState(false);
   const [bounceId, setBounceId] = useState<string | null>(null);
   const [bounceReason, setBounceReason] = useState("");
+  const [bounceImpact, setBounceImpact] = useState<string[]>([]);
+  const [clearChequeRow, setClearChequeRow] = useState<ChequeDto | null>(null);
+  const [clearInvoiceIds, setClearInvoiceIds] = useState<string[]>([]);
   const [chequeNumber, setChequeNumber] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [amount, setAmount] = useState("");
@@ -194,16 +234,35 @@ export default function ChequesPage() {
           return;
         }
 
+        const list = customers.data ?? [];
         const rows = extracted.map((c, i) => {
           const row = toReviewRow(c, i);
-          if (defaultCustomerId) row.customerId = defaultCustomerId;
+          if (defaultCustomerId) {
+            row.customerId = defaultCustomerId;
+          } else if (row.payeeHint) {
+            row.customerId = matchCustomerId(
+              row.payeeHint,
+              list.map((c) => ({
+                id: c.id,
+                displayName: c.displayName,
+                legalName: c.legalName,
+                code: c.customerCode,
+              })),
+            );
+          }
           return row;
         });
+        const low = rows.filter((r) => r.confidence < MIN_OCR_CONFIDENCE).length;
         setReviewRows((prev) => [...prev, ...rows]);
         setShowOcr(true);
         toast.success(
           `Extracted ${rows.length} cheque candidate(s). Review and receive.`,
         );
+        if (low > 0) {
+          toast.message(
+            `${low} row(s) below confidence ${(MIN_OCR_CONFIDENCE * 100).toFixed(0)}% — correct fields or leave unselected.`,
+          );
+        }
       } catch (e) {
         onErr(e instanceof Error ? e : new Error(String(e)));
       } finally {
@@ -212,7 +271,7 @@ export default function ChequesPage() {
         if (fileRef.current) fileRef.current.value = "";
       }
     },
-    [tenantId, defaultCustomerId],
+    [tenantId, defaultCustomerId, customers.data],
   );
 
   const applyDefaultCustomer = () => {
@@ -240,11 +299,17 @@ export default function ChequesPage() {
         return;
       }
       if (!r.customerId) {
-        toast.error("Each selected row needs a customer");
+        toast.error("Each selected row needs a matched customer");
         return;
       }
       if (Number.isNaN(n) || n <= 0) {
         toast.error(`Invalid amount on cheque ${r.chequeNumber}`);
+        return;
+      }
+      if (r.confidence < MIN_OCR_CONFIDENCE) {
+        toast.error(
+          `Cheque ${r.chequeNumber}: confidence ${(r.confidence * 100).toFixed(0)}% below ${(MIN_OCR_CONFIDENCE * 100).toFixed(0)}% threshold — correct fields after re-OCR or unselect`,
+        );
         return;
       }
       payload.push({
@@ -256,6 +321,7 @@ export default function ChequesPage() {
         bankBranch: r.bankBranch || undefined,
         chequeDate: r.chequeDate || undefined,
         notes: r.notes || undefined,
+        ocrConfidence: r.confidence,
       });
     }
     bulkMut.mutate(payload);
@@ -270,10 +336,52 @@ export default function ChequesPage() {
     onError: onErr,
   });
 
+  const clearOpenInvoices = useQuery({
+    queryKey: [
+      "invoices",
+      tenantId,
+      "clear-cheque",
+      clearChequeRow?.customerId,
+      clearChequeRow?.currencyCode,
+    ],
+    enabled: ready && !!clearChequeRow?.customerId,
+    queryFn: async ({ signal }) => {
+      const pages = await Promise.all(
+        (["ISSUED", "PARTIALLY_PAID", "OVERDUE"] as const).map((status) =>
+          listInvoices(tenantId, { status, limit: 50, signal }),
+        ),
+      );
+      const ccy = (clearChequeRow?.currencyCode || "USD").toUpperCase();
+      const cust = clearChequeRow?.customerId;
+      return pages
+        .flatMap((p) => p.items)
+        .filter((inv) => {
+          if (cust && inv.customerId && inv.customerId !== cust) return false;
+          if (
+            inv.currencyCode &&
+            inv.currencyCode.toUpperCase() !== ccy
+          ) {
+            return false;
+          }
+          return true;
+        });
+    },
+  });
+
   const clearMut = useMutation({
-    mutationFn: (id: string) => clearCheque(tenantId, id),
-    onSuccess: () => {
-      toast.success("Cheque cleared");
+    mutationFn: () => {
+      if (!clearChequeRow) throw new Error("No cheque selected");
+      return clearCheque(
+        tenantId,
+        clearChequeRow.id,
+        clearInvoiceIds.length ? clearInvoiceIds : undefined,
+      );
+    },
+    onSuccess: (r) => {
+      const pay = r.paymentId ? ` Payment ${r.paymentId.slice(0, 8)}…` : "";
+      toast.success(`Cheque cleared.${pay}`);
+      setClearChequeRow(null);
+      setClearInvoiceIds([]);
       invalidate();
     },
     onError: onErr,
@@ -292,10 +400,16 @@ export default function ChequesPage() {
       toast.success(`Cheque bounced.${affected}`);
       setBounceId(null);
       setBounceReason("");
+      setBounceImpact([]);
       invalidate();
     },
     onError: onErr,
   });
+
+  const bounceTarget = useMemo(
+    () => cheques.data?.find((c) => c.id === bounceId) ?? null,
+    [cheques.data, bounceId],
+  );
 
   return (
     <div>
@@ -742,12 +856,124 @@ export default function ChequesPage() {
         </Card>
       ) : null}
 
+      {clearChequeRow ? (
+        <Card className="mb-6 border-indigo-200 dark:border-indigo-900">
+          <h2 className="mb-2 text-sm font-semibold">Clear cheque</h2>
+          <p className="mb-1 text-sm">
+            {clearChequeRow.chequeNumber} ·{" "}
+            {formatMoney(clearChequeRow.amount, clearChequeRow.currencyCode)}
+          </p>
+          <p className="mb-3 font-mono text-xs text-zinc-500">
+            {clearChequeRow.id}
+          </p>
+          <p className="mb-2 text-xs text-zinc-500">
+            Select invoices to allocate (optional). Leave empty for FIFO
+            against open invoices for this customer.
+          </p>
+          {clearOpenInvoices.isLoading ? (
+            <p className="text-xs text-zinc-500">Loading open invoices…</p>
+          ) : !clearOpenInvoices.data?.length ? (
+            <p className="mb-3 text-xs text-amber-700 dark:text-amber-300">
+              No open same-currency invoices found — clear will create an
+              unallocated CHECK payment.
+            </p>
+          ) : (
+            <ul className="mb-3 max-h-48 space-y-1 overflow-y-auto rounded-lg border border-zinc-200 p-2 text-sm dark:border-zinc-800">
+              {clearOpenInvoices.data.map((inv) => {
+                const checked = clearInvoiceIds.includes(inv.id);
+                return (
+                  <li key={inv.id}>
+                    <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-zinc-50 dark:hover:bg-zinc-900">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          setClearInvoiceIds((prev) =>
+                            checked
+                              ? prev.filter((x) => x !== inv.id)
+                              : [...prev, inv.id],
+                          );
+                        }}
+                      />
+                      <span className="font-medium">{inv.invoiceNumber}</span>
+                      <span className="text-xs text-zinc-500">
+                        {formatMoney(inv.total, inv.currencyCode)} ·{" "}
+                        {String(inv.status)}
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <div className="mt-3 flex gap-2">
+            <Button
+              type="button"
+              disabled={clearMut.isPending}
+              onClick={() => clearMut.mutate()}
+            >
+              {clearMut.isPending ? "Clearing…" : "Confirm clear"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setClearChequeRow(null);
+                setClearInvoiceIds([]);
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
       {bounceId ? (
         <Card className="mb-6 border-rose-200 dark:border-rose-900">
           <h2 className="mb-2 text-sm font-semibold text-rose-700 dark:text-rose-300">
             Bounce cheque
           </h2>
+          <p className="mb-1 text-sm">
+            {bounceTarget?.chequeNumber ?? "Cheque"} · status{" "}
+            {bounceTarget?.status ?? "—"}
+          </p>
           <p className="mb-3 font-mono text-xs text-zinc-500">{bounceId}</p>
+          {(bounceImpact.length > 0 ||
+            bounceTarget?.paymentId ||
+            (bounceTarget?.allocatedInvoiceIds?.length ?? 0) > 0) && (
+            <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50/60 p-3 text-xs dark:border-rose-900 dark:bg-rose-950/40">
+              <p className="mb-1 font-semibold text-rose-800 dark:text-rose-200">
+                Impact if bounced
+              </p>
+              {bounceTarget?.paymentId ? (
+                <p className="text-rose-700 dark:text-rose-300">
+                  Linked payment will reverse:{" "}
+                  <span className="font-mono">{bounceTarget.paymentId}</span>
+                </p>
+              ) : (
+                <p className="text-zinc-600 dark:text-zinc-400">
+                  No linked payment (status-only bounce if not cleared).
+                </p>
+              )}
+              {(bounceTarget?.allocatedInvoiceIds?.length ?? 0) > 0 ||
+              bounceImpact.length > 0 ? (
+                <ul className="mt-1 list-inside list-disc text-rose-700 dark:text-rose-300">
+                  {(bounceImpact.length
+                    ? bounceImpact
+                    : bounceTarget?.allocatedInvoiceIds ?? []
+                  ).map((id) => (
+                    <li key={id} className="font-mono">
+                      Invoice {id}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-1 text-zinc-600 dark:text-zinc-400">
+                  No allocated invoices on this cheque.
+                </p>
+              )}
+            </div>
+          )}
           <Label htmlFor="bounce-reason">Reason (required)</Label>
           <Input
             id="bounce-reason"
@@ -770,6 +996,7 @@ export default function ChequesPage() {
               onClick={() => {
                 setBounceId(null);
                 setBounceReason("");
+                setBounceImpact([]);
               }}
             >
               Cancel
@@ -873,19 +1100,30 @@ export default function ChequesPage() {
                             Deposit
                           </Button>
                         ) : null}
-                        {c.status === "DEPOSITED" ? (
+                        {c.status === "DEPOSITED" || c.status === "CLEARED" ? (
                           <>
-                            <Button
-                              type="button"
-                              disabled={clearMut.isPending}
-                              onClick={() => clearMut.mutate(c.id)}
-                            >
-                              Clear
-                            </Button>
+                            {c.status === "DEPOSITED" ? (
+                              <Button
+                                type="button"
+                                disabled={clearMut.isPending}
+                                onClick={() => {
+                                  setClearChequeRow(c);
+                                  setClearInvoiceIds(
+                                    c.allocatedInvoiceIds ?? [],
+                                  );
+                                }}
+                              >
+                                Clear
+                              </Button>
+                            ) : null}
                             <Button
                               type="button"
                               variant="danger"
-                              onClick={() => setBounceId(c.id)}
+                              onClick={() => {
+                                setBounceId(c.id);
+                                setBounceImpact(c.allocatedInvoiceIds ?? []);
+                                setBounceReason("");
+                              }}
                             >
                               Bounce
                             </Button>

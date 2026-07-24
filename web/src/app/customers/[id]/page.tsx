@@ -17,6 +17,7 @@ import {
   creditCheck,
   deleteCustomer,
   getCustomer,
+  getCustomerArSummary,
   unblockCustomer,
   updateCustomer,
 } from "@/lib/api/customers";
@@ -46,12 +47,17 @@ export default function CustomerDetailPage() {
   const [creditLimit, setCreditLimit] = useState<string | null>(null);
   const [paymentTerms, setPaymentTerms] = useState<string | null>(null);
   const [invoiceAmount, setInvoiceAmount] = useState("100");
-  const [outstanding, setOutstanding] = useState("0");
   const [creditResult, setCreditResult] = useState<{
     canInvoice: boolean;
     availableCredit: number | string | null;
     message: string;
   } | null>(null);
+
+  const arSummaryQ = useQuery({
+    queryKey: ["customer-ar-summary", tenantId, id],
+    enabled: ready && !!id,
+    queryFn: ({ signal }) => getCustomerArSummary(tenantId, id, signal),
+  });
 
   // Sync form when customer loads
   const formReady = c != null;
@@ -127,13 +133,7 @@ export default function CustomerDetailPage() {
   });
 
   const creditMut = useMutation({
-    mutationFn: () =>
-      creditCheck(
-        tenantId,
-        id,
-        Number(invoiceAmount),
-        Number(outstanding || 0),
-      ),
+    mutationFn: () => creditCheck(tenantId, id, Number(invoiceAmount)),
     onSuccess: (result) => {
       setCreditResult(result);
       if (result.canInvoice) toast.success("Credit check passed");
@@ -319,14 +319,60 @@ export default function CustomerDetailPage() {
 
         <div className="space-y-6">
           <Card>
+            <h2 className="mb-4 text-sm font-semibold">Open AR summary</h2>
+            <p className="mb-3 text-xs text-zinc-500">
+              Live balance from open invoices (STORY-014)
+            </p>
+            {arSummaryQ.isLoading ? (
+              <p className="text-sm text-zinc-500">Loading…</p>
+            ) : arSummaryQ.data ? (
+              <div className="space-y-2 text-sm">
+                <p>
+                  Open invoices:{" "}
+                  <strong>{arSummaryQ.data.openInvoiceCount}</strong>
+                </p>
+                <p>
+                  Total balance:{" "}
+                  <strong>
+                    {formatMoney(
+                      arSummaryQ.data.totalBalance,
+                      arSummaryQ.data.baseCurrency === "MIXED"
+                        ? (c.currency ?? "USD")
+                        : arSummaryQ.data.baseCurrency,
+                    )}
+                  </strong>
+                  {arSummaryQ.data.baseCurrency === "MIXED" ? (
+                    <span className="ml-1 text-xs text-zinc-500">
+                      (multi-currency; see rows)
+                    </span>
+                  ) : null}
+                </p>
+                {arSummaryQ.data.byCurrency?.length ? (
+                  <ul className="mt-2 space-y-1 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+                    {arSummaryQ.data.byCurrency.map((row) => (
+                      <li key={row.currency} className="text-xs text-zinc-600 dark:text-zinc-400">
+                        {row.currency}: {row.openCount} open · billed{" "}
+                        {formatMoney(row.totalBilled, row.currency)} · paid{" "}
+                        {formatMoney(row.totalPaid, row.currency)} · bal{" "}
+                        {formatMoney(row.balance, row.currency)}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-zinc-500">No open invoices</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-500">No summary available</p>
+            )}
+          </Card>
+
+          <Card>
             <h2 className="mb-4 text-sm font-semibold">Credit check</h2>
             <p className="mb-3 text-xs text-zinc-500">
-              Calls{" "}
-              <code className="font-mono">
-                GET /api/v1/customers/{"{id}"}/credit-check
-              </code>
+              Uses system open AR as outstanding (no manual entry).
             </p>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3">
               <div>
                 <Label htmlFor="invoiceAmount">Invoice amount</Label>
                 <Input
@@ -336,17 +382,6 @@ export default function CustomerDetailPage() {
                   step="0.01"
                   value={invoiceAmount}
                   onChange={(e) => setInvoiceAmount(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="outstanding">Outstanding</Label>
-                <Input
-                  id="outstanding"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={outstanding}
-                  onChange={(e) => setOutstanding(e.target.value)}
                 />
               </div>
             </div>

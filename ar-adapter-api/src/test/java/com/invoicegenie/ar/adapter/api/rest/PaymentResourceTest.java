@@ -1,6 +1,9 @@
 package com.invoicegenie.ar.adapter.api.rest;
 
 import com.invoicegenie.ar.application.port.inbound.PaymentAllocationUseCase;
+import com.invoicegenie.ar.application.port.inbound.PaymentQueryUseCase;
+import com.invoicegenie.ar.application.port.inbound.PaymentReversalUseCase;
+import com.invoicegenie.ar.application.port.inbound.PaymentUnallocateUseCase;
 import com.invoicegenie.ar.application.port.inbound.RecordPaymentUseCase;
 import com.invoicegenie.ar.domain.model.payment.PaymentId;
 import com.invoicegenie.ar.domain.model.payment.PaymentMethod;
@@ -17,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -30,13 +34,17 @@ class PaymentResourceTest {
 
     @Mock private PaymentAllocationUseCase allocationUseCase;
     @Mock private RecordPaymentUseCase recordPaymentUseCase;
+    @Mock private PaymentQueryUseCase paymentQueryUseCase;
+    @Mock private PaymentReversalUseCase paymentReversalUseCase;
+    @Mock private PaymentUnallocateUseCase paymentUnallocateUseCase;
 
     private PaymentResource resource;
     private TenantId tenantId;
 
     @BeforeEach
     void setUp() {
-        resource = new PaymentResource(allocationUseCase, recordPaymentUseCase);
+        resource = new PaymentResource(allocationUseCase, recordPaymentUseCase,
+                paymentQueryUseCase, paymentReversalUseCase, paymentUnallocateUseCase);
         tenantId = TenantId.of(UUID.randomUUID());
         TenantContext.setCurrentTenant(tenantId);
     }
@@ -94,5 +102,28 @@ class PaymentResourceTest {
 
         var dto = new PaymentResource.AllocationRequestDto(UUID.randomUUID().toString());
         assertEquals(404, resource.autoAllocateFIFO(UUID.randomUUID().toString(), null, dto).getStatus());
+    }
+
+    @Test
+    @DisplayName("unallocate returns 200")
+    void unallocateOk() {
+        PaymentId id = PaymentId.of(UUID.randomUUID());
+        UUID invId = UUID.randomUUID();
+        when(paymentUnallocateUseCase.unallocate(eq(tenantId), eq(id), any(), eq("fix"), isNull()))
+                .thenReturn(Optional.of(new PaymentUnallocateUseCase.UnallocateResult(
+                        id, "RECEIVED", List.of(invId), 3L, "ok")));
+
+        var dto = new PaymentResource.UnallocateRequestDto(
+                List.of(invId.toString()), "fix", null);
+        Response r = resource.unallocate(id.getValue().toString(), dto);
+        assertEquals(200, r.getStatus());
+    }
+
+    @Test
+    @DisplayName("unallocate returns 400 when invoiceIds missing")
+    void unallocateBadRequest() {
+        Response r = resource.unallocate(UUID.randomUUID().toString(),
+                new PaymentResource.UnallocateRequestDto(List.of(), "x", null));
+        assertEquals(400, r.getStatus());
     }
 }

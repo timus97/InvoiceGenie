@@ -1,11 +1,15 @@
 package com.invoicegenie.ar.adapter.api.security;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Parses configured API keys: {@code key1:tenant-uuid,key2:tenant-uuid}.
@@ -60,6 +64,61 @@ public final class ApiKeyRegistry {
         return map;
     }
 
+
+    /**
+     * Issues a minimal HS256 JWT with {@code tenant_id}, {@code sub}, {@code roles}, {@code exp}, {@code iat}.
+     */
+    public static String signHs256Jwt(String secret, String tenantId, String subject, Set<String> roles, long ttlSeconds) {
+        if (secret == null || secret.isBlank() || tenantId == null || tenantId.isBlank()) {
+            throw new IllegalArgumentException("JWT secret and tenant_id are required");
+        }
+        long now = System.currentTimeMillis() / 1000L;
+        long exp = now + Math.max(60L, ttlSeconds);
+        String sub = subject == null || subject.isBlank() ? "user" : subject;
+        StringBuilder rolesJson = new StringBuilder("[");
+        if (roles != null) {
+            boolean first = true;
+            for (String r : roles) {
+                if (r == null || r.isBlank()) {
+                    continue;
+                }
+                if (!first) {
+                    rolesJson.append(',');
+                }
+                first = false;
+                rolesJson.append('"').append(r.trim().toUpperCase(Locale.ROOT).replace("\"", "")).append('"');
+            }
+        }
+        rolesJson.append(']');
+        String headerJson = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
+        String payloadJson = "{\"tenant_id\":\"" + tenantId
+                + "\",\"sub\":\"" + escapeJson(sub)
+                + "\",\"roles\":" + rolesJson
+                + ",\"iat\":" + now
+                + ",\"exp\":" + exp + "}";
+        String header = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(headerJson.getBytes(StandardCharsets.UTF_8));
+        String payload = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(payloadJson.getBytes(StandardCharsets.UTF_8));
+        String signingInput = header + "." + payload;
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            String sig = Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(mac.doFinal(signingInput.getBytes(StandardCharsets.UTF_8)));
+            return signingInput + "." + sig;
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to sign JWT", e);
+        }
+    }
+
+    private static String escapeJson(String s) {
+        if (s == null) {
+            return "";
+        }
+        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
     public static Optional<JwtClaims> validateHs256Jwt(String token, String secret) {
         if (token == null || secret == null || secret.isBlank()) {
             return Optional.empty();
@@ -94,10 +153,56 @@ public final class ApiKeyRegistry {
                 return Optional.empty();
             }
             String sub = extractJsonString(payloadJson, "sub");
-            return Optional.of(new JwtClaims(tenantId, sub != null ? sub : "jwt-subject"));
+            Set<String> roles = extractJsonStringArray(payloadJson, "roles");
+            return Optional.of(new JwtClaims(tenantId, sub != null ? sub : "jwt-subject", roles));
         } catch (Exception e) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * Extracts a JSON string array claim, e.g. {@code "roles":["AR_CLERK","AR_AUDITOR"]}.
+     */
+    static Set<String> extractJsonStringArray(String json, String key) {
+        Set<String> out = new LinkedHashSet<>();
+        if (json == null || key == null) {
+            return out;
+        }
+        String pattern = "\"" + key + "\"";
+        int idx = json.indexOf(pattern);
+        if (idx < 0) {
+            return out;
+        }
+        int colon = json.indexOf(':', idx + pattern.length());
+        if (colon < 0) {
+            return out;
+        }
+        int bracket = json.indexOf('[', colon + 1);
+        if (bracket < 0) {
+            return out;
+        }
+        int end = json.indexOf(']', bracket + 1);
+        if (end < 0) {
+            return out;
+        }
+        String body = json.substring(bracket + 1, end);
+        int i = 0;
+        while (i < body.length()) {
+            int q1 = body.indexOf('"', i);
+            if (q1 < 0) {
+                break;
+            }
+            int q2 = body.indexOf('"', q1 + 1);
+            if (q2 < 0) {
+                break;
+            }
+            String v = body.substring(q1 + 1, q2).trim();
+            if (!v.isEmpty()) {
+                out.add(v.toUpperCase(Locale.ROOT));
+            }
+            i = q2 + 1;
+        }
+        return out;
     }
 
     private static String padBase64(String s) {
@@ -157,5 +262,14 @@ public final class ApiKeyRegistry {
         }
     }
 
-    public record JwtClaims(String tenantId, String subject) {}
+    public record JwtClaims(String tenantId, String subject, Set<String> roles) {
+        public JwtClaims {
+            roles = roles == null ? Set.of() : Set.copyOf(roles);
+        }
+
+        /** Back-compat constructor without roles. */
+        public JwtClaims(String tenantId, String subject) {
+            this(tenantId, subject, Set.of());
+        }
+    }
 }

@@ -47,6 +47,24 @@ class ApiKeyRegistryTest {
         assertTrue(ApiKeyRegistry.validateHs256Jwt("a.b.c", "secret").isEmpty());
     }
 
+
+    @Test
+    @DisplayName("signs and validates HS256 JWT with roles")
+    void signsAndValidatesJwt() {
+        String secret = "test-secret-key-which-is-long-enough";
+        String token = ApiKeyRegistry.signHs256Jwt(
+                secret,
+                "00000000-0000-0000-0000-000000000001",
+                "clerk",
+                java.util.Set.of(ArRoles.AR_CLERK, ArRoles.AR_AUDITOR),
+                3600);
+        var claims = ApiKeyRegistry.validateHs256Jwt("Bearer " + token, secret).orElseThrow();
+        assertEquals("00000000-0000-0000-0000-000000000001", claims.tenantId());
+        assertEquals("clerk", claims.subject());
+        assertTrue(claims.roles().contains(ArRoles.AR_CLERK));
+        assertTrue(claims.roles().contains(ArRoles.AR_AUDITOR));
+    }
+
     private static String b64(String s) {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(s.getBytes(StandardCharsets.UTF_8));
     }

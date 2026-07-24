@@ -14,9 +14,8 @@
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
-        <!-- Quarkus 3.8.6.1: last community security patch for 3.8 LTS (EOL Feb 2025).
-             Plan migration to a supported LTS (3.27 / 3.33) — see docs/FEATURE_PRIORITY_BACKLOG.md -->
-        <quarkus.platform.version>3.8.6.1</quarkus.platform.version>
+        <!-- Quarkus 3.27 LTS (STORY-004) — community support through ~Sep 2026 -->
+        <quarkus.platform.version>3.27.3</quarkus.platform.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jacoco.version>0.8.12</jacoco.version>
         <versions.maven.plugin.version>2.18.0</versions.maven.plugin.version>

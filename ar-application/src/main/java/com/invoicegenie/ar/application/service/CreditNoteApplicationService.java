@@ -5,6 +5,7 @@ import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
 import com.invoicegenie.ar.domain.model.ledger.LedgerRepository;
+import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.payment.CreditNote;
 import com.invoicegenie.ar.domain.model.payment.CreditNoteRepository;
 import com.invoicegenie.ar.domain.service.CreditNoteService;
@@ -124,5 +125,13 @@ public class CreditNoteApplicationService implements CreditNoteUseCase {
             }
         }
         return ListResult.ok(creditNoteRepository.findByTenant(tenantId));
+    }
+
+    @Override
+    public List<CreditNote> findAvailableByCustomer(TenantId tenantId, UUID customerId) {
+        if (customerId == null) {
+            return List.of();
+        }
+        return creditNoteRepository.findAvailableByTenantAndCustomer(tenantId, CustomerId.of(customerId));
     }
 }

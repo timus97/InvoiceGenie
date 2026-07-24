@@ -4,7 +4,9 @@ import com.invoicegenie.ar.application.port.inbound.ChequeUseCase;
 import com.invoicegenie.ar.application.port.inbound.InvoiceLifecycleUseCase;
 import com.invoicegenie.ar.application.port.inbound.PaymentAllocationUseCase;
 import com.invoicegenie.ar.application.port.inbound.RecordPaymentUseCase;
+import com.invoicegenie.ar.domain.model.customer.Customer;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
+import com.invoicegenie.ar.domain.model.customer.CustomerRepository;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
@@ -26,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.logging.Logger;
 
 /**
  * Application service: cheque lifecycle use cases.
@@ -36,6 +39,10 @@ import java.util.UUID;
  */
 public class ChequeApplicationService implements ChequeUseCase {
 
+    private static final Logger LOG = Logger.getLogger(ChequeApplicationService.class.getName());
+    /** Default floor when no config is injected (unit tests / legacy ctor). */
+    public static final double DEFAULT_MIN_OCR_CONFIDENCE = 0.45;
+
     private final ChequeService chequeService;
     private final ChequeRepository chequeRepository;
     private final InvoiceLifecycleUseCase invoiceLifecycleUseCase;
@@ -45,13 +52,15 @@ public class ChequeApplicationService implements ChequeUseCase {
     private final PaymentRepository paymentRepository;
     private final InvoiceRepository invoiceRepository;
     private final LedgerService ledgerService;
+    private final CustomerRepository customerRepository;
+    private final double minOcrConfidence;
 
     public ChequeApplicationService(ChequeService chequeService,
                                     ChequeRepository chequeRepository,
                                     InvoiceLifecycleUseCase invoiceLifecycleUseCase,
                                     LedgerRepository ledgerRepository) {
         this(chequeService, chequeRepository, invoiceLifecycleUseCase, ledgerRepository,
-                null, null, null, null, null);
+                null, null, null, null, null, null, DEFAULT_MIN_OCR_CONFIDENCE);
     }
 
     public ChequeApplicationService(ChequeService chequeService,
@@ -63,6 +72,22 @@ public class ChequeApplicationService implements ChequeUseCase {
                                     PaymentRepository paymentRepository,
                                     InvoiceRepository invoiceRepository,
                                     LedgerService ledgerService) {
+        this(chequeService, chequeRepository, invoiceLifecycleUseCase, ledgerRepository,
+                recordPaymentUseCase, paymentAllocationUseCase, paymentRepository,
+                invoiceRepository, ledgerService, null, DEFAULT_MIN_OCR_CONFIDENCE);
+    }
+
+    public ChequeApplicationService(ChequeService chequeService,
+                                    ChequeRepository chequeRepository,
+                                    InvoiceLifecycleUseCase invoiceLifecycleUseCase,
+                                    LedgerRepository ledgerRepository,
+                                    RecordPaymentUseCase recordPaymentUseCase,
+                                    PaymentAllocationUseCase paymentAllocationUseCase,
+                                    PaymentRepository paymentRepository,
+                                    InvoiceRepository invoiceRepository,
+                                    LedgerService ledgerService,
+                                    CustomerRepository customerRepository,
+                                    double minOcrConfidence) {
         this.chequeService = chequeService;
         this.chequeRepository = chequeRepository;
         this.invoiceLifecycleUseCase = invoiceLifecycleUseCase;
@@ -72,10 +97,14 @@ public class ChequeApplicationService implements ChequeUseCase {
         this.paymentRepository = paymentRepository;
         this.invoiceRepository = invoiceRepository;
         this.ledgerService = ledgerService != null ? ledgerService : new LedgerService();
+        this.customerRepository = customerRepository;
+        this.minOcrConfidence = minOcrConfidence;
     }
 
     @Override
     public Cheque create(TenantId tenantId, CreateChequeCommand command) {
+        validateCustomer(tenantId, command.customerId());
+        rejectLowOcrConfidence(command);
         Cheque cheque = new Cheque(
                 UUID.randomUUID(),
                 command.chequeNumber(),
@@ -104,9 +133,71 @@ public class ChequeApplicationService implements ChequeUseCase {
         }
         List<Cheque> created = new ArrayList<>();
         for (CreateChequeCommand command : commands) {
-            created.add(create(tenantId, command));
+            // Customer match + confidence gate required for OCR bulk receive
+            validateCustomer(tenantId, command.customerId());
+            rejectLowOcrConfidence(command);
+            created.add(createWithoutRevalidate(tenantId, command));
         }
+        LOG.info(String.format("OCR bulk create: accepted=%d tenant=%s minConfidence=%.2f",
+                created.size(), tenantId.getValue(), minOcrConfidence));
         return created;
+    }
+
+    private Cheque createWithoutRevalidate(TenantId tenantId, CreateChequeCommand command) {
+        Cheque cheque = new Cheque(
+                UUID.randomUUID(),
+                command.chequeNumber(),
+                new CustomerId(UUID.fromString(command.customerId())),
+                command.amount(),
+                command.bankName(),
+                command.bankBranch(),
+                command.chequeDate(),
+                command.notes()
+        );
+        if (command.invoiceIds() != null) {
+            for (UUID invoiceId : command.invoiceIds()) {
+                if (invoiceId != null) {
+                    cheque.addAllocatedInvoice(invoiceId);
+                }
+            }
+        }
+        chequeRepository.save(tenantId, cheque);
+        return cheque;
+    }
+
+    private void validateCustomer(TenantId tenantId, String customerIdRaw) {
+        if (customerIdRaw == null || customerIdRaw.isBlank()) {
+            throw new IllegalArgumentException("customerId is required");
+        }
+        final CustomerId customerId;
+        try {
+            customerId = new CustomerId(UUID.fromString(customerIdRaw.trim()));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("customerId must be a valid UUID: " + customerIdRaw);
+        }
+        if (customerRepository == null) {
+            return; // unit tests without customer repo
+        }
+        Customer customer = customerRepository.findByTenantAndId(tenantId, customerId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Customer not found for tenant: " + customerIdRaw));
+        if (!customer.canBeInvoiced()) {
+            throw new IllegalArgumentException(
+                    "Customer is not active for cheque receive (status: " + customer.getStatus() + ")");
+        }
+    }
+
+    private void rejectLowOcrConfidence(CreateChequeCommand command) {
+        Double conf = command.ocrConfidence();
+        if (conf == null) {
+            return;
+        }
+        if (conf < minOcrConfidence) {
+            throw new IllegalArgumentException(String.format(
+                    "OCR confidence %.2f below threshold %.2f for cheque %s — correct fields or re-scan",
+                    conf, minOcrConfidence,
+                    command.chequeNumber() != null ? command.chequeNumber() : "?"));
+        }
     }
 
     @Override

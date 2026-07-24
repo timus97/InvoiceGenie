@@ -1,6 +1,7 @@
 package com.invoicegenie.ar.application.service;
 
 import com.invoicegenie.ar.application.port.inbound.ApplyInvoicePaymentUseCase;
+import com.invoicegenie.ar.application.port.inbound.InvoiceLifecycleUseCase;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceLine;
@@ -23,6 +24,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -286,6 +288,72 @@ class InvoiceLifecycleServiceTest {
             Optional<Invoice> result = service.reopen(tenantId, invoiceId, "Reason");
 
             assertFalse(result.isPresent());
+        }
+    }
+    @Nested
+    @DisplayName("Update Draft")
+    class UpdateDraft {
+        @Test
+        @DisplayName("updates due date, notes, terms and replaces lines")
+        void happyPath() {
+            Invoice invoice = createDraftInvoice();
+            when(invoiceRepository.findByTenantAndId(tenantId, invoiceId)).thenReturn(Optional.of(invoice));
+
+            var cmd = new InvoiceLifecycleUseCase.UpdateDraftCommand(
+                    LocalDate.now().plusDays(45),
+                    "updated notes",
+                    "Net 45",
+                    "ignored-ref",
+                    List.of(new InvoiceLifecycleUseCase.UpdateDraftCommand.DraftLine(
+                            "New line", new BigDecimal("250.00"), null, null, null, null),
+                            new InvoiceLifecycleUseCase.UpdateDraftCommand.DraftLine(
+                                    "Qty line", null, new BigDecimal("2"), new BigDecimal("50.00"),
+                                    BigDecimal.ZERO, new BigDecimal("0.10"))));
+
+            Optional<Invoice> result = service.updateDraft(tenantId, invoiceId, cmd);
+
+            assertTrue(result.isPresent());
+            assertEquals(LocalDate.now().plusDays(45), result.get().getDueDate());
+            assertEquals("updated notes", result.get().getNotes());
+            assertEquals("Net 45", result.get().getTerms());
+            assertEquals(2, result.get().getLines().size());
+            verify(invoiceRepository).save(tenantId, invoice);
+            verify(auditRepository).save(eq(tenantId), any());
+            verify(invoiceVersionRepository).save(eq(tenantId), any());
+        }
+
+        @Test
+        @DisplayName("rejects non-DRAFT invoice")
+        void rejectsIssued() {
+            Invoice invoice = createIssuedInvoice();
+            when(invoiceRepository.findByTenantAndId(tenantId, invoiceId)).thenReturn(Optional.of(invoice));
+
+            assertThrows(IllegalStateException.class, () ->
+                    service.updateDraft(tenantId, invoiceId,
+                            new InvoiceLifecycleUseCase.UpdateDraftCommand(
+                                    LocalDate.now(), null, null, null, null)));
+        }
+
+        @Test
+        @DisplayName("returns empty when not found")
+        void notFound() {
+            when(invoiceRepository.findByTenantAndId(tenantId, invoiceId)).thenReturn(Optional.empty());
+            assertTrue(service.updateDraft(tenantId, invoiceId,
+                    new InvoiceLifecycleUseCase.UpdateDraftCommand(null, "n", null, null, null)).isEmpty());
+        }
+
+        @Test
+        @DisplayName("partial notes preserves existing terms")
+        void partialNotes() {
+            Invoice invoice = createDraftInvoice();
+            invoice.setNotesAndTerms("old notes", "old terms");
+            when(invoiceRepository.findByTenantAndId(tenantId, invoiceId)).thenReturn(Optional.of(invoice));
+
+            service.updateDraft(tenantId, invoiceId,
+                    new InvoiceLifecycleUseCase.UpdateDraftCommand(null, "new notes", null, null, null));
+
+            assertEquals("new notes", invoice.getNotes());
+            assertEquals("old terms", invoice.getTerms());
         }
     }
 }

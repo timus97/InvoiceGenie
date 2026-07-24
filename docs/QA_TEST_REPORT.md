@@ -1,4 +1,4 @@
-﻿# QA Test Report — InvoiceGenie AR
+# QA Test Report — InvoiceGenie AR
 
 > **Date:** 2026-07-24  
 > **Author:** Senior QA (AR)  
@@ -203,3 +203,111 @@ STORY-003 (RBAC/OIDC), STORY-004 (Quarkus LTS), STORY-007 (credit note full AR p
 **Overall QA verdict:** Core demo path (customer → invoice → payment allocate → cheque lifecycle → aging) works on a **stable** `quarkus:dev` instance. **Do not ship** until Wave A P0 stories complete AC, FE tsc is green, CDI constructor is fixed, and CI `mvn test` is green under final WIP.
 
 *Servers started by QA were stopped after this report.*
+
+---
+
+## Re-test (post Senior Developer pass) — 2026-07-24
+
+> **Author:** Senior QA (re-test pass)  
+> **Branch:** `Development` @ `10ba915` (+ uncommitted Senior Developer WIP: RBAC filters, credit-notes, Button `size`, cheques UI)  
+> **Server:** `quarkus:dev` profile `dev`, H2, Kafka Dev Services off, port **8082** (stopped after run)  
+> **Artifacts:** `docs/qa-api-smoke-final-retest.log`, `docs/qa-mvn-test-retest.log`, `docs/QA_DEFECT_TRACKER.md`
+
+### Environment
+
+| Item | Value |
+|------|--------|
+| OS | Windows (PowerShell) |
+| Backend | Quarkus **3.8.6.1** (`ar-bootstrap`, `dev`, H2 mem, port 8082) |
+| Frontend | Next.js / React / TypeScript (`web/`) |
+| Test tenant | `00000000-0000-0000-0000-000000000001` |
+| Security | `invoicegenie.security.enabled=false` (dev) |
+| Smoke | `scripts/test-api.ps1 -BaseUrl http://localhost:8082` (extended §9 Wave A probes) |
+| Node smoke | `API_BASE=http://localhost:8082 node scripts/smoke-ar.mjs` |
+| UTF-8 BOM scan | **0** Java sources with EF BB BF (DEF-BE-001 not reintroduced) |
+
+### Pass/fail matrix
+
+| Gate | Result | Evidence |
+|------|--------|----------|
+| `mvn test` | **PASS** | **758** tests, **0** failures, **0** errors (245 surefire suites) |
+| `cd web; npm run lint` | **PASS** | exit 0 |
+| `cd web; npx tsc --noEmit` | **PASS** | exit 0 |
+| API smoke (`test-api.ps1`) | **PASS** | **44 / 44** (was 27; +Wave A section) |
+| Node smoke (`smoke-ar.mjs`) | **PASS** | exit 0 (list/get/reverse/cheque paymentId/blocked 409) |
+| Port 8080 | Occupied (Apache) | Correctly used 8082 |
+
+### Story-focused probes (API)
+
+| Probe | Result | Story |
+|-------|--------|-------|
+| BLOCKED customer + `dueDate` → **409** `CUSTOMER_NOT_INVOICEABLE` | **PASS** | STORY-001 |
+| Credit limit 100, invoice 5000 → **409** credit exceeded | **PASS** | STORY-001 |
+| Under-limit invoice → **201** | **PASS** | STORY-001 |
+| Cheque clear `paymentId` **not null** | **PASS** | STORY-002 |
+| `GET /payments` list + `GET /payments/{id}` | **PASS** | STORY-006 |
+| `POST /payments/{id}/reverse` → **REVERSED** | **PASS** | STORY-005 |
+| Payment allocate / aging / draft / idempotency | **PASS** | baseline |
+
+### Code-review verification of known defect sites
+
+| Site | Finding |
+|------|---------|
+| `PaymentResource` | Single `@Inject` 4-arg constructor present; 2-arg test helper remains (non-injected). **Stable** across full smoke runs — no CDI create failures. |
+| `payments-client.tsx` + `Button` | `size?: "sm" \| "md" \| "lg"` added to `Button`; `size="sm"` valid. **tsc green**. |
+| `IssueInvoiceService` | Hard-block blocked/deleted always; credit limit hard-block on issue; soft-warn on draft. Unit tests for blocked + over-limit present. |
+| `Cheque.linkPayment` / clear | `paymentId` mutable; clear creates CHECK payment + links id. Smoke asserts non-null `paymentId`. |
+
+### Defects closed / still open
+
+| ID | Status (re-test) | Notes |
+|----|------------------|-------|
+| DEF-BE-001 | **CLOSED** (current tree) | No BOM on any `*.java`; do not reintroduce |
+| DEF-BE-002 | **CLOSED** | `@Inject` primary ctor; multi-run smoke stable |
+| DEF-BE-003 | **OPEN** (process residual) | Multi-agent partial compile risk remains; not re-triggered this pass |
+| DEF-BE-004 | **CLOSED** | Full `mvn test` green (758) |
+| DEF-BE-005 | **OPEN** (Minor) | `dueDate` still required before credit/block semantics |
+| DEF-BE-006 | **OPEN** (Minor) | `%dev` still warns on `quarkus.datasource.jdbc.username/password` |
+| DEF-BE-007 | **OPEN** (Minor) | Packaged jar ≠ H2 via runtime profile alone (ops docs) |
+| DEF-FE-001 | **CLOSED** | Button `size` prop implemented; `tsc --noEmit` pass |
+| DEF-FE-002 | **OPEN** (Minor) | Next rewrite defaults to 8080; use `BACKEND_URL` when Apache holds 8080 |
+
+### Story AC status updates
+
+| Story | Prior QA | Re-test | Residual |
+|-------|----------|---------|----------|
+| STORY-001 | Partial | **PASS (API + unit)** | UI error toast not browser-verified this pass |
+| STORY-002 | Partial | **PASS (clear→paymentId)** | UI invoice-select on clear; bounce-from-cleared full unwind lightly covered in unit only |
+| STORY-003 | OPEN | **OPEN** | RBAC WIP files present uncommitted; security off in dev; not accepted |
+| STORY-004 | OPEN | **OPEN** | Still Quarkus 3.8.6.1 EOL |
+| STORY-005 | Partial | **PASS (API reverse)** | Refund + allocated unwind; UI reverse button not Playwright-verified |
+| STORY-006 | Partial / FE blocker | **PASS (API)**; **FE tsc unblocked** | Cursor pagination deferred; deep-link e2e not run |
+| STORY-007 | Not fully verified | **NOT RE-PROBED e2e** | Create/list still PASS in smoke; apply→AR balance not asserted |
+| STORY-008 | Partial | **Aging 200** | customerId mapping not re-diffed; job not runtime-verified |
+| STORY-009..022 | OPEN / residual | Unchanged unless noted | See product owner stories |
+| STORY-QA-001 | FAIL | **BOM clean**; process AC incomplete | Pre-commit/CI BOM gate still missing |
+| STORY-QA-002 | FAIL | **PASS** | PaymentResource CDI stable |
+| STORY-QA-003 | FAIL | **PASS** | tsc green |
+| STORY-QA-004 | OPEN | **OPEN** | Document 8082 / BACKEND_URL still recommended |
+| STORY-QA-005 | OPEN | **OPEN** | dueDate required still masks credit check if omitted |
+
+### Smoke script extensions
+
+- `scripts/test-api.ps1` §9: blocked 409 + code assert, credit-limit 409, payment list/get/reverse, cheque clear `paymentId` not null; improved error-body capture (`ErrorDetails`).
+- `scripts/smoke-ar.mjs`: payment list/get/reverse, cheque clear paymentId, blocked customer 409.
+
+### Sign-off recommendation
+
+| Gate | Result |
+|------|--------|
+| Backend unit tests | **PASS** (758) |
+| Frontend lint + tsc | **PASS** |
+| API smoke (extended) | **PASS** (44/44) |
+| Wave A correctness (001/002/005/006 API) | **Largely verified** |
+| Wave A P0 security/platform (003/004) | **Not ready** |
+| Uncommitted WIP (RBAC etc.) | **Not regression-tested as a committed snapshot** |
+
+**Overall QA verdict (re-test):** **Conditional no-ship for full production.**  
+Demo / internal pilot of core AR correctness (credit/block, cheque clear cash link, payment reverse/list) is **green** on stable `quarkus:dev`. **Do not ship production** until STORY-003 (RBAC/OIDC fail-closed), STORY-004 (Quarkus LTS), residual minor defects are addressed or accepted, and uncommitted Senior Developer security WIP is landed with a clean CI green build.
+
+*Servers started by QA for this re-test were stopped after the run.*

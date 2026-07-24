@@ -17,9 +17,19 @@ import {
   ArrowLeftRight,
   ScrollText,
   Webhook,
+  type LucideIcon,
 } from "lucide-react";
+import { useAuth } from "@/components/auth-provider";
 
-const NAV = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  /** If set, user needs at least one of these roles when a session exists */
+  roles?: string[];
+};
+
+const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/invoices", label: "Invoices", icon: FileText },
@@ -28,16 +38,39 @@ const NAV = [
   { href: "/aging", label: "Aging", icon: CalendarClock },
   { href: "/credit-notes", label: "Credit notes", icon: StickyNote },
   { href: "/ledger", label: "Ledger", icon: BookOpen },
-  { href: "/tenants", label: "Tenants", icon: Building2 },
+  {
+    href: "/tenants",
+    label: "Tenants",
+    icon: Building2,
+    roles: ["TENANT_ADMIN"],
+  },
   { href: "/exchange-rates", label: "FX rates", icon: ArrowLeftRight },
-  { href: "/audit", label: "Audit", icon: ScrollText },
-  { href: "/webhooks", label: "Webhooks", icon: Webhook },
+  {
+    href: "/audit",
+    label: "Audit",
+    icon: ScrollText,
+    roles: ["AR_AUDITOR", "AR_CONTROLLER", "TENANT_ADMIN"],
+  },
+  {
+    href: "/webhooks",
+    label: "Webhooks",
+    icon: Webhook,
+    roles: ["TENANT_ADMIN"],
+  },
   { href: "/settings", label: "Settings", icon: Settings },
-] as const;
+];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { session, hasRole } = useAuth();
   const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "InvoiceGenie AR";
+
+  const items = NAV.filter((item) => {
+    if (!item.roles?.length) return true;
+    // Without a session (dev, security off), show all nav links
+    if (!session) return true;
+    return hasRole(...item.roles);
+  });
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950">
@@ -50,7 +83,7 @@ export function Sidebar() {
         </div>
       </div>
       <nav className="flex-1 space-y-0.5 p-3">
-        {NAV.map(({ href, label, icon: Icon }) => {
+        {items.map(({ href, label, icon: Icon }) => {
           const active =
             href === "/"
               ? pathname === "/"

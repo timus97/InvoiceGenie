@@ -7,6 +7,7 @@ import com.invoicegenie.ar.application.port.inbound.ChequeOcrUseCase;
 import com.invoicegenie.ar.application.port.inbound.ChequeUseCase;
 import com.invoicegenie.ar.application.port.inbound.CreditNoteUseCase;
 import com.invoicegenie.ar.application.port.inbound.CustomerUseCase;
+import com.invoicegenie.ar.application.port.inbound.DunningUseCase;
 import com.invoicegenie.ar.application.port.inbound.ExchangeRateUseCase;
 import com.invoicegenie.ar.application.port.inbound.GetInvoiceUseCase;
 import com.invoicegenie.ar.application.port.inbound.InvoiceLifecycleUseCase;
@@ -17,7 +18,9 @@ import com.invoicegenie.ar.application.port.inbound.ListInvoicesUseCase;
 import com.invoicegenie.ar.application.port.inbound.PaymentAllocationUseCase;
 import com.invoicegenie.ar.application.port.inbound.PaymentQueryUseCase;
 import com.invoicegenie.ar.application.port.inbound.PaymentReversalUseCase;
+import com.invoicegenie.ar.application.port.inbound.PaymentUnallocateUseCase;
 import com.invoicegenie.ar.application.port.inbound.RecordPaymentUseCase;
+import com.invoicegenie.ar.application.port.inbound.StatementUseCase;
 import com.invoicegenie.ar.application.port.inbound.TenantUseCase;
 import com.invoicegenie.ar.application.port.inbound.WebhookUseCase;
 import com.invoicegenie.ar.application.port.outbound.EventPublisher;
@@ -30,6 +33,8 @@ import com.invoicegenie.ar.application.service.ChequeApplicationService;
 import com.invoicegenie.ar.application.service.ChequeOcrApplicationService;
 import com.invoicegenie.ar.application.service.CreditNoteApplicationService;
 import com.invoicegenie.ar.application.service.CustomerManagementService;
+import com.invoicegenie.ar.application.service.DunningApplicationService;
+import com.invoicegenie.ar.application.service.DunningPolicy;
 import com.invoicegenie.ar.application.service.ExchangeRateApplicationService;
 import com.invoicegenie.ar.application.service.GetInvoiceService;
 import com.invoicegenie.ar.application.service.InvoiceLifecycleService;
@@ -40,7 +45,9 @@ import com.invoicegenie.ar.application.service.ListInvoicesService;
 import com.invoicegenie.ar.application.service.PaymentAllocationService;
 import com.invoicegenie.ar.application.service.PaymentQueryService;
 import com.invoicegenie.ar.application.service.PaymentReversalService;
+import com.invoicegenie.ar.application.service.PaymentUnallocateService;
 import com.invoicegenie.ar.application.service.RecordPaymentService;
+import com.invoicegenie.ar.application.service.StatementApplicationService;
 import com.invoicegenie.ar.application.service.TenantManagementService;
 import com.invoicegenie.ar.application.service.WebhookApplicationService;
 import com.invoicegenie.ar.domain.model.customer.CustomerRepository;
@@ -170,9 +177,18 @@ public class ArApplication {
 
     @Produces
     @ApplicationScoped
+    public PaymentUnallocateUseCase paymentUnallocateUseCase(PaymentRepository paymentRepository,
+                                                             InvoiceRepository invoiceRepository,
+                                                             AuditRepository auditRepository) {
+        return new PaymentUnallocateService(paymentRepository, invoiceRepository, auditRepository);
+    }
+
+    @Produces
+    @ApplicationScoped
     public CustomerUseCase customerUseCase(CustomerService customerService,
-                                           CustomerRepository customerRepository) {
-        return new CustomerManagementService(customerService, customerRepository);
+                                           CustomerRepository customerRepository,
+                                           InvoiceRepository invoiceRepository) {
+        return new CustomerManagementService(customerService, customerRepository, invoiceRepository);
     }
 
     @Produces
@@ -196,10 +212,14 @@ public class ArApplication {
                                        PaymentAllocationUseCase paymentAllocationUseCase,
                                        PaymentRepository paymentRepository,
                                        InvoiceRepository invoiceRepository,
-                                       LedgerService ledgerService) {
+                                       LedgerService ledgerService,
+                                       CustomerRepository customerRepository,
+                                       @org.eclipse.microprofile.config.inject.ConfigProperty(
+                                               name = "invoicegenie.ocr.min-confidence",
+                                               defaultValue = "0.45") double minOcrConfidence) {
         return new ChequeApplicationService(chequeService, chequeRepository, invoiceLifecycleUseCase,
                 ledgerRepository, recordPaymentUseCase, paymentAllocationUseCase, paymentRepository,
-                invoiceRepository, ledgerService);
+                invoiceRepository, ledgerService, customerRepository, minOcrConfidence);
     }
 
     @Produces
@@ -222,15 +242,33 @@ public class ArApplication {
 
     @Produces
     @ApplicationScoped
-    public LedgerQueryUseCase ledgerQueryUseCase(LedgerService ledgerService,
-                                                 LedgerRepository ledgerRepository) {
-        return new LedgerQueryService(ledgerService, ledgerRepository);
+    public StatementUseCase statementUseCase(CustomerRepository customerRepository,
+                                             InvoiceRepository invoiceRepository,
+                                             EventPublisher eventPublisher) {
+        return new StatementApplicationService(customerRepository, invoiceRepository, eventPublisher);
     }
 
     @Produces
     @ApplicationScoped
-    public TenantUseCase tenantUseCase(TenantRepository tenantRepository) {
-        return new TenantManagementService(tenantRepository);
+    public DunningUseCase dunningUseCase(InvoiceRepository invoiceRepository,
+                                         EventPublisher eventPublisher,
+                                         DunningPolicy dunningPolicy) {
+        return new DunningApplicationService(invoiceRepository, eventPublisher, dunningPolicy);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public LedgerQueryUseCase ledgerQueryUseCase(LedgerService ledgerService,
+                                                 LedgerRepository ledgerRepository,
+                                                 com.invoicegenie.ar.domain.model.ledger.ChartOfAccountsRepository chartOfAccountsRepository) {
+        return new LedgerQueryService(ledgerService, ledgerRepository, chartOfAccountsRepository);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public TenantUseCase tenantUseCase(TenantRepository tenantRepository,
+                                       com.invoicegenie.ar.domain.model.ledger.ChartOfAccountsRepository chartOfAccountsRepository) {
+        return new TenantManagementService(tenantRepository, chartOfAccountsRepository);
     }
 
     @Produces

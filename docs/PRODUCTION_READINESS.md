@@ -56,8 +56,9 @@
 | `ar-bootstrap` Quarkus app | `mvn -pl ar-bootstrap -am package` → `target/quarkus-app/` | **Yes** (JVM mode) |
 | Root `Dockerfile` | Arena/eval base image | **No** — not a prod image |
 | `web/Dockerfile` | Next.js image | Review for standalone/prod flags |
-| `docker-compose.yml` | Local full stack | Dev/demo only (weak passwords, tenant override) |
-| SQL | `docs/sql/001_init_ar_schema.sql`, `002_idempotency.sql` | Manual apply — automate |
+| `docker-compose.yml` | Local full stack | Env-driven secrets; still demo-oriented ports |
+| `docker-compose.prod.yml` | Prod-like stack | TLS nginx edge, private DB, security forced (STORY-017) |
+| SQL / Flyway | `ar-bootstrap/.../db/migration` V1–V7 | Flyway migrate-at-start in prod |
 
 ---
 
@@ -168,11 +169,21 @@
 
 ---
 
-## 5. Related docs
+## 5. Edge TLS & prod compose (STORY-017)
+
+- Documented runbook: [deploy/PROD_EDGE_TLS.md](./deploy/PROD_EDGE_TLS.md)
+- Sample nginx: [deploy/nginx-tls.conf](./deploy/nginx-tls.conf)
+- Compose: `docker compose -f docker-compose.prod.yml up -d --build`
+- Startup: `ProdSecurityValidator` refuses `%prod` when security is off, secrets missing, or demo passwords/API keys remain
+- **DEF-BE-007:** packaged `quarkus-run.jar` / `Dockerfile.prod` cannot switch to H2 via `-Dquarkus.profile=dev` alone — use `quarkus:dev` for H2 local smoke
+
+## 6. Related docs
 
 - [FEATURE_PRIORITY_BACKLOG.md](./FEATURE_PRIORITY_BACKLOG.md) — prioritized gaps  
+- [PRODUCT_OWNER_STORIES.md](./PRODUCT_OWNER_STORIES.md) — eng stories  
 - [ONBOARDING.md](./ONBOARDING.md) — architecture  
 - [SCHEMA.md](./SCHEMA.md) — data model  
+- [deploy/PROD_EDGE_TLS.md](./deploy/PROD_EDGE_TLS.md) — TLS + prod compose  
 - [../README.md](../README.md) — quick start  
 
-*Machine facts captured from live shell checks on 2026-07-20.*
+*Machine facts captured from live shell checks on 2026-07-20; compose/TLS notes updated 2026-07-24.*

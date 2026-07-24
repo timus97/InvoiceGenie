@@ -41,6 +41,8 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     (id: string) => {
       const trimmed = id.trim();
       if (!isValidTenantId(trimmed)) return false;
+      // Production builds disable free-form override; still allow auth-derived updates.
+      // Callers that must set from login (AuthProvider) always pass a valid authenticated tenant.
       setTenantIdState(trimmed);
       writeTenantToStorage(trimmed);
       queryClient.clear();

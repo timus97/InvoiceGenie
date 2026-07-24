@@ -27,7 +27,22 @@ Next.js **rewrites** same-origin paths to Quarkus:
 | `/api/*` | `BACKEND_URL/api/*` (default `http://localhost:8080`) |
 | `/q/*` | `BACKEND_URL/q/*` (health, OpenAPI, Swagger) |
 
-Every AR request sends **`X-Tenant-Id`** from Settings (localStorage + cookie).
+Every AR request sends **`X-Tenant-Id`** (from login session in prod, or Settings in dev) plus optional **`Authorization: Bearer`** / **`X-API-Key`** from the session stored in `sessionStorage`.
+
+### Auth (STORY-003 Phase 2)
+
+| Env | Purpose |
+|-----|---------|
+| `NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE` | `true` (local demo) shows Settings tenant UUID field. **`false` in prod builds** — hide override, require `/login`. |
+| `NEXT_PUBLIC_API_KEY` | Optional fallback only; prefer `/login` so keys are not baked into the client. |
+| `BACKEND_URL` | Server-side rewrite target (not exposed to browser). |
+
+Login calls `POST /api/v1/auth/login` with either:
+
+- `{ "username", "password" }` → HS256 JWT (`accessToken`) + tenant/roles from server config
+- `{ "apiKey" }` → tenant derived from server key map; JWT issued when JWT secret is configured
+
+When override is false, tenant UUID cannot be free-form spoofed in the UI.
 
 Default smoke tenant: `00000000-0000-0000-0000-000000000001`
 

@@ -53,6 +53,12 @@ public class OutboxWorker {
     @Inject
     Instance<OutboxKafkaSender> kafkaSender;
 
+    /**
+     * Optional HTTP webhook fan-out (STORY-009). Unsatisfied only in pure unit tests.
+     */
+    @Inject
+    Instance<WebhookDispatcher> webhookDispatcher;
+
     @ConfigProperty(name = "outbox.batch-size", defaultValue = "100")
     int batchSize;
 
@@ -141,21 +147,29 @@ public class OutboxWorker {
 
     /**
      * Publishes an outbox entry: uses Kafka sender when enabled and present, else logs.
+     * Always attempts HTTP webhook delivery when a {@link WebhookDispatcher} is available (STORY-009).
      */
     void publishEvent(OutboxEntry entry) {
         if (kafkaEnabled && kafkaSender != null && !kafkaSender.isUnsatisfied()) {
             kafkaSender.get().send(entry);
             LOG.debugf("Published event to Kafka: type=%s id=%s tenant=%s",
                     entry.getEventType(), entry.getId(), entry.getTenantId());
-            return;
-        }
-
-        if (kafkaEnabled) {
+        } else if (kafkaEnabled) {
             LOG.warnf("outbox.kafka-enabled=true but no OutboxKafkaSender bean present; logging event: %s (id=%s, tenant=%s)",
                     entry.getEventType(), entry.getId(), entry.getTenantId());
         } else {
             LOG.infof("Would publish event (kafka disabled): %s (id=%s, tenant=%s)",
                     entry.getEventType(), entry.getId(), entry.getTenantId());
+        }
+
+        // HTTP webhooks run independently of Kafka (customer subscriptions)
+        if (webhookDispatcher != null && !webhookDispatcher.isUnsatisfied()) {
+            try {
+                webhookDispatcher.get().dispatch(entry);
+            } catch (Exception e) {
+                LOG.warnf(e, "Webhook dispatch failed for event %s (id=%s): %s",
+                        entry.getEventType(), entry.getId(), e.getMessage());
+            }
         }
     }
 

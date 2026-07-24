@@ -73,20 +73,45 @@ quarkus:
         max-file-size: 10M
         max-backup-index: 5
 
+# Customer HTTP webhooks (STORY-009) — delivery after outbox publish
+webhook:
+  delivery:
+    enabled: ${WEBHOOK_DELIVERY_ENABLED:true}
+    timeout-ms: ${WEBHOOK_DELIVERY_TIMEOUT_MS:5000}
+    max-attempts: ${WEBHOOK_DELIVERY_MAX_ATTEMPTS:5}
+    retry-interval: ${WEBHOOK_DELIVERY_RETRY_INTERVAL:30s}
+    retry-batch: ${WEBHOOK_DELIVERY_RETRY_BATCH:50}
+
 # API security (disabled by default for local/dev/test)
+# mode: api-key | jwt | hybrid (Bearer JWT or X-API-Key)
 invoicegenie:
   security:
     enabled: ${INVOICEGENIE_SECURITY_ENABLED:false}
     mode: ${INVOICEGENIE_SECURITY_MODE:api-key}
     # Format: apiKey:tenantUuid,otherKey:otherTenantUuid
     api-keys: ${INVOICEGENIE_API_KEYS:none}
+    # Web users: username:password:tenantUuid:ROLE1|ROLE2 (comma-separated)
+    users: ${INVOICEGENIE_SECURITY_USERS:none}
     jwt:
       secret: ${INVOICEGENIE_JWT_SECRET:none}
+      ttl-seconds: ${INVOICEGENIE_JWT_TTL_SECONDS:28800}
     allow-openapi: ${INVOICEGENIE_SECURITY_ALLOW_OPENAPI:true}
+  # Cheque OCR (STORY-018) — reject bulk create when ocrConfidence is present and below this floor
+  ocr:
+    min-confidence: ${INVOICEGENIE_OCR_MIN_CONFIDENCE:0.45}
+  # STORY-015: dunning policy (days past due → levels 1..N)
+  dunning:
+    enabled: ${INVOICEGENIE_DUNNING_ENABLED:true}
+    levels: ${INVOICEGENIE_DUNNING_LEVELS:30,60,90}
+    job-interval: ${INVOICEGENIE_DUNNING_JOB_INTERVAL:1h}
+  # STORY-019: allocation vs amountPaid reconciliation
+  allocation-reconcile:
+    enabled: ${INVOICEGENIE_ALLOCATION_RECONCILE_ENABLED:true}
+    interval: ${INVOICEGENIE_ALLOCATION_RECONCILE_INTERVAL:6h}
 
 # Local / fast path: H2 in-memory (no Postgres required).
 # Preferred: -Dquarkus.profile=dev
-# Legacy alias: -Dquarkus.profile=sqlite (same parent config)
+# (STORY-022: legacy %sqlite alias removed — use dev only)
 "%dev":
   quarkus:
     http:
@@ -94,11 +119,12 @@ invoicegenie:
       host: 0.0.0.0
     datasource:
       db-kind: h2
+      username: sa
+      # SmallRye rejects empty String as null — use non-empty for Quarkus 3.27+
+      password: sa
       jdbc:
         url: jdbc:h2:mem:testdb
         driver: org.h2.Driver
-        username: sa
-        password: ""
     hibernate-orm:
       database:
         generation: update
@@ -127,13 +153,6 @@ invoicegenie:
     security:
       enabled: false
 
-# Deprecated alias for %dev (historical name; not SQLite). Remove after one release cycle.
-"%sqlite":
-  quarkus:
-    config:
-      profile:
-        parent: dev
-
 # Test profile - uses H2 in-memory database
 "%test":
   quarkus:
@@ -142,11 +161,12 @@ invoicegenie:
       host: 0.0.0.0
     datasource:
       db-kind: h2
+      username: sa
+      # SmallRye rejects empty String as null — use non-empty for Quarkus 3.27+
+      password: sa
       jdbc:
         url: jdbc:h2:mem:testdb
         driver: org.h2.Driver
-        username: sa
-        password: ""
     hibernate-orm:
       database:
         generation: update

@@ -2,7 +2,9 @@ package com.invoicegenie.ar.adapter.api.filter;
 
 import com.invoicegenie.ar.adapter.api.dto.ErrorResponse;
 import com.invoicegenie.ar.adapter.api.security.ApiKeyRegistry;
+import com.invoicegenie.ar.adapter.api.security.ArRoles;
 import com.invoicegenie.ar.adapter.api.security.SecurityConstants;
+import com.invoicegenie.shared.tenant.ActorContext;
 import jakarta.annotation.PostConstruct;
 import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.ContainerRequestContext;
@@ -24,11 +26,13 @@ import org.jboss.logging.Logger;
  *   <li>{@code api-key} mode - require {@code X-API-Key} (or Bearer token)
  *       mapped via {@code invoicegenie.security.api-keys=key:tenantUuid,...}</li>
  *   <li>{@code jwt} mode - require HS256 JWT (Bearer) with {@code tenant_id} claim,
- *       signed with {@code invoicegenie.security.jwt.secret}</li>
+ *       optional {@code roles[]} claim, signed with {@code invoicegenie.security.jwt.secret}</li>
+ *   <li>{@code hybrid} mode - accept either Bearer JWT or {@code X-API-Key} (web + M2M)</li>
  * </ul>
  *
  * <p>Public paths (health) always bypass. OpenAPI/Swagger bypass only when
- * {@code invoicegenie.security.allow-openapi=true}.
+ * {@code invoicegenie.security.allow-openapi=true}. API keys map to full M2M roles;
+ * JWT subjects receive roles from the claim (default {@code AR_CLERK} if empty).
  */
 @Provider
 @jakarta.annotation.Priority(Priorities.AUTHENTICATION)
@@ -71,10 +75,13 @@ public class AuthFilter implements ContainerRequestFilter {
     @Override
     public void filter(ContainerRequestContext requestContext) throws IOException {
         if (!securityEnabled) {
+            // Still bind actor for audit (STORY-012) when security is off
+            bindAnonymousActor(requestContext);
             return;
         }
         String path = normalizePath(requestContext.getUriInfo().getPath());
         if (isPublic(path)) {
+            bindAnonymousActor(requestContext);
             return;
         }
 
@@ -82,6 +89,7 @@ public class AuthFilter implements ContainerRequestFilter {
         Optional<AuthResult> auth = switch (modeNorm) {
             case "jwt" -> authenticateJwt(requestContext);
             case "api-key" -> authenticateApiKey(requestContext);
+            case "hybrid", "api-key-or-jwt", "both" -> authenticateHybrid(requestContext);
             default -> {
                 LOG.warnf("Unknown security mode '%s' - rejecting request", mode);
                 yield Optional.empty();
@@ -99,6 +107,21 @@ public class AuthFilter implements ContainerRequestFilter {
         requestContext.setProperty(SecurityConstants.AUTH_TENANT_PROPERTY, result.tenantId());
         requestContext.setProperty(SecurityConstants.AUTH_SUBJECT_PROPERTY, result.subject());
         requestContext.setProperty(SecurityConstants.AUTH_METHOD_PROPERTY, result.method());
+        requestContext.setProperty(SecurityConstants.AUTH_ROLES_PROPERTY, result.roles());
+
+        // STORY-012: bind actor for audit writers
+        String ip = clientIp(requestContext);
+        String ua = requestContext.getHeaderString("User-Agent");
+        String actorType = "jwt".equals(result.method()) ? "USER" : "API";
+        ActorContext.set(ActorContext.Actor.of(result.subject(), actorType, ip, ua));
+    }
+
+    private Optional<AuthResult> authenticateHybrid(ContainerRequestContext ctx) {
+        Optional<AuthResult> jwt = authenticateJwt(ctx);
+        if (jwt.isPresent()) {
+            return jwt;
+        }
+        return authenticateApiKey(ctx);
     }
 
     private Optional<AuthResult> authenticateApiKey(ContainerRequestContext ctx) {
@@ -110,7 +133,7 @@ public class AuthFilter implements ContainerRequestFilter {
             }
         }
         return apiKeyRegistry.resolveTenant(key)
-                .map(tenant -> new AuthResult(tenant, "api-key", "api-key"));
+                .map(tenant -> new AuthResult(tenant, "api-key", "api-key", ArRoles.M2M_ROLES));
     }
 
     private Optional<AuthResult> authenticateJwt(ContainerRequestContext ctx) {
@@ -119,7 +142,32 @@ public class AuthFilter implements ContainerRequestFilter {
             return Optional.empty();
         }
         return ApiKeyRegistry.validateHs256Jwt(auth, normalizeConfig(jwtSecret))
-                .map(c -> new AuthResult(c.tenantId(), c.subject(), "jwt"));
+                .map(c -> {
+                    Set<String> roles = c.roles();
+                    if (roles == null || roles.isEmpty()) {
+                        roles = Set.of(ArRoles.AR_CLERK);
+                    }
+                    return new AuthResult(c.tenantId(), c.subject(), "jwt", roles);
+                });
+    }
+
+    private static String clientIp(ContainerRequestContext ctx) {
+        String xff = ctx.getHeaderString("X-Forwarded-For");
+        if (xff != null && !xff.isBlank()) {
+            int comma = xff.indexOf(',');
+            return (comma > 0 ? xff.substring(0, comma) : xff).trim();
+        }
+        String realIp = ctx.getHeaderString("X-Real-IP");
+        if (realIp != null && !realIp.isBlank()) {
+            return realIp.trim();
+        }
+        return null;
+    }
+
+    private static void bindAnonymousActor(ContainerRequestContext ctx) {
+        String ip = clientIp(ctx);
+        String ua = ctx.getHeaderString("User-Agent");
+        ActorContext.set(ActorContext.Actor.of("anonymous", "SYSTEM", ip, ua));
     }
 
     private boolean isPublic(String path) {
@@ -127,6 +175,10 @@ public class AuthFilter implements ContainerRequestFilter {
             if (path.equals(prefix) || path.startsWith(prefix + "/")) {
                 return true;
             }
+        }
+        // STORY-003 Phase 2: login is always unauthenticated
+        if (path.equals("/api/v1/auth/login") || path.startsWith("/api/v1/auth/login/")) {
+            return true;
         }
         if (allowOpenApi && (path.startsWith("/q/swagger")
                 || path.startsWith("/q/openapi")
@@ -158,5 +210,5 @@ public class AuthFilter implements ContainerRequestFilter {
         return v;
     }
 
-    private record AuthResult(String tenantId, String subject, String method) {}
+    private record AuthResult(String tenantId, String subject, String method, Set<String> roles) {}
 }

@@ -8,7 +8,9 @@ import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.customer.CustomerRepository;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
+import com.invoicegenie.ar.domain.model.invoice.InvoiceLine;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
+import com.invoicegenie.ar.domain.model.invoice.InvoiceStatus;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceVersionRepository;
 import com.invoicegenie.ar.domain.service.CustomerService;
 import com.invoicegenie.ar.domain.service.InvoiceSnapshotService;
@@ -20,6 +22,8 @@ import com.invoicegenie.shared.domain.TenantId;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -172,6 +176,44 @@ public class InvoiceLifecycleService implements InvoiceLifecycleUseCase {
                     String after = String.format("{\"dueDate\":\"%s\"}", inv.getDueDate());
                     auditRepository.save(tenantId, AuditEntry.transition(tenantId, "INVOICE", invoiceId.getValue(),
                             inv.getInvoiceNumber(), null, "UPDATE_DUE_DATE", before, after));
+                    return inv;
+                });
+    }
+
+    @Override
+    public Optional<Invoice> updateDraft(TenantId tenantId, InvoiceId invoiceId, UpdateDraftCommand command) {
+        return invoiceRepository.findByTenantAndId(tenantId, invoiceId)
+                .map(inv -> {
+                    if (inv.getStatus() != InvoiceStatus.DRAFT) {
+                        throw new IllegalStateException("Only DRAFT invoices can be updated: " + inv.getStatus());
+                    }
+                    String before = String.format("{\"total\":%s,\"dueDate\":\"%s\",\"lines\":%d}",
+                            inv.getTotal().getAmount(), inv.getDueDate(), inv.getLines().size());
+                    if (command.dueDate() != null) {
+                        inv.setDueDate(command.dueDate());
+                    }
+                    if (command.notes() != null || command.terms() != null) {
+                        inv.setNotesAndTerms(
+                                command.notes() != null ? command.notes() : inv.getNotes(),
+                                command.terms() != null ? command.terms() : inv.getTerms());
+                    }
+                    // customerRef is immutable on aggregate; ignore command.customerRef for now
+                    if (command.lines() != null && !command.lines().isEmpty()) {
+                        List<InvoiceLine> lines = new ArrayList<>();
+                        int seq = 1;
+                        for (UpdateDraftCommand.DraftLine item : command.lines()) {
+                            lines.add(InvoiceLine.of(seq++, item.description(), inv.getCurrencyCode(),
+                                    item.amount(), item.quantity(), item.unitPrice(),
+                                    item.discountAmount(), item.taxRate()));
+                        }
+                        inv.replaceLines(lines);
+                    }
+                    invoiceRepository.save(tenantId, inv);
+                    snapshot(tenantId, inv, "UPDATE_DRAFT");
+                    String after = String.format("{\"total\":%s,\"dueDate\":\"%s\",\"lines\":%d}",
+                            inv.getTotal().getAmount(), inv.getDueDate(), inv.getLines().size());
+                    auditRepository.save(tenantId, AuditEntry.transition(tenantId, "INVOICE", invoiceId.getValue(),
+                            inv.getInvoiceNumber(), null, "UPDATE_DRAFT", before, after));
                     return inv;
                 });
     }

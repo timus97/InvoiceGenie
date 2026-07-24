@@ -3,6 +3,7 @@ package com.invoicegenie.ar.adapter.persistence.repository;
 import com.invoicegenie.ar.adapter.persistence.entity.PaymentAllocationEntity;
 import com.invoicegenie.ar.adapter.persistence.entity.PaymentEntity;
 import com.invoicegenie.ar.adapter.persistence.mapper.PaymentMapper;
+import com.invoicegenie.ar.domain.exception.ConcurrencyConflictException;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.payment.Payment;
@@ -22,6 +23,8 @@ import com.invoicegenie.shared.domain.Money;
 
 /**
  * Driven adapter: implements PaymentRepository port.
+ *
+ * <p>Optimistic concurrency on payment version (STORY-013 / STORY-019).
  */
 @ApplicationScoped
 public class PaymentRepositoryAdapter implements PaymentRepository {
@@ -34,6 +37,20 @@ public class PaymentRepositoryAdapter implements PaymentRepository {
     @Override
     @Transactional
     public void save(TenantId tenantId, Payment payment) {
+        PaymentEntity existing = em.find(PaymentEntity.class, payment.getId().getValue());
+        if (existing != null) {
+            if (!existing.getTenantId().equals(tenantId.getValue())) {
+                throw new ConcurrencyConflictException("Payment tenant mismatch on save");
+            }
+            if (existing.getVersion() != payment.getOriginalVersion()) {
+                throw new ConcurrencyConflictException(
+                        "Payment concurrent modification: expected version "
+                                + payment.getOriginalVersion()
+                                + " but was " + existing.getVersion()
+                                + " (payment " + payment.getId().getValue() + ")");
+            }
+        }
+
         PaymentEntity entity = mapper.toEntity(tenantId, payment);
         em.merge(entity);
 

@@ -4,6 +4,7 @@ import com.invoicegenie.ar.application.port.inbound.PaymentAllocationUseCase;
 import com.invoicegenie.ar.application.port.outbound.EventPublisher;
 import com.invoicegenie.ar.application.port.outbound.IdempotencyStore;
 import com.invoicegenie.ar.domain.event.PaymentAllocated;
+import com.invoicegenie.ar.domain.exception.ConcurrencyConflictException;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
@@ -215,6 +216,27 @@ class PaymentAllocationServiceTest {
             assertEquals(0, result.get().allocations().size());
             verify(paymentRepository, never()).save(any(), any());
             verifyNoInteractions(eventPublisher);
+        }
+
+        @Test
+        @DisplayName("STORY-019 concurrent allocation conflict propagates ConcurrencyConflictException (HTTP 409)")
+        void concurrentAllocationConflict() {
+            Payment payment = createPayment(Money.of("500.00", "USD"));
+            Invoice invoice = createInvoice("INV-CONC", Money.of("1000.00", "USD"));
+            when(paymentRepository.findByTenantAndId(tenantId, paymentId)).thenReturn(Optional.of(payment));
+            when(invoiceRepository.findByTenantAndId(eq(tenantId), eq(invoice.getId())))
+                    .thenReturn(Optional.of(invoice));
+            doThrow(new ConcurrencyConflictException(
+                    "Invoice concurrent modification: expected version 2 but was 3"))
+                    .when(invoiceRepository).save(eq(tenantId), any(Invoice.class));
+
+            List<PaymentAllocationUseCase.ManualAllocationRequest> requests = List.of(
+                    new PaymentAllocationUseCase.ManualAllocationRequest(
+                            invoice.getId(), Money.of("500.00", "USD"), "race"));
+
+            ConcurrencyConflictException ex = assertThrows(ConcurrencyConflictException.class, () ->
+                    service.manualAllocate(tenantId, paymentId, requests, UUID.randomUUID(), null));
+            assertTrue(ex.getMessage().contains("concurrent"));
         }
 
         @Test

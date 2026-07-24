@@ -1,0 +1,86 @@
+# Production-hardening stack for InvoiceGenie (STORY-017)
+#
+# Usage:
+#   cp .env.example .env
+#   # Set STRONG secrets — demo keys/passwords are refused by ProdSecurityValidator
+#   mkdir -p certs && # place fullchain.pem + privkey.pem (see docs/deploy/PROD_EDGE_TLS.md)
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Edge nginx terminates TLS (80→443). App/web/Postgres stay on the internal network only.
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-invoicegenie}
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    # No host ports — private network only
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    environment:
+      QUARKUS_PROFILE: prod
+      QUARKUS_DATASOURCE_JDBC_URL: ${QUARKUS_DATASOURCE_JDBC_URL:-jdbc:postgresql://postgres:5432/invoicegenie}
+      QUARKUS_DATASOURCE_USERNAME: ${QUARKUS_DATASOURCE_USERNAME:-ar}
+      QUARKUS_DATASOURCE_PASSWORD: ${QUARKUS_DATASOURCE_PASSWORD:?set QUARKUS_DATASOURCE_PASSWORD in .env}
+      INVOICEGENIE_SECURITY_ENABLED: "true"
+      INVOICEGENIE_SECURITY_MODE: ${INVOICEGENIE_SECURITY_MODE:-api-key}
+      INVOICEGENIE_API_KEYS: ${INVOICEGENIE_API_KEYS:?set INVOICEGENIE_API_KEYS in .env}
+      INVOICEGENIE_JWT_SECRET: ${INVOICEGENIE_JWT_SECRET:-none}
+      INVOICEGENIE_SECURITY_ALLOW_OPENAPI: "false"
+      QUARKUS_FLYWAY_MIGRATE_AT_START: "true"
+      QUARKUS_LOG_CONSOLE_JSON: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/q/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    # No host ports — reach via edge only
+
+  web:
+    build: ./web
+    environment:
+      BACKEND_URL: ${BACKEND_URL:-http://app:8080}
+      NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-InvoiceGenie AR}
+      NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE: "false"
+      NEXT_PUBLIC_DEFAULT_TENANT_ID: ${NEXT_PUBLIC_DEFAULT_TENANT_ID:-00000000-0000-0000-0000-000000000001}
+      NEXT_PUBLIC_API_KEY: ${NEXT_PUBLIC_API_KEY:-}
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+  edge:
+    image: nginx:1.27-alpine
+    depends_on:
+      app:
+        condition: service_healthy
+      web:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docs/deploy/nginx-tls.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
+      - ./certs/privkey.pem:/etc/nginx/certs/privkey.pem:ro
+    restart: unless-stopped
+
+volumes:
+  postgres_data_prod:

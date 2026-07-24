@@ -1,6 +1,8 @@
 package com.invoicegenie.ar.adapter.api.rest;
 
 import com.invoicegenie.ar.adapter.api.dto.ErrorResponse;
+import com.invoicegenie.ar.adapter.api.security.ArRoles;
+import com.invoicegenie.ar.adapter.api.security.RequireRoles;
 import com.invoicegenie.ar.application.port.inbound.TenantUseCase;
 import com.invoicegenie.ar.domain.model.tenant.Tenant;
 import jakarta.ws.rs.*;
@@ -19,6 +21,7 @@ import java.util.stream.Collectors;
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @Tag(name = "Tenants", description = "Tenant registry / onboarding")
+@RequireRoles({ArRoles.TENANT_ADMIN})
 public class TenantResource {
 
     private final TenantUseCase tenantUseCase;

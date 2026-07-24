@@ -1,6 +1,7 @@
 package com.invoicegenie.ar.application.port.inbound;
 
 import com.invoicegenie.ar.domain.model.ledger.Account;
+import com.invoicegenie.ar.domain.model.ledger.ChartOfAccountsRepository;
 import com.invoicegenie.ar.domain.model.ledger.LedgerEntry;
 import com.invoicegenie.shared.domain.TenantId;
 
@@ -14,6 +15,11 @@ import java.util.UUID;
 public interface LedgerQueryUseCase {
 
     List<Account> listAccounts();
+
+    /** Seeded ar_account rows for tenant (STORY-020); empty if unseeded. */
+    default List<ChartOfAccountsRepository.SeededAccount> listSeededAccounts(TenantId tenantId) {
+        return List.of();
+    }
 
     BigDecimal getAccountBalance(TenantId tenantId, Account account, String currencyCode);
 

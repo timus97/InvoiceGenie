@@ -48,6 +48,11 @@ public class TenantFilter implements ContainerRequestFilter {
 
     @Override
     public void filter(ContainerRequestContext requestContext) throws IOException {
+        String path = normalizePath(requestContext.getUriInfo() != null
+                ? requestContext.getUriInfo().getPath() : "");
+        if (isAuthPublicPath(path)) {
+            return;
+        }
         try {
             TenantId tenantId = resolveTenant(requestContext);
             TenantContext.setCurrentTenant(tenantId);
@@ -112,5 +117,20 @@ public class TenantFilter implements ContainerRequestFilter {
         return headerTenant
                 .map(TenantId::of)
                 .orElseThrow(() -> new IllegalArgumentException("Missing " + TENANT_HEADER));
+    }
+
+    private static boolean isAuthPublicPath(String path) {
+        return path.equals("/api/v1/auth/login") || path.startsWith("/api/v1/auth/login/");
+    }
+
+    private static String normalizePath(String path) {
+        if (path == null || path.isBlank()) {
+            return "/";
+        }
+        String p = path.startsWith("/") ? path : "/" + path;
+        if (p.length() > 1 && p.endsWith("/")) {
+            p = p.substring(0, p.length() - 1);
+        }
+        return p;
     }
 }

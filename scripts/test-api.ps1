@@ -50,15 +50,27 @@ function Invoke-Api {
         $code = [int]$resp.StatusCode
         $content = $resp.Content
     } catch {
+        # Prefer ErrorDetails (PS 6+) / response stream for non-2xx bodies
+        $content = ""
+        if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
+            $content = [string]$_.ErrorDetails.Message
+        }
         if ($_.Exception.Response) {
-            $code = [int]$_.Exception.Response.StatusCode
-            try {
-                $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
-                $content = $reader.ReadToEnd()
-            } catch { $content = "" }
+            $code = [int]$_.Exception.Response.StatusCode.value__
+            if (-not $code) { $code = [int]$_.Exception.Response.StatusCode }
+            if (-not $content) {
+                try {
+                    $stream = $_.Exception.Response.GetResponseStream()
+                    if ($stream) {
+                        $reader = New-Object System.IO.StreamReader($stream)
+                        $content = $reader.ReadToEnd()
+                        $reader.Dispose()
+                    }
+                } catch { }
+            }
         } else {
             $code = 0
-            $content = $_.Exception.Message
+            if (-not $content) { $content = $_.Exception.Message }
         }
     }
     if ($code -eq $Expected) {
@@ -265,6 +277,128 @@ if ($CustomerId) {
     } else {
         Write-Host "FAIL: expected same payment id on replay ($id1 vs $id2)" -ForegroundColor Red
         $script:Fail++
+    }
+}
+
+# --- Wave A story probes (STORY-001/002/005/006) ---
+Write-Host ""
+Write-Host "=== SECTION 9: WAVE A STORY PROBES ===" -ForegroundColor Cyan
+
+# STORY-001: blocked customer → 409 CUSTOMER_NOT_INVOICEABLE
+if ($CustomerId) {
+    Invoke-Api -Name "Block Customer (prep)" -Method POST -Path "/api/v1/customers/$CustomerId/block" -Expected 200 | Out-Null
+    $blockedInv = @{
+        invoiceNumber = "INV-BLOCKED-$ts"
+        customerId    = $CustomerId
+        customerRef   = "Blocked-Test"
+        currencyCode  = "USD"
+        dueDate       = "2026-12-31"
+        lines         = @(@{ description = "Should fail"; amount = 10.00 })
+    } | ConvertTo-Json -Depth 5
+    $blockedResp = Invoke-Api -Name "Invoice for BLOCKED customer" -Method POST -Path "/api/v1/invoices" -Body $blockedInv -Expected 409
+    if ($blockedResp -and $blockedResp -match 'CUSTOMER_NOT_INVOICEABLE') {
+        Write-Host "[Assert CUSTOMER_NOT_INVOICEABLE code] PASS" -ForegroundColor Green
+        $script:Pass++
+    } else {
+        Write-Host "FAIL: expected CUSTOMER_NOT_INVOICEABLE in body: $blockedResp" -ForegroundColor Red
+        $script:Fail++
+    }
+    Invoke-Api -Name "Unblock Customer (restore)" -Method POST -Path "/api/v1/customers/$CustomerId/unblock" -Expected 200 | Out-Null
+
+    # STORY-001: credit limit overage → 409
+    $clBody = @{ creditLimit = 100 } | ConvertTo-Json
+    Invoke-Api -Name "Set credit limit 100" -Method PUT -Path "/api/v1/customers/$CustomerId" -Body $clBody -Expected 200 | Out-Null
+    $overInv = @{
+        invoiceNumber = "INV-OVERLIMIT-$ts"
+        customerId    = $CustomerId
+        customerRef   = "Overlimit-Test"
+        currencyCode  = "USD"
+        dueDate       = "2026-12-31"
+        lines         = @(@{ description = "Over limit"; amount = 5000.00 })
+    } | ConvertTo-Json -Depth 5
+    $overResp = Invoke-Api -Name "Invoice over credit limit" -Method POST -Path "/api/v1/invoices" -Body $overInv -Expected 409
+    if ($overResp -and ($overResp -match 'CUSTOMER_NOT_INVOICEABLE' -or $overResp -match 'Credit limit')) {
+        Write-Host "[Assert credit limit reject] PASS" -ForegroundColor Green
+        $script:Pass++
+    } else {
+        Write-Host "FAIL: expected credit limit rejection body: $overResp" -ForegroundColor Red
+        $script:Fail++
+    }
+    # clear limit so later probes are not affected
+    $clearCl = @{ creditLimit = $null } | ConvertTo-Json
+    Invoke-Api -Name "Clear credit limit" -Method PUT -Path "/api/v1/customers/$CustomerId" -Body $clearCl -Expected 200 | Out-Null
+}
+
+# STORY-006: payment list + get
+Invoke-Api -Name "List Payments" -Method GET -Path "/api/v1/payments?limit=10" -Expected 200 | Out-Null
+if ($PaymentId) {
+    Invoke-Api -Name "Get Payment by id" -Method GET -Path "/api/v1/payments/$PaymentId" -Expected 200 | Out-Null
+}
+
+# STORY-005: reverse path (use fresh unallocated payment so prior allocate does not block)
+if ($CustomerId) {
+    $revBody = @{
+        paymentNumber = "PAY-REV-$ts"
+        customerId    = $CustomerId
+        amount        = 50.00
+        currencyCode  = "USD"
+        paymentDate   = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd")
+        method        = "BANK_TRANSFER"
+        reference     = "REV-$ts"
+        notes         = "reverse smoke"
+    } | ConvertTo-Json
+    $revJson = Invoke-Api -Name "Create Payment for reverse" -Method POST -Path "/api/v1/payments" -Body $revBody -Expected 201
+    $RevPayId = Get-JsonId $revJson
+    if ($RevPayId) {
+        $reverseBody = @{ reason = "QA smoke reverse" } | ConvertTo-Json
+        $revResult = Invoke-Api -Name "Reverse Payment" -Method POST -Path "/api/v1/payments/$RevPayId/reverse" -Body $reverseBody -Expected 200
+        if ($revResult -and $revResult -match 'REVERSED') {
+            Write-Host "[Assert REVERSED status] PASS" -ForegroundColor Green
+            $script:Pass++
+        } else {
+            Write-Host "FAIL: expected REVERSED in reverse response: $revResult" -ForegroundColor Red
+            $script:Fail++
+        }
+    }
+}
+
+# STORY-002: cheque clear must link paymentId (assert on clear response + GET)
+if ($CustomerId) {
+    $chq2Body = @{
+        chequeNumber = "CHQ-PAY-$ts"
+        customerId   = $CustomerId
+        amount       = 250.00
+        currencyCode = "USD"
+        bankName     = "Test Bank"
+        bankBranch   = "Main"
+        chequeDate   = "2026-03-20"
+        notes        = "paymentId assert"
+    } | ConvertTo-Json
+    $chq2Json = Invoke-Api -Name "Create Cheque (paymentId probe)" -Method POST -Path "/api/v1/cheques" -Body $chq2Body -Expected 201
+    $Cheque2Id = Get-JsonId $chq2Json
+    if ($Cheque2Id) {
+        Invoke-Api -Name "Deposit Cheque (paymentId probe)" -Method POST -Path "/api/v1/cheques/$Cheque2Id/deposit" -Expected 200 | Out-Null
+        $clearJson = Invoke-Api -Name "Clear Cheque (paymentId probe)" -Method POST -Path "/api/v1/cheques/$Cheque2Id/clear" -Expected 200
+        $payLinked = $null
+        try {
+            $clearObj = $clearJson | ConvertFrom-Json
+            if ($clearObj.paymentId) { $payLinked = [string]$clearObj.paymentId }
+            elseif ($clearObj.cheque -and $clearObj.cheque.paymentId) { $payLinked = [string]$clearObj.cheque.paymentId }
+        } catch {}
+        if (-not $payLinked) {
+            $getChq = Invoke-Api -Name "Get Cheque after clear" -Method GET -Path "/api/v1/cheques/$Cheque2Id" -Expected 200
+            try {
+                $g = $getChq | ConvertFrom-Json
+                if ($g.paymentId) { $payLinked = [string]$g.paymentId }
+            } catch {}
+        }
+        if ($payLinked -and $payLinked -ne "" -and $payLinked -ne "null") {
+            Write-Host "[Assert cheque clear paymentId not null] PASS ($payLinked)" -ForegroundColor Green
+            $script:Pass++
+        } else {
+            Write-Host "FAIL: cheque clear paymentId was null/empty. clear body: $clearJson" -ForegroundColor Red
+            $script:Fail++
+        }
     }
 }
 

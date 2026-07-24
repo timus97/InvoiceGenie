@@ -1,5 +1,6 @@
 package com.invoicegenie.ar.adapter.persistence.repository;
 
+import com.invoicegenie.ar.domain.exception.ConcurrencyConflictException;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
@@ -19,6 +20,9 @@ import java.util.Optional;
 
 /**
  * Driven adapter: implements InvoiceRepository port. All queries include tenant_id.
+ *
+ * <p>STORY-019: optimistic concurrency — save fails with {@link ConcurrencyConflictException}
+ * when the DB version no longer matches {@link Invoice#getOriginalVersion()}.
  */
 @ApplicationScoped
 public class InvoiceRepositoryAdapter implements InvoiceRepository {
@@ -31,6 +35,21 @@ public class InvoiceRepositoryAdapter implements InvoiceRepository {
     @Override
     @Transactional
     public void save(TenantId tenantId, Invoice invoice) {
+        InvoiceEntity existing = em.find(InvoiceEntity.class, invoice.getId().getValue());
+        if (existing != null) {
+            if (!existing.getTenantId().equals(tenantId.getValue())) {
+                throw new ConcurrencyConflictException("Invoice tenant mismatch on save");
+            }
+            // Conditional update: amountPaid path races are detected via version
+            if (existing.getVersion() != invoice.getOriginalVersion()) {
+                throw new ConcurrencyConflictException(
+                        "Invoice concurrent modification: expected version "
+                                + invoice.getOriginalVersion()
+                                + " but was " + existing.getVersion()
+                                + " (invoice " + invoice.getId().getValue() + ")");
+            }
+        }
+
         InvoiceEntity entity = mapper.toEntity(tenantId, invoice);
         em.merge(entity);
 

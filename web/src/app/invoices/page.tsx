@@ -29,7 +29,14 @@ const STATUSES: InvoiceStatus[] = [
   "WRITTEN_OFF",
 ];
 
-type LineDraft = { description: string; amount: string };
+type LineDraft = {
+  description: string;
+  amount: string;
+  quantity: string;
+  unitPrice: string;
+  discountAmount: string;
+  taxRate: string;
+};
 
 export default function InvoicesPage() {
   const { tenantId, ready } = useTenant();
@@ -45,9 +52,15 @@ export default function InvoicesPage() {
   const [customerId, setCustomerId] = useState("");
   const [currencyCode, setCurrencyCode] = useState("USD");
   const [dueDate, setDueDate] = useState("");
-  const [lines, setLines] = useState<LineDraft[]>([
-    { description: "", amount: "" },
-  ]);
+  const emptyLine = (): LineDraft => ({
+    description: "",
+    amount: "",
+    quantity: "1",
+    unitPrice: "",
+    discountAmount: "",
+    taxRate: "",
+  });
+  const [lines, setLines] = useState<LineDraft[]>([emptyLine()]);
   const [issueImmediately, setIssueImmediately] = useState(true);
 
   const listKey = useMemo(
@@ -77,12 +90,51 @@ export default function InvoicesPage() {
   const createMut = useMutation({
     mutationFn: () => {
       const parsedLines = lines
-        .map((l, i) => ({
-          sequence: i + 1,
-          description: l.description.trim(),
-          amount: Number(l.amount),
-        }))
-        .filter((l) => l.description && !Number.isNaN(l.amount) && l.amount > 0);
+        .map((l, i) => {
+          const description = l.description.trim();
+          const qty = l.quantity.trim() ? Number(l.quantity) : undefined;
+          const unitPrice = l.unitPrice.trim() ? Number(l.unitPrice) : undefined;
+          const amount = l.amount.trim() ? Number(l.amount) : undefined;
+          const discountAmount = l.discountAmount.trim()
+            ? Number(l.discountAmount)
+            : undefined;
+          const taxRate = l.taxRate.trim() ? Number(l.taxRate) : undefined;
+          const rich =
+            qty != null &&
+            !Number.isNaN(qty) &&
+            unitPrice != null &&
+            !Number.isNaN(unitPrice);
+          return {
+            sequence: i + 1,
+            description,
+            ...(rich
+              ? {
+                  quantity: qty,
+                  unitPrice,
+                  discountAmount:
+                    discountAmount != null && !Number.isNaN(discountAmount)
+                      ? discountAmount
+                      : undefined,
+                  taxRate:
+                    taxRate != null && !Number.isNaN(taxRate)
+                      ? taxRate
+                      : undefined,
+                }
+              : {
+                  amount: amount ?? 0,
+                }),
+          };
+        })
+        .filter((l) => {
+          if (!l.description) return false;
+          if ("quantity" in l && l.quantity != null) return true;
+          return (
+            "amount" in l &&
+            typeof l.amount === "number" &&
+            !Number.isNaN(l.amount) &&
+            l.amount > 0
+          );
+        });
       if (!invoiceNumber.trim()) throw new Error("Invoice number required");
       if (!customerId) throw new Error("Customer required");
       if (!parsedLines.length) throw new Error("Add at least one line");
@@ -204,9 +256,7 @@ export default function InvoicesPage() {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() =>
-                  setLines((ls) => [...ls, { description: "", amount: "" }])
-                }
+                onClick={() => setLines((ls) => [...ls, emptyLine()])}
               >
                 <Plus className="h-4 w-4" />
                 Add line
@@ -234,14 +284,14 @@ export default function InvoicesPage() {
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
-                  <div className="grid gap-3 lg:grid-cols-[1fr_10rem]">
+                  <div className="grid gap-3">
                     <div>
                       <Label htmlFor={`line-desc-${idx}`}>Description</Label>
                       <Textarea
                         id={`line-desc-${idx}`}
-                        className="min-h-[5.5rem]"
-                        rows={3}
-                        placeholder="Service or product description (full details)"
+                        className="min-h-[4rem]"
+                        rows={2}
+                        placeholder="Service or product description"
                         value={line.description}
                         onChange={(e) =>
                           setLines((ls) =>
@@ -254,23 +304,108 @@ export default function InvoicesPage() {
                         }
                       />
                     </div>
-                    <div>
-                      <Label htmlFor={`line-amt-${idx}`}>Amount</Label>
-                      <Input
-                        id={`line-amt-${idx}`}
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={line.amount}
-                        onChange={(e) =>
-                          setLines((ls) =>
-                            ls.map((l, i) =>
-                              i === idx ? { ...l, amount: e.target.value } : l,
-                            ),
-                          )
-                        }
-                      />
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                      <div>
+                        <Label htmlFor={`line-qty-${idx}`}>Qty</Label>
+                        <Input
+                          id={`line-qty-${idx}`}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.quantity}
+                          onChange={(e) =>
+                            setLines((ls) =>
+                              ls.map((l, i) =>
+                                i === idx
+                                  ? { ...l, quantity: e.target.value }
+                                  : l,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={`line-up-${idx}`}>Unit price</Label>
+                        <Input
+                          id={`line-up-${idx}`}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="0.00"
+                          value={line.unitPrice}
+                          onChange={(e) =>
+                            setLines((ls) =>
+                              ls.map((l, i) =>
+                                i === idx
+                                  ? { ...l, unitPrice: e.target.value }
+                                  : l,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={`line-disc-${idx}`}>Discount</Label>
+                        <Input
+                          id={`line-disc-${idx}`}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="0"
+                          value={line.discountAmount}
+                          onChange={(e) =>
+                            setLines((ls) =>
+                              ls.map((l, i) =>
+                                i === idx
+                                  ? { ...l, discountAmount: e.target.value }
+                                  : l,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={`line-tax-${idx}`}>Tax rate</Label>
+                        <Input
+                          id={`line-tax-${idx}`}
+                          type="number"
+                          min="0"
+                          step="0.0001"
+                          placeholder="0.0825"
+                          value={line.taxRate}
+                          onChange={(e) =>
+                            setLines((ls) =>
+                              ls.map((l, i) =>
+                                i === idx
+                                  ? { ...l, taxRate: e.target.value }
+                                  : l,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={`line-amt-${idx}`}>
+                          Flat amount
+                        </Label>
+                        <Input
+                          id={`line-amt-${idx}`}
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="or use qty×price"
+                          value={line.amount}
+                          onChange={(e) =>
+                            setLines((ls) =>
+                              ls.map((l, i) =>
+                                i === idx
+                                  ? { ...l, amount: e.target.value }
+                                  : l,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>

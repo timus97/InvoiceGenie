@@ -77,11 +77,40 @@ export function creditCheck(
   tenantId: string,
   id: string,
   invoiceAmount: number,
-  outstanding = 0,
+  outstanding?: number,
 ) {
   return apiFetch<CreditCheckDto>(apiPaths.customerCreditCheck(id), {
     tenantId,
-    query: { invoiceAmount, outstanding },
+    query: {
+      invoiceAmount,
+      // omit outstanding to use system AR (STORY-014)
+      outstanding: outstanding != null && outstanding > 0 ? outstanding : undefined,
+    },
+  });
+}
+
+export type CustomerArSummaryDto = {
+  customerId: string;
+  openInvoiceCount: number;
+  byCurrency: {
+    currency: string;
+    openCount: number;
+    totalBilled: number | string;
+    totalPaid: number | string;
+    balance: number | string;
+  }[];
+  totalBalance: number | string;
+  baseCurrency: string;
+};
+
+export function getCustomerArSummary(
+  tenantId: string,
+  id: string,
+  signal?: AbortSignal,
+) {
+  return apiFetch<CustomerArSummaryDto>(apiPaths.customerArSummary(id), {
+    tenantId,
+    signal,
   });
 }
 

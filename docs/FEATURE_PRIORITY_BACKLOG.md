@@ -45,13 +45,13 @@
 
 | ID | Item | Type | Why it matters | Suggested work | Status |
 |----|------|------|----------------|----------------|--------|
-| P0-01 | **Authentication & authorization** | Missing feature | Any client knowing a tenant UUID can call the API. | API-key + HS256 JWT gate (`AuthFilter`); prod enables security; UI sends `X-API-Key` when configured. Full OIDC/RBAC still future. | **Partial** — gate production-ready; OIDC/RBAC deferred |
+| P0-01 | **Authentication & authorization** | Missing feature | Any client knowing a tenant UUID can call the API. | API-key + HS256 JWT gate (`AuthFilter`); JWT `roles[]` + `RoleAuthorizationFilter`; prod fail-closed (`ProdSecurityValidator`); UI sends `X-API-Key` when configured. Full OIDC still future. | **Partial** — Phase-1 RBAC landed; OIDC deferred |
 | P0-02 | **Secrets & config for production** | Incomplete | Default Postgres password in compose/yml. | Env-based datasource + security secrets; `.env.example`; compose requires passwords. | **Done** |
-| P0-03 | **Quarkus platform still on EOL LTS** | Vulnerable dependency / debt | `3.8.6.1` last 3.8 patch; EOL. | See `docs/QUARKUS_LTS_MIGRATION.md` — dedicated migration PR (REST extension renames). | **Planned** |
+| P0-03 | **Quarkus platform still on EOL LTS** | Vulnerable dependency / debt | Migrated to **3.27.3** LTS (STORY-004). | See `docs/QUARKUS_LTS_MIGRATION.md`. | **Done** |
 | P0-04 | **Production container image** | Incomplete | Arena Dockerfile not prod. | `Dockerfile.prod` multi-stage JVM; compose uses it; arena kept as `Dockerfile.arena`. | **Done** |
 | P0-05 | **Schema migration strategy** | Incomplete | Manual SQL only. | Flyway `V1`–`V6` under `db/migration`; migrate-at-start for Postgres/prod. | **Done** |
 | P0-06 | **Dependency security scanning in CI** | Missing process | Local scripts only. | `.github/workflows/ci.yml` + `security.yml` (OWASP + npm audit). | **Done** |
-| P0-07 | **TLS / network hardening** | Missing | HTTP only; Swagger open. | `docs/deploy/nginx-tls.conf`; prod disables Swagger/OpenAPI; edge TLS ops-owned. | **Partial** — docs + prod OpenAPI off; edge TLS required |
+| P0-07 | **TLS / network hardening** | Missing | HTTP only; Swagger open. | `docs/deploy/nginx-tls.conf` + `docker-compose.prod.yml` + `PROD_EDGE_TLS.md`; prod disables Swagger/OpenAPI; `ProdSecurityValidator` refuses demo secrets. | **Partial** — compose/docs landed; cloud LB certs still ops-owned |
 
 ---
 
@@ -78,11 +78,11 @@
 |----|------|------|----------|----------------|--------|
 | P2-01 | **Hexagonal purity for hybrid resources** | Refactor | REST mixed domain historically. | All REST → inbound ports only. | **Done** |
 | P2-02 | **API adapter → messaging dependency** | Boundary smell | Outbox in API module. | Outbox admin in `ar-bootstrap` ops. | **Done** |
-| P2-03 | **Remove unused SQLite JDBC extension** | Cleanup | JDBC removed; `%sqlite` alias remains. | Optional: delete `%sqlite` after release cycle. | **Partial** (dep gone) |
+| P2-03 | **Remove unused SQLite JDBC extension** | Cleanup | JDBC removed; `%sqlite` alias remains. | Delete `%sqlite` alias; docs/scripts mention `dev` only. | **Done** (STORY-022) |
 | P2-04 | **Dedicated API layer tests** | Missing tests | Thin historically. | Resource unit tests for all REST resources. | **Done** (unit contract style) |
 | P2-05 | **Observability** | Incomplete | Health only. | Micrometer Prometheus `/q/metrics`, OpenTelemetry (opt-in), JSON logs in prod. | **Done** |
 | P2-06 | **Idempotency store operationalization** | Incomplete | No TTL job. | Flyway + `IdempotencyCleanupJob` retention cron. | **Done** |
-| P2-07 | **ONBOARDING doc drift** | Docs debt | Stale sections. | Refresh after maturity milestones (see maintenance). | **Partial** — backlog snapshot refreshed 2026-07-24 |
+| P2-07 | **ONBOARDING doc drift** | Docs debt | Stale sections. | Full rewrite modules/workflows/gaps + README align. | **Done** (STORY-016) |
 | P2-08 | **gRPC / Kafka consumers** | Missing (diagram only) | Publisher side only. | Defer until product needs event-driven ingest. | **Deferred** |
 | P2-09 | **Frontend production auth** | Incomplete | Tenant switcher. | API key header + hide override when `NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE=false`. SSO future. | **Partial** |
 | P2-10 | **Coverage gate enforcement in CI** | Process | JaCoCo on verify only. | CI runs `mvn verify` (JaCoCo check 80%). | **Done** |
@@ -146,14 +146,40 @@ Wave 4 (P3): Webhooks + audit UI/export + Playwright smoke               ✅
 
 | ID | Residual |
 |----|----------|
-| **P0-03** | Migrate Quarkus `3.8.6.1` → supported LTS (3.27/3.33) — dedicated PR |
-| **P0-01** | OIDC provider + RBAC roles beyond API-key/JWT gate |
-| **P0-07** | Wire TLS into compose/K8s edge (ops); nginx sample already in docs |
-| **P2-03** | Delete `%sqlite` profile alias after notice period |
-| **P2-07** | Full ONBOARDING.md rewrite for sections still naming stubs |
+| **P0-03** | ~~Migrate Quarkus~~ **Done** — on **3.27.3** LTS |
+| **P0-01** | Phase-1 JWT `roles[]` + path RBAC + prod fail-closed **landed**; OIDC provider + web login still open |
+| **P0-07** | Cloud/K8s certs still ops-owned; compose prod + validator landed (STORY-017) |
+| **P2-03** | ~~Delete `%sqlite`~~ **Done** (STORY-022) |
+| **P2-07** | ~~ONBOARDING rewrite~~ **Done** (STORY-016) |
 | **P2-08** | Kafka/gRPC consumers when product requires inbound events |
 | **P2-09** | SSO login UX |
 | **P3-01..05** | New product modules / platform scale |
+
+### 2026-07-24 residual closure notes
+| Item | Status |
+|------|--------|
+| STORY-009 webhook HTTP delivery | **Done** — `WebhookDispatcher`, V7 delivery log, SSRF/HMAC, retries |
+| STORY-012 audit CSV actor columns | **Done** |
+| STORY-003 Phase 1 RBAC | **Partial** — OIDC/web login still open |
+| STORY-004 Quarkus LTS | **Open** |
+| **STORY-009** | Webhook HTTP delivery worker (HMAC, retries, SSRF) — not started this pass |
+| **STORY-011** | Invoice line qty/tax/discount + draft PATCH |
+| **STORY-012** | ActorContext + IP/UA on audit factories landed; CSV export verification residual |
+
+## Closed / advanced in 2026-07-24 eng pass
+
+| Item | Status |
+|------|--------|
+| DEF-FE-001 Button `size` prop | Fixed — `tsc --noEmit` green |
+| DEF-BE-002 PaymentResource single `@Inject` ctor | Fixed |
+| DEF-BE-001 UTF-8 BOM on Java | Verified clean; no reintroduction |
+| DEF-BE-004 Cheque/IssueInvoice application tests | Green under full `mvn test` |
+| DEF-BE-006 `%dev` datasource username/password keys | Fixed to `quarkus.datasource.*` |
+| STORY-002 cheque UI clear/bounce residual | Done |
+| STORY-006 payment list/get UI | Done (unblocked) |
+| STORY-003 Phase-1 RBAC | Partial — roles + prod fail-closed; OIDC open |
+| STORY-007 available credits query + payment UI | Done |
+| STORY-012 ActorContext | Partial — context + audit enrich; CSV residual |
 
 ---
 

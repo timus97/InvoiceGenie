@@ -56,7 +56,7 @@ class ChequeResourceTest {
         Cheque c = sample();
         when(chequeUseCase.create(eq(tenantId), any())).thenReturn(c);
         var dto = new ChequeResource.CreateChequeDto("CHQ-1", c.getCustomerId().getValue().toString(),
-                new BigDecimal("100"), "USD", "Bank", "Br", LocalDate.now(), null);
+                new BigDecimal("100"), "USD", "Bank", "Br", LocalDate.now(), null, null);
         assertEquals(201, resource.createCheque(dto).getStatus());
     }
 

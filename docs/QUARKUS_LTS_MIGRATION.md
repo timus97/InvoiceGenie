@@ -1,11 +1,17 @@
 # Quarkus LTS migration plan (P0-03)
 
 > Status: **Planned** — platform remains on `3.8.6.1` (last 3.8 security patch).  
-> Community 3.8 support ended February 2025. Target LTS: **3.27** (supported until ~Sep 2026) or **3.33** (current LTS).
+> Community 3.8 support ended February 2025. Target LTS: **3.27** (supported until ~Sep 2026) or **3.33** (current LTS).  
+> **2026-07-24 eng pass:** full bump deferred (STORY-004) to avoid breaking REST/CDI mid-wave; prep notes below still apply.
 
 ## Why not in this PR
 
 Moving 3.8 → 3.27/3.33 renames REST extensions (`quarkus-resteasy-reactive` → `quarkus-rest`), changes BOM coordinates for some extensions, and can break Jandex index versions. That deserves a dedicated PR with full regression.
+
+## Safe prep already in tree
+- Jandex Maven plugin pinned to **3.1.6** (index v11) so 3.8 can read multi-module indexes.
+- `%dev` / `%test` datasource credentials use `quarkus.datasource.username/password` (not under `jdbc.*`).
+- No code relies on removed 3.8-only APIs beyond resteasy-reactive artifact names.
 
 ## Migration steps
 

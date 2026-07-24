@@ -45,7 +45,7 @@
 
 | ID | Item | Type | Why it matters | Suggested work | Status |
 |----|------|------|----------------|----------------|--------|
-| P0-01 | **Authentication & authorization** | Missing feature | Any client knowing a tenant UUID can call the API. | API-key + HS256 JWT gate (`AuthFilter`); prod enables security; UI sends `X-API-Key` when configured. Full OIDC/RBAC still future. | **Partial** — gate production-ready; OIDC/RBAC deferred |
+| P0-01 | **Authentication & authorization** | Missing feature | Any client knowing a tenant UUID can call the API. | API-key + HS256 JWT gate (`AuthFilter`); JWT `roles[]` + `RoleAuthorizationFilter`; prod fail-closed (`ProdSecurityValidator`); UI sends `X-API-Key` when configured. Full OIDC still future. | **Partial** — Phase-1 RBAC landed; OIDC deferred |
 | P0-02 | **Secrets & config for production** | Incomplete | Default Postgres password in compose/yml. | Env-based datasource + security secrets; `.env.example`; compose requires passwords. | **Done** |
 | P0-03 | **Quarkus platform still on EOL LTS** | Vulnerable dependency / debt | `3.8.6.1` last 3.8 patch; EOL. | See `docs/QUARKUS_LTS_MIGRATION.md` — dedicated migration PR (REST extension renames). | **Planned** |
 | P0-04 | **Production container image** | Incomplete | Arena Dockerfile not prod. | `Dockerfile.prod` multi-stage JVM; compose uses it; arena kept as `Dockerfile.arena`. | **Done** |
@@ -146,14 +146,32 @@ Wave 4 (P3): Webhooks + audit UI/export + Playwright smoke               ✅
 
 | ID | Residual |
 |----|----------|
-| **P0-03** | Migrate Quarkus `3.8.6.1` → supported LTS (3.27/3.33) — dedicated PR |
-| **P0-01** | OIDC provider + RBAC roles beyond API-key/JWT gate |
+| **P0-03** | Migrate Quarkus `3.8.6.1` → supported LTS (3.27/3.33) — dedicated PR (not in 2026-07-24 pass) |
+| **P0-01** | Phase-1 JWT `roles[]` + path RBAC + prod fail-closed **landed**; OIDC provider + web login still open |
 | **P0-07** | Wire TLS into compose/K8s edge (ops); nginx sample already in docs |
 | **P2-03** | Delete `%sqlite` profile alias after notice period |
 | **P2-07** | Full ONBOARDING.md rewrite for sections still naming stubs |
 | **P2-08** | Kafka/gRPC consumers when product requires inbound events |
 | **P2-09** | SSO login UX |
 | **P3-01..05** | New product modules / platform scale |
+| **STORY-009** | Webhook HTTP delivery worker (HMAC, retries, SSRF) — not started this pass |
+| **STORY-011** | Invoice line qty/tax/discount + draft PATCH |
+| **STORY-012** | ActorContext + IP/UA on audit factories landed; CSV export verification residual |
+
+## Closed / advanced in 2026-07-24 eng pass
+
+| Item | Status |
+|------|--------|
+| DEF-FE-001 Button `size` prop | Fixed — `tsc --noEmit` green |
+| DEF-BE-002 PaymentResource single `@Inject` ctor | Fixed |
+| DEF-BE-001 UTF-8 BOM on Java | Verified clean; no reintroduction |
+| DEF-BE-004 Cheque/IssueInvoice application tests | Green under full `mvn test` |
+| DEF-BE-006 `%dev` datasource username/password keys | Fixed to `quarkus.datasource.*` |
+| STORY-002 cheque UI clear/bounce residual | Done |
+| STORY-006 payment list/get UI | Done (unblocked) |
+| STORY-003 Phase-1 RBAC | Partial — roles + prod fail-closed; OIDC open |
+| STORY-007 available credits query + payment UI | Done |
+| STORY-012 ActorContext | Partial — context + audit enrich; CSV residual |
 
 ---
 

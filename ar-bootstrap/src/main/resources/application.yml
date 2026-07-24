@@ -73,6 +73,15 @@ quarkus:
         max-file-size: 10M
         max-backup-index: 5
 
+# Customer HTTP webhooks (STORY-009) — delivery after outbox publish
+webhook:
+  delivery:
+    enabled: ${WEBHOOK_DELIVERY_ENABLED:true}
+    timeout-ms: ${WEBHOOK_DELIVERY_TIMEOUT_MS:5000}
+    max-attempts: ${WEBHOOK_DELIVERY_MAX_ATTEMPTS:5}
+    retry-interval: ${WEBHOOK_DELIVERY_RETRY_INTERVAL:30s}
+    retry-batch: ${WEBHOOK_DELIVERY_RETRY_BATCH:50}
+
 # API security (disabled by default for local/dev/test)
 invoicegenie:
   security:

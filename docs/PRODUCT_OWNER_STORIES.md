@@ -187,12 +187,13 @@ Docs are **out of sync**: `ONBOARDING.md` still describes in-memory ledger, stub
   - Flyway `V6__webhooks_and_indexes.sql` + `WebhookApplicationService` CRUD + UI page.
   - Outbox publishes to Kafka optionally (`OutboxWorker` + `SmallRyeOutboxKafkaSender`); **no HTTP dispatcher** reading `ar_webhook_subscription`.
 - **Acceptance criteria:**
-  - [ ] On outbox PUBLISHED (or parallel path), deliver matching active subscriptions with HMAC signature using secret.
-  - [ ] Retries with backoff; dead-letter / failure status; delivery log for support.
-  - [ ] Timeout and SSRF protections (block link-local, metadata IPs).
+  - [x] On outbox PUBLISHED (or parallel path), deliver matching active subscriptions with HMAC signature using secret.
+  - [x] Retries with backoff; dead-letter / failure status; delivery log for support.
+  - [x] Timeout and SSRF protections (block link-local, metadata IPs).
 - **Suggested implementation notes:** New messaging component `WebhookDispatcher`; reuse outbox payload; store delivery attempts table (new migration).
-- **Status:** Ready
-- **QA notes:** **OPEN.** No HTTP delivery worker. Outbox only logs "Would publish (kafka disabled)".
+- **Status:** Done
+- **Implementation notes (2026-07-24):** `WebhookDispatcher` fans out after outbox publish (Kafka-independent). HMAC `X-InvoiceGenie-Signature`, SSRF validator, timeout, exponential backoff retries (`RETRY`/`DEAD`/`BLOCKED_SSRF`), Flyway `V7__webhook_delivery`, `GET /api/v1/webhooks/deliveries` support log.
+- **QA notes:** **PASS (eng unit).** SSRF/HMAC/domain log tests green; full HTTP e2e against public receiver optional.
 
 ### STORY-010: Multi-currency cash application rules
 - **Priority:** P1

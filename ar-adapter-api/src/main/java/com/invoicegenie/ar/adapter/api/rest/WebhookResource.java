@@ -2,8 +2,11 @@ package com.invoicegenie.ar.adapter.api.rest;
 
 import com.invoicegenie.ar.adapter.api.dto.ErrorResponse;
 import com.invoicegenie.ar.application.port.inbound.WebhookUseCase;
+import com.invoicegenie.ar.domain.model.webhook.WebhookDeliveryLog;
+import com.invoicegenie.ar.domain.model.webhook.WebhookDeliveryRepository;
 import com.invoicegenie.ar.domain.model.webhook.WebhookSubscription;
 import com.invoicegenie.shared.tenant.TenantContext;
+import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -20,9 +23,12 @@ import java.util.stream.Collectors;
 public class WebhookResource {
 
     private final WebhookUseCase webhookUseCase;
+    private final WebhookDeliveryRepository deliveryRepository;
 
-    public WebhookResource(WebhookUseCase webhookUseCase) {
+    @Inject
+    public WebhookResource(WebhookUseCase webhookUseCase, WebhookDeliveryRepository deliveryRepository) {
         this.webhookUseCase = webhookUseCase;
+        this.deliveryRepository = deliveryRepository;
     }
 
     @POST
@@ -43,6 +49,18 @@ public class WebhookResource {
     public Response list() {
         var tenantId = TenantContext.getCurrentTenant();
         return Response.ok(webhookUseCase.list(tenantId).stream().map(this::toDto).collect(Collectors.toList())).build();
+    }
+
+    @GET
+    @Path("/deliveries")
+    @Operation(summary = "List recent webhook delivery attempts (support log)")
+    public Response listDeliveries(@QueryParam("limit") @DefaultValue("100") int limit) {
+        if (deliveryRepository == null) {
+            return Response.status(501).entity(new ErrorResponse("NOT_AVAILABLE", "Delivery log not wired")).build();
+        }
+        var tenantId = TenantContext.getCurrentTenant();
+        return Response.ok(deliveryRepository.findRecentByTenant(tenantId, limit).stream()
+                .map(this::toDeliveryDto).collect(Collectors.toList())).build();
     }
 
     @GET
@@ -87,6 +105,25 @@ public class WebhookResource {
                 s.getCreatedAt() != null ? s.getCreatedAt().toString() : null);
     }
 
+    private DeliveryDto toDeliveryDto(WebhookDeliveryLog d) {
+        return new DeliveryDto(
+                d.getId().toString(),
+                d.getSubscriptionId().toString(),
+                d.getOutboxId() != null ? d.getOutboxId().toString() : null,
+                d.getEventType(),
+                d.getUrl(),
+                d.getStatus().name(),
+                d.getAttemptCount(),
+                d.getHttpStatus(),
+                d.getErrorMessage(),
+                d.getNextAttemptAt() != null ? d.getNextAttemptAt().toString() : null,
+                d.getCreatedAt() != null ? d.getCreatedAt().toString() : null
+        );
+    }
+
     public record CreateWebhookDto(String url, String secret, String eventTypes) {}
     public record WebhookDto(String id, String url, String eventTypes, boolean active, String createdAt) {}
+    public record DeliveryDto(String id, String subscriptionId, String outboxId, String eventType, String url,
+                              String status, int attemptCount, Integer httpStatus, String errorMessage,
+                              String nextAttemptAt, String createdAt) {}
 }

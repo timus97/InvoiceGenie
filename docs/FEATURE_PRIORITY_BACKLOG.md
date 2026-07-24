@@ -154,6 +154,14 @@ Wave 4 (P3): Webhooks + audit UI/export + Playwright smoke               ✅
 | **P2-08** | Kafka/gRPC consumers when product requires inbound events |
 | **P2-09** | SSO login UX |
 | **P3-01..05** | New product modules / platform scale |
+
+### 2026-07-24 residual closure notes
+| Item | Status |
+|------|--------|
+| STORY-009 webhook HTTP delivery | **Done** — `WebhookDispatcher`, V7 delivery log, SSRF/HMAC, retries |
+| STORY-012 audit CSV actor columns | **Done** |
+| STORY-003 Phase 1 RBAC | **Partial** — OIDC/web login still open |
+| STORY-004 Quarkus LTS | **Open** |
 | **STORY-009** | Webhook HTTP delivery worker (HMAC, retries, SSRF) — not started this pass |
 | **STORY-011** | Invoice line qty/tax/discount + draft PATCH |
 | **STORY-012** | ActorContext + IP/UA on audit factories landed; CSV export verification residual |

@@ -1,0 +1,6 @@
+# Pre-commit note (STORY-QA-001)
+# Optional: run scripts/check-java-bom.ps1 (Windows) or scripts/check-java-bom.sh (CI/Linux) before commit.
+# CI enforces the same gate on every PR.
+# Concurrent multi-agent tip: avoid quarkus:dev while another agent is mid-compile;
+# prefer `mvn -pl ar-bootstrap -am compile` after pulling WIP, or clean target/ if CDI classes look stale.
+repos: []

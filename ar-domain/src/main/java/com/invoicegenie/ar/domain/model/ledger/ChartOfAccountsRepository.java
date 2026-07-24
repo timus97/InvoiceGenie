@@ -1,4 +1,4 @@
-﻿package com.invoicegenie.ar.domain.model.ledger;
+package com.invoicegenie.ar.domain.model.ledger;
 
 import java.util.List;
 import java.util.Optional;

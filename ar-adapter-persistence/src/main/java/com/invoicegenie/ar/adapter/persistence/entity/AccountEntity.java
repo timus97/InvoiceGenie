@@ -1,4 +1,4 @@
-﻿package com.invoicegenie.ar.adapter.persistence.entity;
+package com.invoicegenie.ar.adapter.persistence.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

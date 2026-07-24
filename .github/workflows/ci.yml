@@ -35,6 +35,9 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           cache: maven
 
+      - name: Ban UTF-8 BOM on Java sources (STORY-QA-001)
+        run: bash scripts/check-java-bom.sh
+
       - name: Unit tests
         run: mvn -B verify
 

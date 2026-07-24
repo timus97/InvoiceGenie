@@ -1,4 +1,4 @@
-﻿package com.invoicegenie.ar.adapter.persistence.repository;
+package com.invoicegenie.ar.adapter.persistence.repository;
 
 import com.invoicegenie.ar.adapter.persistence.entity.AccountEntity;
 import com.invoicegenie.ar.domain.model.ledger.Account;

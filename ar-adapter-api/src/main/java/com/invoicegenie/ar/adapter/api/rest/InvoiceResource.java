@@ -64,10 +64,11 @@ public class InvoiceResource {
     @POST
     @Operation(summary = "Create an invoice",
             description = "By default creates and issues immediately (backward compatible). "
-                    + "Set issueImmediately=false to create a pure DRAFT with no ledger posting.")
+                    + "Set issueImmediately=false to create a pure DRAFT with no ledger posting. "
+                    + "dueDate is required (ISO date) — without it the API returns 400 before credit/block checks (STORY-QA-005).")
     @APIResponses({
         @APIResponse(responseCode = "201", description = "Invoice created"),
-        @APIResponse(responseCode = "400", description = "Validation error"),
+        @APIResponse(responseCode = "400", description = "Validation error (missing dueDate, lines, etc.)"),
         @APIResponse(responseCode = "409", description = "Idempotency key conflict")
     })
     public Response create(
@@ -79,6 +80,9 @@ public class InvoiceResource {
         }
         if (dto.customerId() == null || dto.customerId().isBlank()) {
             return error(400, "customerId required");
+        }
+        if (dto.dueDate() == null) {
+            return error(400, "dueDate is required (ISO-8601 date, e.g. 2026-08-15)");
         }
         if (dto.lines() == null || dto.lines().isEmpty()) {
             return error(400, "at least one line required");

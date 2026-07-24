@@ -462,11 +462,26 @@ docker compose up -d postgres
 mvn -pl ar-bootstrap -Dquarkus.kafka.devservices.enabled=false quarkus:dev
 ```
 
-### PowerShell note
+### PowerShell note / port 8080 occupied (STORY-QA-004)
+
+If Apache or another process holds **8080**, run API on **8082** and point the web proxy at it:
 
 ```powershell
+# API
 mvn -pl ar-bootstrap "-Dquarkus.profile=dev" "-Dquarkus.http.port=8082" quarkus:dev
+# equivalent: $env:QUARKUS_HTTP_PORT=8082
 ```
+
+```bash
+# web/.env.local (Next.js rewrites)
+BACKEND_URL=http://localhost:8082
+```
+
+Defaults remain `BACKEND_URL=http://localhost:8080` and `quarkus.http.port=8080` when free.
+
+### Invoice create: dueDate required (STORY-QA-005)
+
+`POST /api/v1/invoices` requires **`dueDate`** (ISO-8601 date). Omitting it returns **400** *before* credit-limit / blocked-customer checks — do not interpret a bare 400 without dueDate as “credit not enforced.”
 
 ---
 

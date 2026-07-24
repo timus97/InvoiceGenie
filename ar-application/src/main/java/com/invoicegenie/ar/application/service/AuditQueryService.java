@@ -34,14 +34,18 @@ public class AuditQueryService implements AuditQueryUseCase {
     public String exportCsv(TenantId tenantId, int limit) {
         List<AuditEntry> entries = listRecent(tenantId, limit);
         StringBuilder sb = new StringBuilder();
-        sb.append("id,entityType,entityId,entityRef,action,actorType,createdAt\n");
+        // STORY-012: include actorId, IP, user-agent for compliance export
+        sb.append("id,entityType,entityId,entityRef,action,actorId,actorType,ipAddress,userAgent,createdAt\n");
         for (AuditEntry e : entries) {
             sb.append(csv(e.getId().toString())).append(',')
                     .append(csv(e.getEntityType())).append(',')
                     .append(csv(e.getEntityId() != null ? e.getEntityId().toString() : "")).append(',')
                     .append(csv(e.getEntityRef())).append(',')
                     .append(csv(e.getAction())).append(',')
+                    .append(csv(e.getActorId() != null ? e.getActorId().toString() : "")).append(',')
                     .append(csv(e.getActorType())).append(',')
+                    .append(csv(e.getIpAddress())).append(',')
+                    .append(csv(e.getUserAgent())).append(',')
                     .append(csv(e.getCreatedAt() != null ? e.getCreatedAt().toString() : ""))
                     .append('\n');
         }

@@ -59,7 +59,10 @@ public class AuditResource {
                 e.getEntityId() != null ? e.getEntityId().toString() : null,
                 e.getEntityRef(),
                 e.getAction(),
+                e.getActorId() != null ? e.getActorId().toString() : null,
                 e.getActorType(),
+                e.getIpAddress(),
+                e.getUserAgent(),
                 e.getBeforeState(),
                 e.getAfterState(),
                 e.getCreatedAt() != null ? e.getCreatedAt().toString() : null
@@ -67,5 +70,6 @@ public class AuditResource {
     }
 
     public record AuditDto(String id, String entityType, String entityId, String entityRef, String action,
-                           String actorType, String beforeState, String afterState, String createdAt) {}
+                           String actorId, String actorType, String ipAddress, String userAgent,
+                           String beforeState, String afterState, String createdAt) {}
 }

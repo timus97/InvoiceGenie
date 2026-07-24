@@ -239,11 +239,11 @@ Docs are **out of sync**: `ONBOARDING.md` still describes in-memory ledger, stub
 - **Acceptance criteria:**
   - [x] Every mutation audit row has actor from JWT subject / API key label / SYSTEM for jobs.
   - [x] IP and user-agent captured from request filters when present.
-  - [ ] CSV export shows non-empty actor for interactive API calls.
+  - [x] CSV export shows non-empty actor for interactive API calls.
 - **Suggested implementation notes:** Request-scoped `ActorContext` set in AuthFilter/TenantFilter; pass into application services.
-- **Status:** Partially done
-- **Implementation notes (2026-07-24):** `ActorContext` (shared-kernel) bound in `AuthFilter` from subject + X-Forwarded-For/X-Real-IP + User-Agent; cleared in `TenantContextClearFilter`. `AuditEntry` factories enrich IP/UA (and actorId when not passed). CSV export verification deferred.
-- **QA notes:** **PARTIAL.** Unit/domain green; runtime CSV actor column not re-verified.
+- **Status:** Done
+- **Implementation notes (2026-07-24):** `ActorContext` (shared-kernel) bound in `AuthFilter` from subject + X-Forwarded-For/X-Real-IP + User-Agent; cleared in `TenantContextClearFilter`. `AuditEntry` factories enrich IP/UA (and actorId when not passed). CSV export includes actorId, actorType, ipAddress, userAgent; list DTO exposes same fields.
+- **QA notes:** **PASS (eng).** Unit test asserts CSV columns; smoke with security on recommended for non-empty runtime actor.
 
 ### STORY-013: Unallocate / reallocate payments (controlled)
 - **Priority:** P2

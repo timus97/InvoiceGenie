@@ -4,11 +4,11 @@ quarkus:
     port: 0  # random available port for tests
   datasource:
     db-kind: h2
+    username: sa
+    password: ""
     jdbc:
       url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
       driver: org.h2.Driver
-      username: sa
-      password: ""
   hibernate-orm:
     database:
       generation: update  # create schema from entities

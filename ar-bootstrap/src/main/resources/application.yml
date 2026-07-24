@@ -94,11 +94,11 @@ invoicegenie:
       host: 0.0.0.0
     datasource:
       db-kind: h2
+      username: sa
+      password: ""
       jdbc:
         url: jdbc:h2:mem:testdb
         driver: org.h2.Driver
-        username: sa
-        password: ""
     hibernate-orm:
       database:
         generation: update
@@ -142,11 +142,11 @@ invoicegenie:
       host: 0.0.0.0
     datasource:
       db-kind: h2
+      username: sa
+      password: ""
       jdbc:
         url: jdbc:h2:mem:testdb
         driver: org.h2.Driver
-        username: sa
-        password: ""
     hibernate-orm:
       database:
         generation: update

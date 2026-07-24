@@ -34,6 +34,37 @@ public final class InvoiceLine {
                 amount);
     }
 
+    /**
+     * Builds a line with qty/unitPrice/discount/taxRate, computing tax and lineTotal (STORY-011).
+     * If quantity/unitPrice are null, falls back to a single {@code amount} (or zero).
+     */
+    public static InvoiceLine of(int sequence, String description, String currencyCode,
+                                 BigDecimal amount, BigDecimal quantity, BigDecimal unitPrice,
+                                 BigDecimal discountAmount, BigDecimal taxRate) {
+        String ccy = currencyCode != null ? currencyCode : "USD";
+        String desc = description != null ? description : "";
+        if (quantity != null && unitPrice != null) {
+            BigDecimal qty = quantity;
+            Money unit = Money.of(unitPrice, ccy);
+            Money discount = Money.of(
+                    discountAmount != null ? discountAmount : BigDecimal.ZERO, ccy);
+            BigDecimal base = qty.multiply(unit.getAmount())
+                    .subtract(discount.getAmount())
+                    .setScale(2, RoundingMode.HALF_UP);
+            if (base.signum() < 0) {
+                throw new IllegalArgumentException("line base amount cannot be negative");
+            }
+            Money tax = Money.of(BigDecimal.ZERO, ccy);
+            if (taxRate != null && taxRate.signum() > 0) {
+                tax = Money.of(base.multiply(taxRate).setScale(2, RoundingMode.HALF_UP), ccy);
+            }
+            Money total = Money.of(base.add(tax.getAmount()).setScale(2, RoundingMode.HALF_UP), ccy);
+            return new InvoiceLine(sequence, desc, qty, unit, discount, taxRate, tax, total);
+        }
+        BigDecimal amt = amount != null ? amount : BigDecimal.ZERO;
+        return new InvoiceLine(sequence, desc, Money.of(amt, ccy));
+    }
+
     /** Full constructor. */
     public InvoiceLine(int sequence, String description, BigDecimal quantity, Money unitPrice,
                        Money discountAmount, BigDecimal taxRate, Money taxAmount, Money lineTotal) {

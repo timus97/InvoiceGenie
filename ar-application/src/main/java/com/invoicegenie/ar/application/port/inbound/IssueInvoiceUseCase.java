@@ -74,6 +74,32 @@ public interface IssueInvoiceUseCase {
             return issueImmediately == null || issueImmediately;
         }
 
-        public record LineItem(String description, BigDecimal amount) {}
+        /**
+         * Line create payload. Prefer quantity+unitPrice (+ optional discount/taxRate);
+         * {@code amount} alone remains supported for simple lines.
+         */
+        public record LineItem(
+                String description,
+                BigDecimal amount,
+                BigDecimal quantity,
+                BigDecimal unitPrice,
+                BigDecimal discountAmount,
+                BigDecimal taxRate
+        ) {
+            public LineItem {
+                if (description == null || description.isBlank()) {
+                    throw new IllegalArgumentException("line description is required");
+                }
+                boolean rich = quantity != null && unitPrice != null;
+                if (!rich && (amount == null || amount.signum() <= 0)) {
+                    throw new IllegalArgumentException("line amount or quantity+unitPrice is required");
+                }
+            }
+
+            /** Simple description + amount (backward compatible). */
+            public LineItem(String description, BigDecimal amount) {
+                this(description, amount, null, null, null, null);
+            }
+        }
     }
 }

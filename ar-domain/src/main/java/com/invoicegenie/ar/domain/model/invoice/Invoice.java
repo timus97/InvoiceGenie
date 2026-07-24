@@ -241,6 +241,22 @@ public final class Invoice {
     }
 
     /**
+     * Replaces all lines on a DRAFT invoice (STORY-011).
+     */
+    public void replaceLines(List<InvoiceLine> newLines) {
+        assertDraft();
+        if (newLines == null || newLines.isEmpty()) {
+            throw new IllegalArgumentException("at least one line is required");
+        }
+        for (InvoiceLine line : newLines) {
+            requireSameCurrency(line.getAmount());
+        }
+        lines.clear();
+        lines.addAll(newLines);
+        touch();
+    }
+
+    /**
      * Updates due date (only in DRAFT).
      */
     public void setDueDate(LocalDate dueDate) {

@@ -221,13 +221,14 @@ Docs are **out of sync**: `ONBOARDING.md` still describes in-memory ledger, stub
   - Domain forbids line changes after ISSUED (credit memo for corrections) â€” correct â€” but no DRAFT update API.
   - Schema `ar_invoice_line` has tax/discount columns.
 - **Acceptance criteria:**
-  - [ ] Create DTO accepts qty, unitPrice, discount, taxRate; server computes lineTotal consistently.
-  - [ ] `PATCH /invoices/{id}` for DRAFT only (lines, notes, due date, customer display fields).
-  - [ ] Version snapshot on each draft update; issue posts ledger on final totals.
-  - [ ] UI invoice form fields for tax/qty.
+  - [x] Create DTO accepts qty, unitPrice, discount, taxRate; server computes lineTotal consistently.
+  - [x] `PATCH /invoices/{id}` for DRAFT only (lines, notes, due date, customer display fields).
+  - [x] Version snapshot on each draft update; issue posts ledger on final totals.
+  - [x] UI invoice form fields for tax/qty.
 - **Suggested implementation notes:** Application service `UpdateDraftInvoiceService`; lifecycle still owns issue.
-- **Status:** Ready
-- **QA notes:** **OPEN.** UI description+amount only; no qty/tax. DRAFT create/issue smoke PASS.
+- **Status:** Done
+- **Implementation notes (2026-07-24):** `InvoiceLine.of` computes tax/total; create + draft PATCH accept rich lines; lifecycle `updateDraft` snapshots; web create form has qty/unit/discount/tax + flat amount fallback.
+- **QA notes:** **PASS (eng unit).** IssueInvoiceServiceTest green; UI fields landed.
 
 ### STORY-012: Actor identity, IP, and user-agent on all audit writes
 - **Priority:** P1

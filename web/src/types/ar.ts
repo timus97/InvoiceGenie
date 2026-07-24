@@ -59,6 +59,11 @@ export type InvoiceLineDto = {
   sequence?: number;
   description: string;
   amount: number | string;
+  quantity?: number | string | null;
+  unitPrice?: number | string | null;
+  discountAmount?: number | string | null;
+  taxRate?: number | string | null;
+  taxAmount?: number | string | null;
 };
 
 export type InvoiceDto = {
@@ -89,7 +94,15 @@ export type CreateInvoiceRequest = {
   customerRef?: string;
   currencyCode?: string;
   dueDate?: string;
-  lines: { sequence: number; description: string; amount: number }[];
+  lines: {
+    sequence: number;
+    description: string;
+    amount?: number;
+    quantity?: number;
+    unitPrice?: number;
+    discountAmount?: number;
+    taxRate?: number;
+  }[];
   issueImmediately?: boolean;
 };
 

@@ -92,6 +92,23 @@ export function applyInvoicePayment(
   });
 }
 
+export function updateDraftInvoice(
+  tenantId: string,
+  id: string,
+  body: {
+    dueDate?: string;
+    notes?: string;
+    terms?: string;
+    lines?: CreateInvoiceRequest["lines"];
+  },
+) {
+  return apiFetch<InvoiceDto>(apiPaths.invoice(id), {
+    method: "PATCH",
+    tenantId,
+    body,
+  });
+}
+
 export function updateInvoiceDueDate(
   tenantId: string,
   id: string,

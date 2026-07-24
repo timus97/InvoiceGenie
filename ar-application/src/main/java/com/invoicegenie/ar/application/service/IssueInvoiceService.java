@@ -127,8 +127,11 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
         }
 
         String currency = command.currencyCode() != null ? command.currencyCode() : "USD";
-        BigDecimal invoiceAmount = command.lines().stream()
-                .map(IssueInvoiceCommand.LineItem::amount)
+        List<InvoiceLine> lines = IntStream.range(0, command.lines().size())
+                .mapToObj(i -> toLine(i + 1, command.lines().get(i), currency))
+                .toList();
+        BigDecimal invoiceAmount = lines.stream()
+                .map(l -> l.getLineTotal().getAmount())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal outstanding = sumOpenBalance(tenantId, customerId, currency);
 
@@ -144,12 +147,6 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
         }
 
         InvoiceId id = idGenerator.newInvoiceId();
-        List<InvoiceLine> lines = IntStream.range(0, command.lines().size())
-                .mapToObj(i -> {
-                    var item = command.lines().get(i);
-                    return new InvoiceLine(i + 1, item.description(), Money.of(item.amount(), currency));
-                })
-                .toList();
         Invoice invoice = new Invoice(id, command.invoiceNumber(), customerId, command.customerRef(), currency,
                 command.dueDate(), command.dueDate(), lines);
 
@@ -214,6 +211,12 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
                 .filter(inv -> currency.equalsIgnoreCase(inv.getCurrencyCode()))
                 .map(inv -> inv.getBalanceDue().getAmount())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private static InvoiceLine toLine(int sequence, IssueInvoiceCommand.LineItem item, String currency) {
+        return InvoiceLine.of(sequence, item.description(), currency,
+                item.amount(), item.quantity(), item.unitPrice(),
+                item.discountAmount(), item.taxRate());
     }
 
     private static String hashRequest(IssueInvoiceCommand command) {

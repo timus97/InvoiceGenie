@@ -95,7 +95,9 @@ public class InvoiceResource {
                 dto.currencyCode() != null ? dto.currencyCode() : "USD",
                 dto.dueDate(),
                 dto.lines().stream()
-                        .map(l -> new IssueInvoiceUseCase.IssueInvoiceCommand.LineItem(l.description(), l.amount()))
+                        .map(l -> new IssueInvoiceUseCase.IssueInvoiceCommand.LineItem(
+                                l.description(), l.amount(), l.quantity(), l.unitPrice(),
+                                l.discountAmount(), l.taxRate()))
                         .toList(),
                 issueImmediately
         );
@@ -231,6 +233,37 @@ public class InvoiceResource {
                 .orElse(Response.status(404).entity(new ErrorDto("NOT_FOUND", "Invoice not found")).build());
     }
 
+    @PATCH
+    @Path("/{id}")
+    @Operation(summary = "Update DRAFT invoice (lines, notes, due date)",
+            description = "STORY-011: only DRAFT invoices. Version snapshot on each update.")
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Updated"),
+        @APIResponse(responseCode = "400", description = "Invalid state or payload"),
+        @APIResponse(responseCode = "404", description = "Not found")
+    })
+    public Response updateDraft(@PathParam("id") String id, InvoiceUpdateDto dto) {
+        if (dto == null) {
+            return error(400, "body required");
+        }
+        var tenantId = TenantContext.getCurrentTenant();
+        var invoiceId = InvoiceId.of(UUID.fromString(id));
+        try {
+            var lines = dto.lines() == null ? null : dto.lines().stream()
+                    .map(l -> new InvoiceLifecycleUseCase.UpdateDraftCommand.DraftLine(
+                            l.description(), l.amount(), l.quantity(), l.unitPrice(),
+                            l.discountAmount(), l.taxRate()))
+                    .toList();
+            var command = new InvoiceLifecycleUseCase.UpdateDraftCommand(
+                    dto.dueDate(), dto.notes(), dto.terms(), dto.customerRef(), lines);
+            return lifecycleUseCase.updateDraft(tenantId, invoiceId, command)
+                    .map(inv -> Response.ok(toDto(inv)).build())
+                    .orElse(Response.status(404).entity(new ErrorDto("NOT_FOUND", "Invoice not found")).build());
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            return error(400, e.getMessage());
+        }
+    }
+
     // ==================== DELETE (soft via status) ====================
 
     @DELETE
@@ -256,7 +289,16 @@ public class InvoiceResource {
                 inv.getIssuedAt(),
                 inv.getWrittenOffAt(),
                 inv.getVersion(),
-                inv.getLines().stream().map(l -> new LineDto(l.getSequence(), l.getDescription(), l.getLineTotal().getAmount())).toList()
+                inv.getLines().stream().map(l -> new LineDto(
+                        l.getSequence(),
+                        l.getDescription(),
+                        l.getLineTotal().getAmount(),
+                        l.getQuantity(),
+                        l.getUnitPrice() != null ? l.getUnitPrice().getAmount() : null,
+                        l.getDiscountAmount() != null ? l.getDiscountAmount().getAmount() : null,
+                        l.getTaxRate(),
+                        l.getTaxAmount() != null ? l.getTaxAmount().getAmount() : null
+                )).toList()
         );
     }
 
@@ -277,7 +319,33 @@ public class InvoiceResource {
             List<LineDto> lines,
             Boolean issueImmediately
     ) {}
-    public record LineDto(int sequence, String description, BigDecimal amount) {}
+    /**
+     * Line DTO for create/update/response.
+     * Create: description + amount OR quantity+unitPrice (+ optional discountAmount, taxRate).
+     * Response: includes computed taxAmount and amount as lineTotal.
+     */
+    public record LineDto(
+            int sequence,
+            String description,
+            BigDecimal amount,
+            BigDecimal quantity,
+            BigDecimal unitPrice,
+            BigDecimal discountAmount,
+            BigDecimal taxRate,
+            BigDecimal taxAmount
+    ) {
+        /** Compact create helper used by tests. */
+        public LineDto(int sequence, String description, BigDecimal amount) {
+            this(sequence, description, amount, null, null, null, null, null);
+        }
+    }
+    public record InvoiceUpdateDto(
+            LocalDate dueDate,
+            String notes,
+            String terms,
+            String customerRef,
+            List<LineDto> lines
+    ) {}
     public record InvoiceIdDto(String id) {}
     public record InvoiceDto(String id, String invoiceNumber, String customerId, String customerRef, String currencyCode, LocalDate issueDate, LocalDate dueDate, String status, BigDecimal total, java.time.Instant issuedAt, java.time.Instant writtenOffAt, long version, List<LineDto> lines) {}
     public record PageDto(List<InvoiceDto> items, String nextCursor, long total) {}

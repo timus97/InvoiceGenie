@@ -16,7 +16,7 @@ Extensible for future AP and GL modules.
 | **Git** | Any recent | Yes | Source control |
 | **Docker Desktop** (or Postgres 15+) | Recent | Optional | Postgres / full stack |
 | **curl** or **Postman** | — | Optional | API smoke tests |
-| **Kafka** | — | No (today) | Messaging is stubbed via outbox |
+| **Kafka** | — | Optional | Outbox always writes DB; Kafka emit via `SmallRyeOutboxKafkaSender` when `OUTBOX_KAFKA_ENABLED=true`. HTTP webhooks delivered separately. |
 
 **Check before first run:**
 
@@ -60,8 +60,6 @@ Or use the helper scripts:
 ./scripts/dev-up.ps1
 ```
 
-**Legacy alias:** `-Dquarkus.profile=sqlite` still works (same as `dev`); it is **not** a SQLite file database.
-
 ### Postgres path (production-like)
 
 ```bash
@@ -81,10 +79,20 @@ Default JDBC: `jdbc:postgresql://localhost:5432/invoicegenie` · user/pass `ar`/
 ### Full Docker stack
 
 ```bash
+cp .env.example .env   # set POSTGRES_PASSWORD and INVOICEGENIE_API_KEYS
 docker compose up -d --build
 ```
 
-App: `http://localhost:8080` · Postgres: `localhost:5432`.
+App: `http://localhost:8080` · Web: `http://localhost:3000` · Postgres: `localhost:5432`.
+
+**Production-hardened stack** (TLS edge nginx, private DB port, security defaults):
+
+```bash
+# Place certs under certs/fullchain.pem + certs/privkey.pem (see docs/deploy/)
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Details: [docs/deploy/PROD_EDGE_TLS.md](docs/deploy/PROD_EDGE_TLS.md).
 
 ### Web GUI (Next.js)
 
@@ -104,11 +112,30 @@ npm run dev
 | URL | Description |
 |-----|-------------|
 | `http://localhost:3000` | AR console (Dashboard, Customers, Invoices, …) |
-| Settings → tenant | Sets `X-Tenant-Id` (default smoke UUID below) |
+| `http://localhost:3000/login` | Web login (username/password JWT or API key session) |
+| Settings → tenant | Dev only when `NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE=true` |
 
 Default smoke tenant: `00000000-0000-0000-0000-000000000001`
 
-More detail: [web/README.md](web/README.md).
+**Production web:** set `NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE=false` (docker image default). Tenant comes from login; free UUID override is hidden.
+
+### Security env vars (API + web)
+
+| Variable | Purpose |
+|----------|---------|
+| `INVOICEGENIE_SECURITY_ENABLED` | `true` in `%prod` (fail-closed if false) |
+| `INVOICEGENIE_SECURITY_MODE` | `api-key` \| `jwt` \| `hybrid` (JWT or API key) |
+| `INVOICEGENIE_API_KEYS` | `key:tenantUuid,...` for M2M / API-key login |
+| `INVOICEGENIE_JWT_SECRET` | HS256 secret (≥16 chars in prod) |
+| `INVOICEGENIE_JWT_TTL_SECONDS` | JWT lifetime (default `28800`) |
+| `INVOICEGENIE_SECURITY_USERS` | `user:pass:tenant:ROLE1\|ROLE2,...` for web username login |
+| `INVOICEGENIE_SECURITY_ALLOW_OPENAPI` | `false` in prod |
+| `NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE` | **`false` in prod** — hide free UUID override |
+| `NEXT_PUBLIC_API_KEY` | Optional demo fallback only; prefer `/login` |
+
+Login: `POST /api/v1/auth/login` with `{username,password}` or `{apiKey}`.
+
+More detail: [web/README.md](web/README.md), [.env.example](.env.example).
 
 ### Endpoints once running
 
@@ -180,16 +207,25 @@ mvn -pl ar-bootstrap -Dquarkus.profile=dev -Dquarkus.kafka.devservices.enabled=f
 mvn -pl ar-bootstrap -Dquarkus.kafka.devservices.enabled=false quarkus:dev
 ```
 
-### Dev profile notes (`dev` / legacy `sqlite`)
+### Dev profile notes (`dev`)
 
 | Fact | Detail |
 |------|--------|
-| Database | **H2 in-memory**, not SQLite file DB |
+| Database | **H2 in-memory** |
 | JDBC URL | `jdbc:h2:mem:testdb` |
 | Port | **8080** (same as default; override with `-Dquarkus.http.port`) |
 | Schema | Hibernate `generation: update` from entities |
 | Data | Lost on process exit |
 | Kafka | Not required; disable Dev Services with `-Dquarkus.kafka.devservices.enabled=false` |
+| Packaged jar | **Cannot** switch to H2 via runtime profile alone (DEF-BE-007) — use `quarkus:dev` for H2 |
+
+### Messaging (outbox, Kafka, webhooks)
+
+| Path | Default | How to enable |
+|------|---------|----------------|
+| Transactional outbox table | On | Always written by `KafkaEventPublisher` |
+| Kafka topic publish | Off | `OUTBOX_KAFKA_ENABLED=true` + bootstrap servers (`SmallRyeOutboxKafkaSender`) |
+| Customer HTTP webhooks | On | `WEBHOOK_DELIVERY_ENABLED` (HMAC + SSRF checks + retries) |
 
 ### API Testing with cURL / Postman
 
@@ -550,11 +586,13 @@ curl -X POST http://localhost:8080/api/v1/credit-notes/{creditNoteId}/apply \
 ```
 
 **Design Docs:**
-- [docs/ONBOARDING.md](docs/ONBOARDING.md) — architecture blueprint, module map, known gaps, local runbook.
+- [docs/ONBOARDING.md](docs/ONBOARDING.md) — architecture blueprint, module map, known gaps, local runbook (aligned 2026-07-24).
+- [docs/PRODUCT_OWNER_STORIES.md](docs/PRODUCT_OWNER_STORIES.md) — ordered eng stories + acceptance criteria.
+- [docs/FEATURE_PRIORITY_BACKLOG.md](docs/FEATURE_PRIORITY_BACKLOG.md) — prioritized incomplete/missing features & refactors (residual table).
 - [docs/SCHEMA.md](docs/SCHEMA.md) — full SQL schema documentation, ER diagram, design decisions.
-- [docs/FEATURE_PRIORITY_BACKLOG.md](docs/FEATURE_PRIORITY_BACKLOG.md) — prioritized incomplete/missing features & refactors.
 - [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) — production requirements + local machine verification.
-- [docs/sql/001_init_ar_schema.sql](docs/sql/001_init_ar_schema.sql) — executable PostgreSQL migration.
+- [docs/deploy/PROD_EDGE_TLS.md](docs/deploy/PROD_EDGE_TLS.md) — edge TLS + prod compose hardening.
+- [docs/sql/001_init_ar_schema.sql](docs/sql/001_init_ar_schema.sql) — historical SQL reference (Flyway V1–V7 is source of truth).
 
 ---
 

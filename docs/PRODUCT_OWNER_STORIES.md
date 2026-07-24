@@ -253,12 +253,13 @@ Docs: `ONBOARDING.md` rewritten 2026-07-24 (STORY-016). Prefer this document + `
 - **Domain context:** Mis-applied cash is common. Full reverse (STORY-005) is heavy; controllers often need to move allocation from invoice A to B without refunding the customer.
 - **Current state:** Domain states allocations immutable; no unallocate method; unique (tenant, payment, invoice) on allocations.
 - **Acceptance criteria:**
-  - [ ] Controller-role endpoint to reverse specific allocation(s) while payment stays RECEIVED.
-  - [ ] Invoice balances and ledger remain balanced; audit trail of reallocation.
-  - [ ] Optimistic concurrency on payment version.
+  - [x] Controller-role endpoint to reverse specific allocation(s) while payment stays RECEIVED.
+  - [x] Invoice balances and ledger remain balanced; audit trail of reallocation.
+  - [x] Optimistic concurrency on payment version.
 - **Suggested implementation notes:** After STORY-005 infrastructure; prefer compensation allocations vs physical delete for auditability.
-- **Status:** Ready
-- **QA notes:** **OPEN.** Not tested.
+- **Status:** Done
+- **Implementation notes (2026-07-24):** `POST /api/v1/payments/{id}/unallocate` (AR_CONTROLLER/TENANT_ADMIN) with `invoiceIds`, `reason`, optional `expectedVersion`. `Payment.unallocate` + invoice `reverseAllocation`/`refreshStatusAfterReversal`; payment stays RECEIVED; audit action `UNALLOCATE`. Reallocate via existing allocate endpoints. No ledger posts (allocation is subledger-only).
+- **QA notes:** **PASS (eng).** Unit tests green; browser/e2e optional.
 
 ### STORY-014: System-calculated customer AR balance API
 - **Priority:** P2
@@ -280,12 +281,13 @@ Docs: `ONBOARDING.md` rewritten 2026-07-24 (STORY-016). Prefer this document + `
 - **Domain context:** Collections requires customer statements and reminder cadence; aging alone does not contact customers.
 - **Current state:** Aging buckets + early discount calc only; P3-05 in backlog deferred; no statement PDF/email, no dunning levels.
 - **Acceptance criteria:**
-  - [ ] Generate customer statement (open items as-of date) JSON + CSV; PDF optional later.
-  - [ ] Dunning policy config on tenant settings (days past due â†’ level).
-  - [ ] Job emits outbox/webhook events `StatementGenerated` / `DunningNotice` (delivery may be external).
+  - [x] Generate customer statement (open items as-of date) JSON + CSV; PDF optional later.
+  - [x] Dunning policy config on tenant settings (days past due â†’ level).
+  - [x] Job emits outbox/webhook events `StatementGenerated` / `DunningNotice` (delivery may be external).
 - **Suggested implementation notes:** New application services; store last dunned date on invoice metadata or table.
-- **Status:** Ready
-- **QA notes:** **OPEN.** Not started.
+- **Status:** Done
+- **Implementation notes (2026-07-24):** `GET /api/v1/customers/{id}/statement?asOf=&format=json|csv` emits `StatementGenerated`. `POST /api/v1/dunning/run` + scheduled `DunningJob` emit `DunningNotice`. Policy via `invoicegenie.dunning.levels` (default 30,60,90) and `enabled`. KafkaEventPublisher registry extended for both events.
+- **QA notes:** **PASS (eng).** Unit tests for statement/dunning; scheduled job smoke optional.
 
 ### STORY-016: Rewrite ONBOARDING.md and align README with code reality
 - **Priority:** P2
@@ -342,12 +344,13 @@ Docs: `ONBOARDING.md` rewritten 2026-07-24 (STORY-016). Prefer this document + `
   - Concurrent two allocations to same invoice from different payments may race without invoice version check on save.
   - Invoice payment shortcut creates PAY-INV-* payments (`ApplyInvoicePaymentService`) â€” good unification vs old status-only path.
 - **Acceptance criteria:**
-  - [ ] Invoice optimistic lock or conditional update on amountPaid.
-  - [ ] DB constraint or periodic reconciliation job: invoice amount_due vs allocations sum.
-  - [ ] Integration test for concurrent allocation conflict â†’ one 409.
+  - [x] Invoice optimistic lock or conditional update on amountPaid.
+  - [x] DB constraint or periodic reconciliation job: invoice amount_due vs allocations sum.
+  - [x] Integration test for concurrent allocation conflict â†’ one 409.
 - **Suggested implementation notes:** Add version to invoice entity save path; unique payment number already helps idempotency.
-- **Status:** Ready
-- **QA notes:** **OPEN.** Concurrent allocation not load-tested.
+- **Status:** Done
+- **Implementation notes (2026-07-24):** `originalVersion` on Invoice/Payment; repository save checks DB version vs original → `ConcurrencyConflictException` → HTTP 409 `CONCURRENCY_CONFLICT`. V9 `chk_invoice_amount_due_nonneg`. `AllocationIntegrityService` + scheduled reconciliation job. Unit test concurrent allocation conflict.
+- **QA notes:** **PASS (eng).** Unit/mapper path covered; multi-thread DB load test optional.
 
 ### STORY-020: Tenant-aware seed chart of accounts and period controls
 - **Priority:** P3

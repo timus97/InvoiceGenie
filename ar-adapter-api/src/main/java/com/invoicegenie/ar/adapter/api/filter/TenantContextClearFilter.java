@@ -1,5 +1,6 @@
 package com.invoicegenie.ar.adapter.api.filter;
 
+import com.invoicegenie.shared.tenant.ActorContext;
 import com.invoicegenie.shared.tenant.DbTenantContext;
 import com.invoicegenie.shared.tenant.TenantContext;
 
@@ -39,6 +40,7 @@ public class TenantContextClearFilter implements ContainerResponseFilter {
             // best-effort
         } finally {
             TenantContext.clear();
+            ActorContext.clear();
         }
     }
 }

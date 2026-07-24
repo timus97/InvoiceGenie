@@ -1,11 +1,15 @@
 package com.invoicegenie.ar.adapter.api.security;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Parses configured API keys: {@code key1:tenant-uuid,key2:tenant-uuid}.
@@ -94,10 +98,56 @@ public final class ApiKeyRegistry {
                 return Optional.empty();
             }
             String sub = extractJsonString(payloadJson, "sub");
-            return Optional.of(new JwtClaims(tenantId, sub != null ? sub : "jwt-subject"));
+            Set<String> roles = extractJsonStringArray(payloadJson, "roles");
+            return Optional.of(new JwtClaims(tenantId, sub != null ? sub : "jwt-subject", roles));
         } catch (Exception e) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * Extracts a JSON string array claim, e.g. {@code "roles":["AR_CLERK","AR_AUDITOR"]}.
+     */
+    static Set<String> extractJsonStringArray(String json, String key) {
+        Set<String> out = new LinkedHashSet<>();
+        if (json == null || key == null) {
+            return out;
+        }
+        String pattern = "\"" + key + "\"";
+        int idx = json.indexOf(pattern);
+        if (idx < 0) {
+            return out;
+        }
+        int colon = json.indexOf(':', idx + pattern.length());
+        if (colon < 0) {
+            return out;
+        }
+        int bracket = json.indexOf('[', colon + 1);
+        if (bracket < 0) {
+            return out;
+        }
+        int end = json.indexOf(']', bracket + 1);
+        if (end < 0) {
+            return out;
+        }
+        String body = json.substring(bracket + 1, end);
+        int i = 0;
+        while (i < body.length()) {
+            int q1 = body.indexOf('"', i);
+            if (q1 < 0) {
+                break;
+            }
+            int q2 = body.indexOf('"', q1 + 1);
+            if (q2 < 0) {
+                break;
+            }
+            String v = body.substring(q1 + 1, q2).trim();
+            if (!v.isEmpty()) {
+                out.add(v.toUpperCase(Locale.ROOT));
+            }
+            i = q2 + 1;
+        }
+        return out;
     }
 
     private static String padBase64(String s) {
@@ -157,5 +207,14 @@ public final class ApiKeyRegistry {
         }
     }
 
-    public record JwtClaims(String tenantId, String subject) {}
+    public record JwtClaims(String tenantId, String subject, Set<String> roles) {
+        public JwtClaims {
+            roles = roles == null ? Set.of() : Set.copyOf(roles);
+        }
+
+        /** Back-compat constructor without roles. */
+        public JwtClaims(String tenantId, String subject) {
+            this(tenantId, subject, Set.of());
+        }
+    }
 }

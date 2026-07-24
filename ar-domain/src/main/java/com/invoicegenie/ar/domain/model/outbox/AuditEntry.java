@@ -1,6 +1,7 @@
 package com.invoicegenie.ar.domain.model.outbox;
 
 import com.invoicegenie.shared.domain.TenantId;
+import com.invoicegenie.shared.tenant.ActorContext;
 
 import java.time.Instant;
 import java.util.Objects;
@@ -53,30 +54,45 @@ public final class AuditEntry {
         this.createdAt = createdAt != null ? createdAt : Instant.now();
     }
 
-    // Factory methods for common actions
+    // Factory methods for common actions — IP/UA filled from ActorContext when present (STORY-012)
     public static AuditEntry create(TenantId tenantId, String entityType, UUID entityId,
                                     String entityRef, UUID actorId, String afterState) {
-        return new AuditEntry(UUID.randomUUID(), tenantId, entityType, entityId,
-                entityRef, "CREATE", actorId, "USER", null, afterState, null, null, null);
+        return fromContext(tenantId, entityType, entityId, entityRef, "CREATE",
+                actorId, null, afterState);
     }
 
     public static AuditEntry update(TenantId tenantId, String entityType, UUID entityId,
                                     String entityRef, UUID actorId, String beforeState, String afterState) {
-        return new AuditEntry(UUID.randomUUID(), tenantId, entityType, entityId,
-                entityRef, "UPDATE", actorId, "USER", beforeState, afterState, null, null, null);
+        return fromContext(tenantId, entityType, entityId, entityRef, "UPDATE",
+                actorId, beforeState, afterState);
     }
 
     public static AuditEntry delete(TenantId tenantId, String entityType, UUID entityId,
                                     String entityRef, UUID actorId, String beforeState) {
-        return new AuditEntry(UUID.randomUUID(), tenantId, entityType, entityId,
-                entityRef, "DELETE", actorId, "USER", beforeState, null, null, null, null);
+        return fromContext(tenantId, entityType, entityId, entityRef, "DELETE",
+                actorId, beforeState, null);
     }
 
     public static AuditEntry transition(TenantId tenantId, String entityType, UUID entityId,
                                         String entityRef, UUID actorId, String action,
                                         String beforeState, String afterState) {
+        return fromContext(tenantId, entityType, entityId, entityRef, action,
+                actorId, beforeState, afterState);
+    }
+
+    private static AuditEntry fromContext(TenantId tenantId, String entityType, UUID entityId,
+                                          String entityRef, String action, UUID actorId,
+                                          String beforeState, String afterState) {
+        ActorContext.Actor ctx = ActorContext.current().orElse(null);
+        UUID resolvedActor = actorId != null ? actorId : (ctx != null ? ctx.actorId() : null);
+        // Explicit actorId keeps USER (legacy API); otherwise use request actor type
+        String actorType = actorId != null
+                ? "USER"
+                : (ctx != null && ctx.actorType() != null ? ctx.actorType() : "USER");
+        String ip = ctx != null ? ctx.ipAddress() : null;
+        String ua = ctx != null ? ctx.userAgent() : null;
         return new AuditEntry(UUID.randomUUID(), tenantId, entityType, entityId,
-                entityRef, action, actorId, "USER", beforeState, afterState, null, null, null);
+                entityRef, action, resolvedActor, actorType, beforeState, afterState, ip, ua, null);
     }
 
     // Accessors

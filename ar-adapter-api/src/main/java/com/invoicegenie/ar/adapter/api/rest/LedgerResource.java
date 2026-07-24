@@ -49,7 +49,7 @@ public class LedgerResource {
     public Response getAccountBalance(@PathParam("account") String accountName,
                                        @QueryParam("currency") @DefaultValue("USD") String currency) {
         try {
-            Account account = Account.valueOf(accountName.toUpperCase());
+            Account account = resolveAccount(accountName);
             var tenantId = TenantContext.getCurrentTenant();
             BigDecimal balance = ledgerQueryUseCase.getAccountBalance(tenantId, account, currency);
             return Response.ok(new BalanceDto(account.name(), balance, currency)).build();
@@ -169,4 +169,19 @@ public class LedgerResource {
             BigDecimal totalDebit,
             BigDecimal totalCredit
     ) {}
+
+    /**
+     * Resolves enum account names and common aliases used by the UI.
+     */
+    static Account resolveAccount(String accountName) {
+        if (accountName == null || accountName.isBlank()) {
+            throw new IllegalArgumentException("account is required");
+        }
+        String key = accountName.trim().toUpperCase().replace('-', '_').replace(' ', '_');
+        return switch (key) {
+            case "ACCOUNTS_RECEIVABLE", "ACCOUNT_RECEIVABLE", "RECEIVABLE" -> Account.AR;
+            case "ACCOUNTS_PAYABLE", "ACCOUNT_PAYABLE", "PAYABLE" -> Account.AP;
+            default -> Account.valueOf(key);
+        };
+    }
 }

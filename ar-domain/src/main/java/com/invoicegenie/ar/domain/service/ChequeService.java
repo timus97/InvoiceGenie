@@ -66,19 +66,30 @@ public class ChequeService {
     }
 
     /**
+     * Clear cheque status only (DEPOSITED → CLEARED). Ledger/payment are owned by application layer
+     * via RecordPayment so we do not double-post.
+     */
+    public ClearResult clearStatusOnly(TenantId tenantId, Cheque cheque) {
+        try {
+            cheque.clear();
+            return new ClearResult(cheque, cheque.getPaymentId(), List.of(), true,
+                    "Cheque cleared successfully");
+        } catch (Exception e) {
+            return new ClearResult(cheque, null, List.of(), false, e.getMessage());
+        }
+    }
+
+    /**
      * Clear cheque (bank confirmed payment).
-     * Creates ledger entries: Debit Bank, Credit AR
+     * Legacy helper that also builds Dr Bank / Cr AR entries — prefer application-layer payment path.
      */
     public ClearResult clear(TenantId tenantId, Cheque cheque) {
         try {
             cheque.clear();
-            
-            // Create ledger entries for cleared cheque
-            // Note: Actual payment allocation would be done by PaymentAllocationService
+
             List<LedgerEntry> entries = new ArrayList<>();
             UUID transactionId = UUID.randomUUID();
-            
-            // Debit Bank
+
             entries.add(new LedgerEntry(
                     Account.BANK,
                     cheque.getAmount(),
@@ -88,8 +99,7 @@ public class ChequeService {
                     "CHEQUE",
                     cheque.getId()
             ));
-            
-            // Credit AR (payment received)
+
             entries.add(new LedgerEntry(
                     Account.AR,
                     cheque.getAmount(),
@@ -99,8 +109,8 @@ public class ChequeService {
                     "CHEQUE",
                     cheque.getId()
             ));
-            
-            return new ClearResult(cheque, cheque.getPaymentId(), entries, true, 
+
+            return new ClearResult(cheque, cheque.getPaymentId(), entries, true,
                     "Cheque cleared successfully");
         } catch (Exception e) {
             return new ClearResult(cheque, null, List.of(), false, e.getMessage());
@@ -108,42 +118,56 @@ public class ChequeService {
     }
 
     /**
+     * Bounce status only (DEPOSITED|CLEARED → BOUNCED). Cash reverse is application responsibility.
+     */
+    public BounceResult bounceStatusOnly(TenantId tenantId, Cheque cheque, String reason) {
+        try {
+            Cheque.ChequeBouncedResult bouncedResult = cheque.bounce(reason);
+            return new BounceResult(cheque, List.of(), bouncedResult.invoiceIds(), true,
+                    "Cheque bounced: " + reason);
+        } catch (Exception e) {
+            return new BounceResult(cheque, List.of(), List.of(), false, e.getMessage());
+        }
+    }
+
+    /**
      * Bounce cheque (bank returned cheque).
-     * Creates reverse ledger entries and returns affected invoices for reopening.
+     * Builds reverse ledger entries only when a payment was linked (cleared path).
      */
     public BounceResult bounce(TenantId tenantId, Cheque cheque, String reason) {
         try {
+            boolean hadPayment = cheque.getPaymentId() != null
+                    || cheque.getStatus() == ChequeStatus.CLEARED;
             Cheque.ChequeBouncedResult bouncedResult = cheque.bounce(reason);
-            
-            // Create reverse ledger entries
-            // If cheque was deposited, we need to reverse: Debit AR, Credit Bank
+
             List<LedgerEntry> reverseEntries = new ArrayList<>();
-            UUID transactionId = UUID.randomUUID();
-            
-            // Debit AR (customer still owes)
-            reverseEntries.add(new LedgerEntry(
-                    Account.AR,
-                    cheque.getAmount(),
-                    EntryType.DEBIT,
-                    "Cheque " + cheque.getChequeNumber() + " bounced - " + reason,
-                    transactionId,
-                    "CHEQUE_BOUNCE",
-                    cheque.getId()
-            ));
-            
-            // Credit Bank (reverse the deposit)
-            reverseEntries.add(new LedgerEntry(
-                    Account.BANK,
-                    cheque.getAmount(),
-                    EntryType.CREDIT,
-                    "Cheque " + cheque.getChequeNumber() + " bounced - " + reason,
-                    transactionId,
-                    "CHEQUE_BOUNCE",
-                    cheque.getId()
-            ));
-            
-            return new BounceResult(cheque, reverseEntries, 
-                    bouncedResult.invoiceIds(), true, 
+            // Only reverse cash if the cheque had been cleared with a payment (or legacy clear ledger)
+            if (hadPayment) {
+                UUID transactionId = UUID.randomUUID();
+
+                reverseEntries.add(new LedgerEntry(
+                        Account.AR,
+                        cheque.getAmount(),
+                        EntryType.DEBIT,
+                        "Cheque " + cheque.getChequeNumber() + " bounced - " + reason,
+                        transactionId,
+                        "CHEQUE_BOUNCE",
+                        cheque.getId()
+                ));
+
+                reverseEntries.add(new LedgerEntry(
+                        Account.BANK,
+                        cheque.getAmount(),
+                        EntryType.CREDIT,
+                        "Cheque " + cheque.getChequeNumber() + " bounced - " + reason,
+                        transactionId,
+                        "CHEQUE_BOUNCE",
+                        cheque.getId()
+                ));
+            }
+
+            return new BounceResult(cheque, reverseEntries,
+                    bouncedResult.invoiceIds(), true,
                     "Cheque bounced: " + reason);
         } catch (Exception e) {
             return new BounceResult(cheque, List.of(), List.of(), false, e.getMessage());

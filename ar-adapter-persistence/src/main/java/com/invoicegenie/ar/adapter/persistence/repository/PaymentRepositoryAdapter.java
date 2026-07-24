@@ -83,6 +83,33 @@ public class PaymentRepositoryAdapter implements PaymentRepository {
     }
 
     @Override
+    public List<Payment> findByTenantAndCustomer(TenantId tenantId, CustomerId customerId) {
+        List<PaymentEntity> payments = em.createQuery(
+                        "SELECT p FROM PaymentEntity p WHERE p.tenantId = :tenantId AND p.customerId = :customerId ORDER BY p.paymentDate DESC, p.createdAt DESC",
+                        PaymentEntity.class)
+                .setParameter("tenantId", tenantId.getValue())
+                .setParameter("customerId", customerId.getValue())
+                .getResultList();
+        return payments.stream()
+                .map(p -> mapper.toDomain(p, loadAllocations(tenantId, PaymentId.of(p.getId()))))
+                .toList();
+    }
+
+    @Override
+    public List<Payment> findByTenant(TenantId tenantId, int limit) {
+        int capped = Math.max(1, Math.min(limit > 0 ? limit : 50, 200));
+        List<PaymentEntity> payments = em.createQuery(
+                        "SELECT p FROM PaymentEntity p WHERE p.tenantId = :tenantId ORDER BY p.paymentDate DESC, p.createdAt DESC",
+                        PaymentEntity.class)
+                .setParameter("tenantId", tenantId.getValue())
+                .setMaxResults(capped)
+                .getResultList();
+        return payments.stream()
+                .map(p -> mapper.toDomain(p, loadAllocations(tenantId, PaymentId.of(p.getId()))))
+                .toList();
+    }
+
+    @Override
     public List<PaymentAllocation> findAllocationsByTenantAndInvoice(TenantId tenantId, InvoiceId invoiceId) {
         return em.createQuery(
                         "SELECT a FROM PaymentAllocationEntity a WHERE a.tenantId = :tenantId AND a.invoiceId = :invoiceId ORDER BY a.allocatedAt",

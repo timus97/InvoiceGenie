@@ -99,7 +99,7 @@ class ChequeServiceTest {
     class Bounce {
 
         @Test
-        @DisplayName("should bounce cheque and create reverse entries")
+        @DisplayName("should bounce deposited cheque without reverse entries (no payment yet)")
         void shouldBounceCheque() {
             Cheque cheque = createCheque();
             cheque.deposit();
@@ -108,8 +108,24 @@ class ChequeServiceTest {
             
             assertTrue(result.success());
             assertEquals(ChequeStatus.BOUNCED, result.cheque().getStatus());
-            assertEquals(2, result.reverseEntries().size());
+            // DEPOSITED-only bounce is status change; cash reverse only after clear/payment
+            assertTrue(result.reverseEntries().isEmpty());
             assertEquals("Insufficient funds", result.cheque().getBounceReason());
+        }
+
+        @Test
+        @DisplayName("should reverse ledger when bouncing a cleared cheque with payment")
+        void shouldReverseWhenClearedWithPayment() {
+            Cheque cheque = createCheque();
+            cheque.deposit();
+            cheque.clear();
+            cheque.linkPayment(UUID.randomUUID());
+
+            // reconstitute to DEPOSITED path isn't needed — bounce from CLEARED
+            ChequeService.BounceResult result = service.bounce(tenantId, cheque, "NSF after clear");
+
+            assertTrue(result.success());
+            assertEquals(2, result.reverseEntries().size());
         }
 
         @Test
@@ -147,9 +163,9 @@ class ChequeServiceTest {
         }
 
         @Test
-        @DisplayName("should return empty for terminal states")
+        @DisplayName("CLEARED can bounce; BOUNCED is terminal")
         void shouldReturnEmptyForTerminalStates() {
-            assertTrue(service.getValidTransitions(ChequeStatus.CLEARED).isEmpty());
+            assertTrue(service.getValidTransitions(ChequeStatus.CLEARED).contains(ChequeStatus.BOUNCED));
             assertTrue(service.getValidTransitions(ChequeStatus.BOUNCED).isEmpty());
         }
     }

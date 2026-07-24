@@ -147,6 +147,78 @@ public final class LedgerService {
     }
 
     /**
+     * Reverses a payment received journal (e.g. refund, reverse, cheque bounce after clear).
+     *
+     * <pre>
+     * Dr AR              $amount
+     *     Cr Bank              $amount
+     * </pre>
+     */
+    public TransactionResult recordPaymentReversal(TenantId tenantId, UUID paymentId,
+                                                   String paymentNumber, Money amount) {
+        UUID transactionId = UUID.randomUUID();
+        List<LedgerEntry> entries = new ArrayList<>();
+
+        entries.add(new LedgerEntry(
+                Account.AR,
+                amount,
+                EntryType.DEBIT,
+                "Payment " + paymentNumber + " reversed",
+                transactionId,
+                "PAYMENT_REVERSAL",
+                paymentId
+        ));
+
+        entries.add(new LedgerEntry(
+                Account.BANK,
+                amount,
+                EntryType.CREDIT,
+                "Payment " + paymentNumber + " reversed",
+                transactionId,
+                "PAYMENT_REVERSAL",
+                paymentId
+        ));
+
+        return new TransactionResult(transactionId, entries, validateBalanced(entries));
+    }
+
+    /**
+     * Credit note applied to reduce AR (discount / adjustment memo).
+     *
+     * <pre>
+     * Dr Revenue (or discount)  $amount
+     *     Cr AR                       $amount
+     * </pre>
+     */
+    public TransactionResult recordCreditNoteApplied(TenantId tenantId, UUID creditNoteId,
+                                                     String creditNoteNumber, Money amount) {
+        UUID transactionId = UUID.randomUUID();
+        List<LedgerEntry> entries = new ArrayList<>();
+
+        entries.add(new LedgerEntry(
+                Account.REVENUE,
+                amount,
+                EntryType.DEBIT,
+                "Credit note " + creditNoteNumber + " applied",
+                transactionId,
+                "CREDIT_NOTE",
+                creditNoteId
+        ));
+
+        entries.add(new LedgerEntry(
+                Account.AR,
+                amount,
+                EntryType.CREDIT,
+                "Credit note " + creditNoteNumber + " reduces AR",
+                transactionId,
+                "CREDIT_NOTE",
+                creditNoteId
+        ));
+
+        return new TransactionResult(transactionId, entries, validateBalanced(entries));
+    }
+
+    /**
      * Creates ledger entries when an invoice is written off.
      * 
      * <p>Journal entry:

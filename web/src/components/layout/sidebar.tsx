@@ -13,6 +13,10 @@ import {
   StickyNote,
   BookOpen,
   Settings,
+  Building2,
+  ArrowLeftRight,
+  ScrollText,
+  Webhook,
 } from "lucide-react";
 
 const NAV = [
@@ -24,6 +28,10 @@ const NAV = [
   { href: "/aging", label: "Aging", icon: CalendarClock },
   { href: "/credit-notes", label: "Credit notes", icon: StickyNote },
   { href: "/ledger", label: "Ledger", icon: BookOpen },
+  { href: "/tenants", label: "Tenants", icon: Building2 },
+  { href: "/exchange-rates", label: "FX rates", icon: ArrowLeftRight },
+  { href: "/audit", label: "Audit", icon: ScrollText },
+  { href: "/webhooks", label: "Webhooks", icon: Webhook },
   { href: "/settings", label: "Settings", icon: Settings },
 ] as const;
 

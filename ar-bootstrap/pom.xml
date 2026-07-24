@@ -10,7 +10,7 @@
     </parent>
     <artifactId>ar-bootstrap</artifactId>
     <name>AR Bootstrap</name>
-    <description>Quarkus app — wires adapters and config</description>
+    <description>Quarkus app â€” wires adapters and config</description>
     <dependencies>
         <!-- Explicit: ArApplication wires application services/ports -->
         <dependency>
@@ -44,6 +44,18 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-smallrye-health</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-micrometer-registry-prometheus</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-opentelemetry</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-logging-json</artifactId>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>

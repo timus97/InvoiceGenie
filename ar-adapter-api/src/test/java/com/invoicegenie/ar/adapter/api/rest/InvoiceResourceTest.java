@@ -4,6 +4,7 @@ import com.invoicegenie.ar.application.port.inbound.ApplyInvoicePaymentUseCase;
 import com.invoicegenie.ar.application.port.inbound.GetInvoiceUseCase;
 import com.invoicegenie.ar.application.port.inbound.InvoiceLifecycleUseCase;
 import com.invoicegenie.ar.application.port.inbound.IssueInvoiceUseCase;
+import com.invoicegenie.ar.application.port.inbound.InvoiceVersionUseCase;
 import com.invoicegenie.ar.application.port.inbound.ListInvoicesUseCase;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
@@ -40,14 +41,20 @@ class InvoiceResourceTest {
     @Mock private ListInvoicesUseCase listInvoicesUseCase;
     @Mock private InvoiceLifecycleUseCase lifecycleUseCase;
     @Mock private ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase;
+    @Mock InvoiceVersionUseCase invoiceVersionUseCase;
 
     private InvoiceResource resource;
     private TenantId tenantId;
 
     @BeforeEach
     void setUp() {
-        resource = new InvoiceResource(issueInvoiceUseCase, getInvoiceUseCase, listInvoicesUseCase,
-                lifecycleUseCase, applyInvoicePaymentUseCase);
+        resource = new InvoiceResource(
+                issueInvoiceUseCase,
+                getInvoiceUseCase,
+                listInvoicesUseCase,
+                lifecycleUseCase,
+                applyInvoicePaymentUseCase,
+                invoiceVersionUseCase);
         tenantId = TenantId.of(UUID.randomUUID());
         TenantContext.setCurrentTenant(tenantId);
     }

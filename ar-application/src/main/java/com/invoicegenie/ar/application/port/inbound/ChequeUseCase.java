@@ -17,12 +17,20 @@ public interface ChequeUseCase {
 
     Cheque create(TenantId tenantId, CreateChequeCommand command);
 
+    /** Create many cheques (bulk OCR receive). */
+    List<Cheque> bulkCreate(TenantId tenantId, List<CreateChequeCommand> commands);
+
     Optional<ChequeService.DepositResult> deposit(TenantId tenantId, UUID chequeId);
 
     Optional<ChequeService.ClearResult> clear(TenantId tenantId, UUID chequeId);
 
     /**
-     * Bounces a cheque and reopens affected invoices via {@link InvoiceLifecycleUseCase}.
+     * Clear with optional explicit invoice allocation targets. Null/empty → FIFO or pre-linked ids.
+     */
+    Optional<ChequeService.ClearResult> clear(TenantId tenantId, UUID chequeId, List<UUID> invoiceIds);
+
+    /**
+     * Bounces a cheque. From DEPOSITED: status only. From CLEARED: reverse payment/allocations/ledger.
      */
     Optional<ChequeService.BounceResult> bounce(TenantId tenantId, UUID chequeId, String reason);
 
@@ -37,8 +45,20 @@ public interface ChequeUseCase {
             String bankName,
             String bankBranch,
             LocalDate chequeDate,
-            String notes
-    ) {}
+            String notes,
+            List<UUID> invoiceIds
+    ) {
+        public CreateChequeCommand(
+                String chequeNumber,
+                String customerId,
+                Money amount,
+                String bankName,
+                String bankBranch,
+                LocalDate chequeDate,
+                String notes) {
+            this(chequeNumber, customerId, amount, bankName, bankBranch, chequeDate, notes, List.of());
+        }
+    }
 
     record ListResult(List<Cheque> cheques, boolean success, String errorMessage) {
         public static ListResult ok(List<Cheque> cheques) {

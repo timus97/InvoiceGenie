@@ -20,14 +20,19 @@ public final class InvoiceLifecycleEngine {
         ));
         allowedTransitions.put(InvoiceStatus.PARTIALLY_PAID, EnumSet.of(
                 InvoiceStatus.PAID,
-                InvoiceStatus.OVERDUE
+                InvoiceStatus.OVERDUE,
+                InvoiceStatus.ISSUED // reopen / full allocation reverse
         ));
         allowedTransitions.put(InvoiceStatus.OVERDUE, EnumSet.of(
                 InvoiceStatus.PARTIALLY_PAID,
                 InvoiceStatus.PAID,
-                InvoiceStatus.WRITTEN_OFF
+                InvoiceStatus.WRITTEN_OFF,
+                InvoiceStatus.ISSUED
         ));
-        allowedTransitions.put(InvoiceStatus.PAID, EnumSet.of(InvoiceStatus.ISSUED)); // reopen on cheque bounce
+        allowedTransitions.put(InvoiceStatus.PAID, EnumSet.of(
+                InvoiceStatus.ISSUED,         // reopen on full reverse
+                InvoiceStatus.PARTIALLY_PAID  // partial reverse of cash
+        ));
         allowedTransitions.put(InvoiceStatus.WRITTEN_OFF, EnumSet.noneOf(InvoiceStatus.class));
     }
 

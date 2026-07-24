@@ -35,17 +35,25 @@ public class AgingApplicationService implements AgingUseCase {
 
         List<AgingService.InvoiceWithBalance> withBalances = openInvoices.stream()
                 .map(inv -> {
+                    // Prefer strong customerId; customerRef is display only
                     UUID customerId;
-                    try {
-                        customerId = UUID.fromString(inv.getCustomerRef());
-                    } catch (Exception e) {
-                        customerId = new UUID(0L, 0L);
+                    if (inv.getCustomerId() != null) {
+                        customerId = inv.getCustomerId().getValue();
+                    } else {
+                        try {
+                            customerId = UUID.fromString(inv.getCustomerRef());
+                        } catch (Exception e) {
+                            customerId = new UUID(0L, 0L);
+                        }
                     }
+                    String customerLabel = inv.getCustomerRef() != null && !inv.getCustomerRef().isBlank()
+                            ? inv.getCustomerRef()
+                            : (inv.getCustomerId() != null ? inv.getCustomerId().getValue().toString() : "UNKNOWN");
                     return new AgingService.InvoiceWithBalance(
                             inv.getId().getValue(),
                             inv.getInvoiceNumber(),
                             customerId,
-                            inv.getCustomerRef(),
+                            customerLabel,
                             inv.getBalanceDue(),
                             inv.getDueDate(),
                             inv.getStatus()

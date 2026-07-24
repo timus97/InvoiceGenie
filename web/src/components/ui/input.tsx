@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import type { InputHTMLAttributes } from "react";
+import type { InputHTMLAttributes, TextareaHTMLAttributes } from "react";
 
 export function Input({
   className,
@@ -9,6 +9,22 @@ export function Input({
     <input
       className={clsx(
         "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none ring-indigo-500 placeholder:text-zinc-400 focus:ring-2 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+/** Multi-line text field — use for long descriptions (invoice lines, notes). */
+export function Textarea({
+  className,
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <textarea
+      className={clsx(
+        "w-full min-h-[4.5rem] resize-y rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none ring-indigo-500 placeholder:text-zinc-400 focus:ring-2 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100",
         className,
       )}
       {...props}

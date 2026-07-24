@@ -13,7 +13,8 @@ import java.util.Set;
  * <pre>
  * RECEIVED  → DEPOSITED
  * DEPOSITED → CLEARED | BOUNCED
- * CLEARED, BOUNCED are terminal
+ * CLEARED   → BOUNCED (NSF / reverse after clear)
+ * BOUNCED is terminal
  * </pre>
  */
 public final class ChequeLifecycleEngine {
@@ -24,7 +25,8 @@ public final class ChequeLifecycleEngine {
         allowedTransitions = new EnumMap<>(ChequeStatus.class);
         allowedTransitions.put(ChequeStatus.RECEIVED, EnumSet.of(ChequeStatus.DEPOSITED));
         allowedTransitions.put(ChequeStatus.DEPOSITED, EnumSet.of(ChequeStatus.CLEARED, ChequeStatus.BOUNCED));
-        allowedTransitions.put(ChequeStatus.CLEARED, EnumSet.noneOf(ChequeStatus.class));
+        // Allow bounce after clear for post-clear NSF / bank recall
+        allowedTransitions.put(ChequeStatus.CLEARED, EnumSet.of(ChequeStatus.BOUNCED));
         allowedTransitions.put(ChequeStatus.BOUNCED, EnumSet.noneOf(ChequeStatus.class));
     }
 

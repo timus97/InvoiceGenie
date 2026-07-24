@@ -5,6 +5,7 @@ import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceLine;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
+import com.invoicegenie.ar.domain.model.invoice.InvoiceVersionRepository;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceStatus;
 import com.invoicegenie.ar.domain.model.ledger.LedgerEntry;
 import com.invoicegenie.ar.domain.model.ledger.LedgerRepository;
@@ -39,6 +40,7 @@ class InvoiceLifecycleServiceTest {
     @Mock private InvoiceRepository invoiceRepository;
     @Mock private AuditRepository auditRepository;
     @Mock private LedgerRepository ledgerRepository;
+    @Mock private InvoiceVersionRepository invoiceVersionRepository;
     @Mock private ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase;
 
     private InvoiceLifecycleService service;
@@ -47,8 +49,13 @@ class InvoiceLifecycleServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new InvoiceLifecycleService(invoiceRepository, auditRepository, applyInvoicePaymentUseCase,
-                new LedgerService(), ledgerRepository);
+        service = new InvoiceLifecycleService(
+                invoiceRepository,
+                auditRepository,
+                applyInvoicePaymentUseCase,
+                new LedgerService(),
+                ledgerRepository,
+                invoiceVersionRepository);
         tenantId = TenantId.of(UUID.randomUUID());
         invoiceId = InvoiceId.generate();
     }

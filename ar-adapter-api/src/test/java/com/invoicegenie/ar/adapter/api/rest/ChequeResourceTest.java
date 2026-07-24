@@ -88,9 +88,9 @@ class ChequeResourceTest {
     @DisplayName("clear success")
     void clear() {
         Cheque c = sample();
-        when(chequeUseCase.clear(eq(tenantId), eq(c.getId())))
+        when(chequeUseCase.clear(eq(tenantId), eq(c.getId()), isNull()))
                 .thenReturn(Optional.of(new ChequeService.ClearResult(c, UUID.randomUUID(), List.of(), true, "ok")));
-        assertEquals(200, resource.clearCheque(c.getId().toString()).getStatus());
+        assertEquals(200, resource.clearCheque(c.getId().toString(), null).getStatus());
     }
 
     @Test

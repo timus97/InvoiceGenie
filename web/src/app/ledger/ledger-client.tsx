@@ -19,7 +19,7 @@ import { formatMoney } from "@/lib/money";
 export default function LedgerClient() {
   const { tenantId, ready } = useTenant();
   const searchParams = useSearchParams();
-  const [account, setAccount] = useState("ACCOUNTS_RECEIVABLE");
+  const [account, setAccount] = useState("AR");
   const [currency, setCurrency] = useState("USD");
   const [refType, setRefType] = useState(
     searchParams.get("type")?.toUpperCase() || "INVOICE",

@@ -1,4 +1,4 @@
-﻿/** Hand-written DTOs aligned with Quarkus REST adapters (regenerate from OpenAPI later). */
+/** Hand-written DTOs aligned with Quarkus REST adapters (regenerate from OpenAPI later). */
 
 export type CustomerStatus = "ACTIVE" | "BLOCKED" | "DELETED";
 
@@ -90,6 +90,7 @@ export type CreateInvoiceRequest = {
   currencyCode?: string;
   dueDate?: string;
   lines: { sequence: number; description: string; amount: number }[];
+  issueImmediately?: boolean;
 };
 
 export type InvoiceIdDto = { id: string };
@@ -115,6 +116,36 @@ export type CreatePaymentRequest = {
 export type PaymentCreatedDto = {
   id: string;
   paymentNumber: string;
+};
+
+export type PaymentStatus = "RECEIVED" | "REVERSED" | "REFUNDED" | string;
+
+export type PaymentDto = {
+  id: string;
+  paymentNumber: string;
+  customerId: string;
+  amount: number | string;
+  currencyCode: string;
+  amountUnallocated: number | string;
+  paymentDate?: string | null;
+  method: PaymentMethod | string;
+  reference?: string | null;
+  notes?: string | null;
+  status: PaymentStatus;
+  version?: number;
+  allocations?: AllocationDetailDto[];
+};
+
+export type PaymentListDto = {
+  items: PaymentDto[];
+  count: number;
+};
+
+export type PaymentReversalDto = {
+  paymentId: string;
+  status: string;
+  affectedInvoiceIds: string[];
+  message: string;
 };
 
 export type AllocationDetailDto = {
@@ -271,4 +302,71 @@ export type LedgerEntryDto = {
   referenceType?: string | null;
   referenceId?: string | null;
   createdAt?: string | null;
+};
+
+export type TenantDto = {
+  id: string;
+  code: string;
+  name: string;
+  baseCurrency: string;
+  status: string;
+  settingsJson?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export type ExchangeRateDto = {
+  id: string;
+  fromCurrency: string;
+  toCurrency: string;
+  rate: number | string;
+  effectiveDate: string;
+  source?: string | null;
+};
+
+export type AuditDto = {
+  id: string;
+  entityType: string;
+  entityId?: string | null;
+  entityRef?: string | null;
+  action: string;
+  actorType?: string | null;
+  beforeState?: string | null;
+  afterState?: string | null;
+  createdAt?: string | null;
+};
+
+export type WebhookDto = {
+  id: string;
+  url: string;
+  eventTypes: string;
+  active: boolean;
+  createdAt?: string | null;
+};
+
+export type ExtractedChequeDto = {
+  sourceFile?: string | null;
+  segmentIndex?: number;
+  chequeNumber?: string | null;
+  amount?: number | string | null;
+  currencyCode?: string | null;
+  bankName?: string | null;
+  bankBranch?: string | null;
+  chequeDate?: string | null;
+  payeeHint?: string | null;
+  notes?: string | null;
+  confidence?: number;
+  rawSnippet?: string | null;
+  completeEnough?: boolean;
+};
+
+export type OcrParseResult = {
+  cheques: ExtractedChequeDto[];
+  count: number;
+};
+
+export type OcrUploadResult = {
+  cheques: ExtractedChequeDto[];
+  count: number;
+  warnings?: string[];
 };

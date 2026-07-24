@@ -56,6 +56,40 @@ public class ChequeResource {
     }
 
     @POST
+    @Path("/bulk")
+    @Operation(summary = "Bulk create cheques (OCR batch receive)")
+    public Response bulkCreate(BulkCreateDto body) {
+        if (body == null || body.cheques() == null || body.cheques().isEmpty()) {
+            return Response.status(400)
+                    .entity(new ErrorResponse("VALIDATION_ERROR", "cheques array required"))
+                    .build();
+        }
+        try {
+            var tenantId = TenantContext.getCurrentTenant();
+            var commands = body.cheques().stream()
+                    .map(dto -> new ChequeUseCase.CreateChequeCommand(
+                            dto.chequeNumber(),
+                            dto.customerId(),
+                            Money.of(dto.amount().toString(),
+                                    dto.currencyCode() != null ? dto.currencyCode() : "USD"),
+                            dto.bankName(),
+                            dto.bankBranch(),
+                            dto.chequeDate(),
+                            dto.notes()
+                    ))
+                    .toList();
+            var created = chequeUseCase.bulkCreate(tenantId, commands);
+            return Response.status(201)
+                    .entity(created.stream().map(this::toDto).collect(Collectors.toList()))
+                    .build();
+        } catch (Exception e) {
+            return Response.status(400)
+                    .entity(new ErrorResponse("VALIDATION_ERROR", e.getMessage()))
+                    .build();
+        }
+    }
+
+    @POST
     @Path("/{id}/deposit")
     @Operation(summary = "Deposit cheque to bank (RECEIVED → DEPOSITED)")
     public Response depositCheque(@PathParam("id") String id) {
@@ -75,15 +109,21 @@ public class ChequeResource {
 
     @POST
     @Path("/{id}/clear")
-    @Operation(summary = "Clear cheque (DEPOSITED → CLEARED)")
-    public Response clearCheque(@PathParam("id") String id) {
+    @Operation(summary = "Clear cheque (DEPOSITED → CLEARED): creates CHECK payment + allocates")
+    public Response clearCheque(@PathParam("id") String id, ClearChequeDto dto) {
         var tenantId = TenantContext.getCurrentTenant();
         var chequeId = UUID.fromString(id);
+        List<UUID> invoiceIds = null;
+        if (dto != null && dto.invoiceIds() != null && !dto.invoiceIds().isEmpty()) {
+            invoiceIds = dto.invoiceIds().stream().map(UUID::fromString).toList();
+        }
 
-        return chequeUseCase.clear(tenantId, chequeId)
+        return chequeUseCase.clear(tenantId, chequeId, invoiceIds)
                 .map(result -> {
                     if (result.success()) {
-                        return Response.ok(new ClearResultDto(toDto(result.cheque()),
+                        return Response.ok(new ClearResultDto(
+                                toDto(result.cheque()),
+                                result.paymentId() != null ? result.paymentId().toString() : null,
                                 result.ledgerEntries().stream().map(this::toEntryDto).collect(Collectors.toList())))
                                 .build();
                     } else {
@@ -175,6 +215,7 @@ public class ChequeResource {
         );
     }
 
+    public record BulkCreateDto(List<CreateChequeDto> cheques) {}
     public record CreateChequeDto(String chequeNumber, String customerId, BigDecimal amount,
             String currencyCode, String bankName, String bankBranch, LocalDate chequeDate, String notes) {}
     public record ChequeDto(String id, String chequeNumber, String customerId, BigDecimal amount,
@@ -183,7 +224,8 @@ public class ChequeResource {
             LocalDate bouncedDate, String bounceReason, String status, String paymentId,
             List<String> allocatedInvoiceIds, String notes) {}
     public record BounceDto(String reason) {}
-    public record ClearResultDto(ChequeDto cheque, List<EntryDto> ledgerEntries) {}
+    public record ClearChequeDto(List<String> invoiceIds) {}
+    public record ClearResultDto(ChequeDto cheque, String paymentId, List<EntryDto> ledgerEntries) {}
     public record BounceResultDto(ChequeDto cheque, List<EntryDto> reverseEntries, List<UUID> affectedInvoices) {}
     public record EntryDto(String id, String account, BigDecimal amount, String entryType, String description) {}
 }

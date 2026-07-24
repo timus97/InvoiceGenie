@@ -4,6 +4,7 @@ import com.invoicegenie.ar.application.port.inbound.ApplyInvoicePaymentUseCase;
 import com.invoicegenie.ar.application.port.inbound.GetInvoiceUseCase;
 import com.invoicegenie.ar.application.port.inbound.InvoiceLifecycleUseCase;
 import com.invoicegenie.ar.application.port.inbound.IssueInvoiceUseCase;
+import com.invoicegenie.ar.application.port.inbound.InvoiceVersionUseCase;
 import com.invoicegenie.ar.application.port.inbound.ListInvoicesUseCase;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
@@ -39,17 +40,20 @@ public class InvoiceResource {
     private final ListInvoicesUseCase listInvoicesUseCase;
     private final InvoiceLifecycleUseCase lifecycleUseCase;
     private final ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase;
+    private final InvoiceVersionUseCase invoiceVersionUseCase;
 
     public InvoiceResource(IssueInvoiceUseCase issueInvoiceUseCase,
                            GetInvoiceUseCase getInvoiceUseCase,
                            ListInvoicesUseCase listInvoicesUseCase,
                            InvoiceLifecycleUseCase lifecycleUseCase,
-                           ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase) {
+                           ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase,
+                           InvoiceVersionUseCase invoiceVersionUseCase) {
         this.issueInvoiceUseCase = issueInvoiceUseCase;
         this.getInvoiceUseCase = getInvoiceUseCase;
         this.listInvoicesUseCase = listInvoicesUseCase;
         this.lifecycleUseCase = lifecycleUseCase;
         this.applyInvoicePaymentUseCase = applyInvoicePaymentUseCase;
+        this.invoiceVersionUseCase = invoiceVersionUseCase;
     }
 
     // ==================== CREATE ====================
@@ -282,4 +286,24 @@ public class InvoiceResource {
     public record PaymentDto(Boolean fullyPaid, BigDecimal amount) {}
     public record DueDateDto(LocalDate dueDate) {}
     public record ErrorDto(String code, String message) {}
+    @GET
+    @Path("/{id}/versions")
+    @Operation(summary = "List invoice version snapshots")
+    public Response listVersions(@PathParam("id") String id) {
+        var tenantId = TenantContext.getCurrentTenant();
+        var invoiceId = InvoiceId.of(UUID.fromString(id));
+        var versions = invoiceVersionUseCase.list(tenantId, invoiceId).stream()
+                .map(v -> new InvoiceVersionDto(
+                        v.getId().toString(),
+                        v.getInvoiceId().getValue().toString(),
+                        v.getVersion(),
+                        v.getSnapshotJson(),
+                        v.getChangeReason(),
+                        v.getCreatedAt() != null ? v.getCreatedAt().toString() : null))
+                .toList();
+        return Response.ok(versions).build();
+    }
+
+    public record InvoiceVersionDto(String id, String invoiceId, long version, String snapshot,
+                                    String changeReason, String createdAt) {}
 }

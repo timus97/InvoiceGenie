@@ -401,6 +401,29 @@ public final class Invoice {
         touch();
     }
 
+    /**
+     * After reversing allocation(s), sync status without wiping remaining amountPaid.
+     * Zero paid → ISSUED; partial paid → PARTIALLY_PAID; full still paid → PAID.
+     */
+    public void refreshStatusAfterReversal() {
+        BigDecimal paid = amountPaid.getAmount();
+        BigDecimal total = getTotal().getAmount();
+        if (paid.signum() == 0) {
+            if (status == InvoiceStatus.PAID || status == InvoiceStatus.PARTIALLY_PAID
+                    || status == InvoiceStatus.OVERDUE) {
+                if (status != InvoiceStatus.ISSUED) {
+                    transitionTo(LIFECYCLE.reopen());
+                }
+            }
+        } else if (paid.compareTo(total) < 0) {
+            if (status == InvoiceStatus.PAID) {
+                transitionTo(LIFECYCLE.markPartiallyPaid());
+            }
+            // PARTIALLY_PAID / OVERDUE / ISSUED stay as-is when still partial
+        }
+        // paid == total stays PAID
+    }
+
     public boolean canReceivePayments() {
         return isOpen() && !isWrittenOff();
     }

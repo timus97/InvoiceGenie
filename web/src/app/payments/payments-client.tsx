@@ -18,6 +18,8 @@ import {
   allocateManual,
   createPayment,
   getPaymentAllocations,
+  listPayments,
+  reversePayment,
 } from "@/lib/api/payments";
 import { formatMoney } from "@/lib/money";
 import { ApiError } from "@/lib/errors";
@@ -62,8 +64,14 @@ export default function PaymentsClient() {
       listCustomers(tenantId, { status: "ACTIVE", signal }),
   });
 
+  const paymentsList = useQuery({
+    queryKey: ["payments", tenantId],
+    enabled: ready,
+    queryFn: ({ signal }) => listPayments(tenantId, { limit: 50, signal }),
+  });
+
   const openInvoices = useQuery({
-    queryKey: ["invoices", tenantId, "open-for-alloc"],
+    queryKey: ["invoices", tenantId, "open-for-alloc", currencyCode],
     enabled: ready && !!paymentId,
     queryFn: async ({ signal }) => {
       const pages = await Promise.all(
@@ -71,7 +79,15 @@ export default function PaymentsClient() {
           listInvoices(tenantId, { status, limit: 50, signal }),
         ),
       );
-      return pages.flatMap((p) => p.items);
+      // Same-currency only (STORY-010)
+      const payCcy = (currencyCode || "USD").toUpperCase();
+      return pages
+        .flatMap((p) => p.items)
+        .filter(
+          (inv) =>
+            !inv.currencyCode ||
+            inv.currencyCode.toUpperCase() === payCcy,
+        );
     },
   });
 
@@ -105,6 +121,7 @@ export default function PaymentsClient() {
       void queryClient.invalidateQueries({
         queryKey: ["payment-allocations", tenantId],
       });
+      void queryClient.invalidateQueries({ queryKey: ["payments", tenantId] });
     },
     onError: (err: Error) =>
       toast.error(err instanceof ApiError ? err.message : err.message),
@@ -155,6 +172,20 @@ export default function PaymentsClient() {
       toast.error(err instanceof ApiError ? err.message : err.message),
   });
 
+  const reverseMut = useMutation({
+    mutationFn: () => reversePayment(tenantId, paymentId.trim(), "Reversed via UI"),
+    onSuccess: (r) => {
+      toast.success(r.message || "Payment reversed");
+      void queryClient.invalidateQueries({ queryKey: ["payments", tenantId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["payment-allocations", tenantId, paymentId.trim()],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["invoices", tenantId] });
+    },
+    onError: (err: Error) =>
+      toast.error(err instanceof ApiError ? err.message : err.message),
+  });
+
   const invoiceOptions = useMemo(() => openInvoices.data ?? [], [openInvoices.data]);
 
   return (
@@ -163,6 +194,58 @@ export default function PaymentsClient() {
         title="Payments"
         description="Record customer payments and allocate FIFO or manually across open invoices."
       />
+
+      <Card className="mb-6">
+        <h2 className="mb-3 text-sm font-semibold">Recent payments</h2>
+        {paymentsList.isLoading ? (
+          <TableSkeleton rows={4} />
+        ) : !paymentsList.data?.items?.length ? (
+          <EmptyState title="No payments yet" description="Record a payment below." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b text-xs text-muted-foreground">
+                  <th className="py-2 pr-3">Number</th>
+                  <th className="py-2 pr-3">Date</th>
+                  <th className="py-2 pr-3">Amount</th>
+                  <th className="py-2 pr-3">Unallocated</th>
+                  <th className="py-2 pr-3">Status</th>
+                  <th className="py-2">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paymentsList.data.items.map((p) => (
+                  <tr key={p.id} className="border-b last:border-0">
+                    <td className="py-2 pr-3 font-medium">{p.paymentNumber}</td>
+                    <td className="py-2 pr-3">{p.paymentDate ?? "—"}</td>
+                    <td className="py-2 pr-3">
+                      {formatMoney(p.amount, p.currencyCode)}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {formatMoney(p.amountUnallocated, p.currencyCode)}
+                    </td>
+                    <td className="py-2 pr-3">{p.status}</td>
+                    <td className="py-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setPaymentId(p.id);
+                          setCurrencyCode(p.currencyCode || "USD");
+                        }}
+                      >
+                        Select
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
@@ -292,6 +375,14 @@ export default function PaymentsClient() {
                   onClick={() => fifoMut.mutate()}
                 >
                   {fifoMut.isPending ? "Allocating…" : "Allocate FIFO"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={reverseMut.isPending}
+                  onClick={() => reverseMut.mutate()}
+                >
+                  {reverseMut.isPending ? "Reversing…" : "Reverse payment"}
                 </Button>
               </div>
 

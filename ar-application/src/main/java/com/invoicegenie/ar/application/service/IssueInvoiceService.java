@@ -5,32 +5,41 @@ import com.invoicegenie.ar.application.port.outbound.EventPublisher;
 import com.invoicegenie.ar.application.port.outbound.IdGenerator;
 import com.invoicegenie.ar.application.port.outbound.IdempotencyStore;
 import com.invoicegenie.ar.domain.event.InvoiceIssued;
+import com.invoicegenie.ar.domain.exception.CustomerNotInvoiceableException;
 import com.invoicegenie.ar.domain.exception.IdempotencyConflictException;
+import com.invoicegenie.ar.domain.model.customer.Customer;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.customer.CustomerRepository;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceLine;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
+import com.invoicegenie.ar.domain.model.invoice.InvoiceVersionRepository;
 import com.invoicegenie.ar.domain.model.ledger.LedgerRepository;
+import com.invoicegenie.ar.domain.service.CustomerService;
+import com.invoicegenie.ar.domain.service.InvoiceSnapshotService;
 import com.invoicegenie.ar.domain.model.outbox.AuditEntry;
 import com.invoicegenie.ar.domain.model.outbox.AuditRepository;
 import com.invoicegenie.ar.domain.service.LedgerService;
 import com.invoicegenie.shared.domain.Money;
 import com.invoicegenie.shared.domain.TenantId;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
+import java.util.logging.Logger;
 import java.util.stream.IntStream;
 
 /**
  * Application service: orchestrates domain and ports. No UI; no tenant resolution (receives TenantId).
  */
 public class IssueInvoiceService implements IssueInvoiceUseCase {
+
+    private static final Logger LOG = Logger.getLogger(IssueInvoiceService.class.getName());
 
     private final InvoiceRepository invoiceRepository;
     private final CustomerRepository customerRepository;
@@ -40,6 +49,8 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
     private final LedgerService ledgerService;
     private final LedgerRepository ledgerRepository;
     private final IdempotencyStore idempotencyStore;
+    private final InvoiceVersionRepository invoiceVersionRepository;
+    private final CustomerService customerService;
 
     public IssueInvoiceService(InvoiceRepository invoiceRepository,
                                CustomerRepository customerRepository,
@@ -48,7 +59,22 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
                                AuditRepository auditRepository,
                                LedgerService ledgerService,
                                LedgerRepository ledgerRepository,
-                               IdempotencyStore idempotencyStore) {
+                               IdempotencyStore idempotencyStore,
+                               InvoiceVersionRepository invoiceVersionRepository) {
+        this(invoiceRepository, customerRepository, idGenerator, eventPublisher, auditRepository,
+                ledgerService, ledgerRepository, idempotencyStore, invoiceVersionRepository, new CustomerService());
+    }
+
+    public IssueInvoiceService(InvoiceRepository invoiceRepository,
+                               CustomerRepository customerRepository,
+                               IdGenerator idGenerator,
+                               EventPublisher eventPublisher,
+                               AuditRepository auditRepository,
+                               LedgerService ledgerService,
+                               LedgerRepository ledgerRepository,
+                               IdempotencyStore idempotencyStore,
+                               InvoiceVersionRepository invoiceVersionRepository,
+                               CustomerService customerService) {
         this.invoiceRepository = invoiceRepository;
         this.customerRepository = customerRepository;
         this.idGenerator = idGenerator;
@@ -57,6 +83,8 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
         this.ledgerService = ledgerService;
         this.ledgerRepository = ledgerRepository;
         this.idempotencyStore = idempotencyStore;
+        this.invoiceVersionRepository = invoiceVersionRepository;
+        this.customerService = customerService != null ? customerService : new CustomerService();
     }
 
     @Override
@@ -89,12 +117,33 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
             throw new IllegalArgumentException("customerId must be a valid UUID: " + command.customerId());
         }
 
-        if (customerRepository.findByTenantAndId(tenantId, customerId).isEmpty()) {
-            throw new IllegalArgumentException("Customer not found: " + command.customerId());
+        Customer customer = customerRepository.findByTenantAndId(tenantId, customerId)
+                .orElseThrow(() -> new IllegalArgumentException("Customer not found: " + command.customerId()));
+
+        // Always reject BLOCKED/DELETED (even for draft create)
+        if (!customer.canBeInvoiced()) {
+            throw new CustomerNotInvoiceableException(
+                    "Customer cannot be invoiced (status: " + customer.getStatus() + ")");
+        }
+
+        String currency = command.currencyCode() != null ? command.currencyCode() : "USD";
+        BigDecimal invoiceAmount = command.lines().stream()
+                .map(IssueInvoiceCommand.LineItem::amount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal outstanding = sumOpenBalance(tenantId, customerId, currency);
+
+        if (issueNow) {
+            // Hard-block credit limit on issue (before allocating ids / persisting)
+            enforceCreditLimit(tenantId, customerId, outstanding, invoiceAmount);
+        } else if (customer.getCreditLimit() != null
+                && !customer.canBeInvoicedForAmount(outstanding, invoiceAmount)) {
+            // Product default: soft-warn on draft credit overage (still create draft)
+            LOG.warning(String.format(
+                    "Draft invoice %s for customer %s would exceed credit limit (outstanding=%s, amount=%s, limit=%s)",
+                    command.invoiceNumber(), command.customerId(), outstanding, invoiceAmount, customer.getCreditLimit()));
         }
 
         InvoiceId id = idGenerator.newInvoiceId();
-        String currency = command.currencyCode() != null ? command.currencyCode() : "USD";
         List<InvoiceLine> lines = IntStream.range(0, command.lines().size())
                 .mapToObj(i -> {
                     var item = command.lines().get(i);
@@ -107,6 +156,7 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
         if (issueNow) {
             invoice.issue();
             invoiceRepository.save(tenantId, invoice);
+            invoiceVersionRepository.save(tenantId, InvoiceSnapshotService.snapshot(tenantId, invoice, "ISSUE_ON_CREATE"));
 
             // Durable ledger: Dr AR / Cr Revenue
             LedgerService.TransactionResult ledgerTx = ledgerService.recordInvoiceIssued(
@@ -127,6 +177,7 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
         } else {
             // Pure DRAFT: no ledger, no InvoiceIssued
             invoiceRepository.save(tenantId, invoice);
+            invoiceVersionRepository.save(tenantId, InvoiceSnapshotService.snapshot(tenantId, invoice, "CREATE_DRAFT"));
 
             String afterState = String.format(
                     "{\"id\":\"%s\",\"number\":\"%s\",\"customerId\":\"%s\",\"customer\":\"%s\",\"total\":%s,\"status\":\"DRAFT\"}",
@@ -142,6 +193,27 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
         }
 
         return id;
+    }
+
+    /**
+     * Hard credit check for issue path. Uses system-computed open AR for the customer
+     * in the invoice currency (same-currency policy).
+     */
+    void enforceCreditLimit(TenantId tenantId, CustomerId customerId,
+                            BigDecimal outstanding, BigDecimal invoiceAmount) {
+        CustomerService.CreditCheckResult check = customerService.checkCreditLimit(
+                tenantId, customerRepository, customerId, outstanding, invoiceAmount);
+        if (!check.canInvoice()) {
+            throw new CustomerNotInvoiceableException(check.message());
+        }
+    }
+
+    BigDecimal sumOpenBalance(TenantId tenantId, CustomerId customerId, String currencyCode) {
+        String currency = currencyCode != null ? currencyCode : "USD";
+        return invoiceRepository.findOpenByTenantAndCustomer(tenantId, customerId).stream()
+                .filter(inv -> currency.equalsIgnoreCase(inv.getCurrencyCode()))
+                .map(inv -> inv.getBalanceDue().getAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private static String hashRequest(IssueInvoiceCommand command) {

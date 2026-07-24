@@ -44,6 +44,8 @@ class ChequeLifecycleEngineTest {
                 () -> engine.assertTransitionAllowed(ChequeStatus.BOUNCED, ChequeStatus.CLEARED));
         assertThrows(InvalidStateTransitionException.class,
                 () -> engine.assertTransitionAllowed(ChequeStatus.DEPOSITED, ChequeStatus.RECEIVED));
+        // CLEARED → BOUNCED is allowed (post-clear NSF)
+        assertDoesNotThrow(() -> engine.assertTransitionAllowed(ChequeStatus.CLEARED, ChequeStatus.BOUNCED));
     }
 
     @Test
@@ -68,7 +70,8 @@ class ChequeLifecycleEngineTest {
         assertEquals(1, engine.getValidTransitions(ChequeStatus.RECEIVED).size());
         assertTrue(engine.getValidTransitions(ChequeStatus.RECEIVED).contains(ChequeStatus.DEPOSITED));
         assertEquals(2, engine.getValidTransitions(ChequeStatus.DEPOSITED).size());
-        assertTrue(engine.getValidTransitions(ChequeStatus.CLEARED).isEmpty());
+        assertEquals(1, engine.getValidTransitions(ChequeStatus.CLEARED).size());
+        assertTrue(engine.getValidTransitions(ChequeStatus.CLEARED).contains(ChequeStatus.BOUNCED));
         assertTrue(engine.getValidTransitions(ChequeStatus.BOUNCED).isEmpty());
     }
 

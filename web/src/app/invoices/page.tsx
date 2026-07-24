@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
-import { Input, Label, Select } from "@/components/ui/input";
+import { Input, Label, Select, Textarea } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { useTenant } from "@/components/tenant-provider";
 import { listCustomers } from "@/lib/api/customers";
@@ -48,6 +48,7 @@ export default function InvoicesPage() {
   const [lines, setLines] = useState<LineDraft[]>([
     { description: "", amount: "" },
   ]);
+  const [issueImmediately, setIssueImmediately] = useState(true);
 
   const listKey = useMemo(
     () => ["invoices", tenantId, status, cursor] as const,
@@ -91,6 +92,7 @@ export default function InvoicesPage() {
         currencyCode: currencyCode.trim() || "USD",
         dueDate: dueDate || undefined,
         lines: parsedLines,
+        issueImmediately,
       });
     },
     onSuccess: (created) => {
@@ -184,6 +186,16 @@ export default function InvoicesPage() {
                 onChange={(e) => setDueDate(e.target.value)}
               />
             </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="issue-now"
+                type="checkbox"
+                checked={issueImmediately}
+                onChange={(e) => setIssueImmediately(e.target.checked)}
+                className="h-4 w-4 rounded border-zinc-300"
+              />
+              <Label htmlFor="issue-now">Issue immediately (uncheck to save as DRAFT)</Label>
+            </div>
           </div>
 
           <div className="mt-4">
@@ -200,49 +212,67 @@ export default function InvoicesPage() {
                 Add line
               </Button>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {lines.map((line, idx) => (
-                <div key={idx} className="flex gap-2">
-                  <Input
-                    className="flex-1"
-                    placeholder="Description"
-                    value={line.description}
-                    onChange={(e) =>
-                      setLines((ls) =>
-                        ls.map((l, i) =>
-                          i === idx
-                            ? { ...l, description: e.target.value }
-                            : l,
-                        ),
-                      )
-                    }
-                  />
-                  <Input
-                    className="w-32"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="Amount"
-                    value={line.amount}
-                    onChange={(e) =>
-                      setLines((ls) =>
-                        ls.map((l, i) =>
-                          i === idx ? { ...l, amount: e.target.value } : l,
-                        ),
-                      )
-                    }
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    disabled={lines.length <= 1}
-                    onClick={() =>
-                      setLines((ls) => ls.filter((_, i) => i !== idx))
-                    }
-                    aria-label="Remove line"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                <div
+                  key={idx}
+                  className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                      Line {idx + 1}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={lines.length <= 1}
+                      onClick={() =>
+                        setLines((ls) => ls.filter((_, i) => i !== idx))
+                      }
+                      aria-label="Remove line"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="grid gap-3 lg:grid-cols-[1fr_10rem]">
+                    <div>
+                      <Label htmlFor={`line-desc-${idx}`}>Description</Label>
+                      <Textarea
+                        id={`line-desc-${idx}`}
+                        className="min-h-[5.5rem]"
+                        rows={3}
+                        placeholder="Service or product description (full details)"
+                        value={line.description}
+                        onChange={(e) =>
+                          setLines((ls) =>
+                            ls.map((l, i) =>
+                              i === idx
+                                ? { ...l, description: e.target.value }
+                                : l,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor={`line-amt-${idx}`}>Amount</Label>
+                      <Input
+                        id={`line-amt-${idx}`}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={line.amount}
+                        onChange={(e) =>
+                          setLines((ls) =>
+                            ls.map((l, i) =>
+                              i === idx ? { ...l, amount: e.target.value } : l,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

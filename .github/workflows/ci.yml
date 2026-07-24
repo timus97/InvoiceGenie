@@ -36,7 +36,7 @@ jobs:
           cache: maven
 
       - name: Unit tests
-        run: mvn -B test
+        run: mvn -B verify
 
       - name: Package bootstrap (prod-ready artifact)
         run: mvn -B -pl ar-bootstrap -am package -DskipTests

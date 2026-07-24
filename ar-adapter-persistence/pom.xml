@@ -10,7 +10,7 @@
     </parent>
     <artifactId>ar-adapter-persistence</artifactId>
     <name>AR Adapter Persistence</name>
-    <description>Repository adapters â€” DB with tenant_id on every table</description>
+    <description>Repository adapters Ã¢â‚¬â€ DB with tenant_id on every table</description>
     <dependencies>
         <dependency>
             <groupId>com.invoicegenie</groupId>
@@ -29,6 +29,10 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-jdbc-postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-scheduler</artifactId>
         </dependency>
         <!-- H2 is provided by ar-bootstrap for %dev/%test; Postgres for default profile.
              quarkus-jdbc-sqlite removed: legacy profile name "sqlite" is an H2 alias only. -->

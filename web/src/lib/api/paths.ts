@@ -1,4 +1,4 @@
-﻿export const apiPaths = {
+export const apiPaths = {
   customers: "/api/v1/customers",
   customer: (id: string) => `/api/v1/customers/${id}`,
   customerBlock: (id: string) => `/api/v1/customers/${id}/block`,
@@ -13,6 +13,9 @@
   invoicePayment: (id: string) => `/api/v1/invoices/${id}/payment`,
   invoiceDueDate: (id: string) => `/api/v1/invoices/${id}/due-date`,
   payments: "/api/v1/payments",
+  payment: (id: string) => `/api/v1/payments/${id}`,
+  paymentReverse: (id: string) => `/api/v1/payments/${id}/reverse`,
+  paymentRefund: (id: string) => `/api/v1/payments/${id}/refund`,
   paymentAllocateFifo: (id: string) => `/api/v1/payments/${id}/allocate/fifo`,
   paymentAllocateManual: (id: string) =>
     `/api/v1/payments/${id}/allocate/manual`,
@@ -24,6 +27,9 @@
   chequeDeposit: (id: string) => `/api/v1/cheques/${id}/deposit`,
   chequeClear: (id: string) => `/api/v1/cheques/${id}/clear`,
   chequeBounce: (id: string) => `/api/v1/cheques/${id}/bounce`,
+  chequeBulk: "/api/v1/cheques/bulk",
+  chequeOcrParse: "/api/v1/cheques/ocr/parse",
+  chequeOcrUpload: "/api/v1/cheques/ocr/upload",
   aging: "/api/v1/aging",
   agingBuckets: "/api/v1/aging/buckets",
   agingDiscount: "/api/v1/aging/discount/calculate",
@@ -35,4 +41,16 @@
   ledgerTransaction: (id: string) => `/api/v1/ledger/transactions/${id}`,
   ledgerReference: (type: string, id: string) =>
     `/api/v1/ledger/reference/${type}/${id}`,
+  tenants: "/api/v1/tenants",
+  tenant: (id: string) => `/api/v1/tenants/${id}`,
+  tenantActivate: (id: string) => `/api/v1/tenants/${id}/activate`,
+  tenantSuspend: (id: string) => `/api/v1/tenants/${id}/suspend`,
+  exchangeRates: "/api/v1/exchange-rates",
+  exchangeRate: (id: string) => `/api/v1/exchange-rates/${id}`,
+  exchangeConvert: "/api/v1/exchange-rates/convert",
+  audit: "/api/v1/audit",
+  auditExport: "/api/v1/audit/export",
+  webhooks: "/api/v1/webhooks",
+  webhook: (id: string) => `/api/v1/webhooks/${id}`,
+  invoiceVersions: (id: string) => `/api/v1/invoices/${id}/versions`,
 } as const;

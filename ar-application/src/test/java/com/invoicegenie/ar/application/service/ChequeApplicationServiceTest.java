@@ -98,7 +98,7 @@ class ChequeApplicationServiceTest {
         }
 
         @Test
-        @DisplayName("should clear deposited cheque")
+        @DisplayName("should clear deposited cheque (status; payment path when wired)")
         void shouldClear() {
             Cheque cheque = newCheque();
             cheque.deposit();
@@ -110,7 +110,9 @@ class ChequeApplicationServiceTest {
             assertTrue(result.isPresent());
             assertTrue(result.get().success());
             assertEquals(ChequeStatus.CLEARED, result.get().cheque().getStatus());
-            assertFalse(result.get().ledgerEntries().isEmpty());
+            // Without RecordPaymentUseCase wired, ledger posts via payment layer are skipped
+            assertTrue(result.get().ledgerEntries().isEmpty());
+            verify(chequeRepository).save(eq(tenantId), eq(cheque));
         }
     }
 

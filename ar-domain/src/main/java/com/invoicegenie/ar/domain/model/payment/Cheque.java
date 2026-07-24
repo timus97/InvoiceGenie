@@ -49,7 +49,8 @@ public final class Cheque {
     private LocalDate bouncedDate;
     private String bounceReason;
     private ChequeStatus status;
-    private final UUID paymentId; // Linked payment when cleared
+    /** Linked payment when cleared — mutable via {@link #linkPayment(UUID)}. */
+    private UUID paymentId;
     private final List<UUID> allocatedInvoiceIds; // Invoices paid by this cheque
     private String notes;
     private final Instant createdAt;
@@ -166,13 +167,25 @@ public final class Cheque {
     }
 
     /**
-     * Set the payment ID when cheque is cleared.
+     * Links the payment created when this cheque clears. Idempotent if same id.
      */
-    public void setPaymentId(UUID paymentId) {
-        if (this.paymentId != null) {
-            throw new IllegalStateException("Payment ID already set");
+    public void linkPayment(UUID paymentId) {
+        if (paymentId == null) {
+            throw new IllegalArgumentException("paymentId is required");
         }
-        // Note: This is a simplified version; in full implementation would update field
+        if (this.paymentId != null && !this.paymentId.equals(paymentId)) {
+            throw new IllegalStateException("Payment ID already set to " + this.paymentId);
+        }
+        this.paymentId = paymentId;
+        touch();
+    }
+
+    /**
+     * @deprecated use {@link #linkPayment(UUID)}
+     */
+    @Deprecated
+    public void setPaymentId(UUID paymentId) {
+        linkPayment(paymentId);
     }
 
     /**

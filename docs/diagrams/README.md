@@ -1,4 +1,4 @@
-﻿# InvoiceGenie Diagrams
+# InvoiceGenie Diagrams
 
 Editable source: [InvoiceGenie-Architecture.drawio](./InvoiceGenie-Architecture.drawio)
 

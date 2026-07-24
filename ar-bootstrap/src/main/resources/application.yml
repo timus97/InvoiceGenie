@@ -41,6 +41,16 @@ quarkus:
       enabled: false
   swagger-ui:
     always-include: true
+  micrometer:
+    export:
+      prometheus:
+        enabled: true
+        path: /q/metrics
+  otel:
+    enabled: ${QUARKUS_OTEL_ENABLED:false}
+    exporter:
+      otlp:
+        endpoint: ${QUARKUS_OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4317}
   log:
     level: INFO
     category:
@@ -52,6 +62,8 @@ quarkus:
         level: INFO
     console:
       enable: true
+      # Keep plain text in non-prod; JSON only on %prod (quarkus-logging-json present)
+      json: false
       format: "%d{HH:mm:ss.SSS} [%t] %-5p %c{2} - %s%e%n"
     file:
       enable: true
@@ -184,6 +196,8 @@ invoicegenie:
       category:
         "com.invoicegenie":
           level: INFO
+      console:
+        json: ${QUARKUS_LOG_CONSOLE_JSON:true}
       file:
         enable: false
   invoicegenie:
@@ -209,7 +223,7 @@ invoicegenie:
 outbox:
   enabled: true
   # When true, OutboxWorker uses OutboxKafkaSender if a CDI bean is present; else logs
-  kafka-enabled: false
+  kafka-enabled: ${OUTBOX_KAFKA_ENABLED:false}
   batch-size: 100
   poll-interval: 5s
   delay-start: 10s
@@ -218,3 +232,20 @@ outbox:
 
 # RLS: TenantFilter sets app.current_tenant_id via DbTenantContext.setTenantLocal(EntityManager)
 # when Postgres is in use. On H2 the call is a graceful no-op.
+
+# Idempotency retention (P2-06)
+idempotency:
+  retention-days: ${IDEMPOTENCY_RETENTION_DAYS:7}
+  cleanup-enabled: true
+  cleanup-cron: "0 30 0 * * ?"
+
+# Overdue marking job (STORY-008)
+overdue:
+  marking:
+    enabled: ${OVERDUE_MARKING_ENABLED:true}
+    cron: ${OVERDUE_MARKING_CRON:0 15 1 * * ?}
+
+# Kafka outbox publish (P1-03) — enable with OUTBOX_KAFKA_ENABLED=true
+outbox.kafka.bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+outbox.kafka.topic: ${OUTBOX_KAFKA_TOPIC:ar.domain.events}
+outbox.kafka.client-id: invoicegenie-outbox

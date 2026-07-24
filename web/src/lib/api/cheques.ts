@@ -1,6 +1,12 @@
-﻿import { apiFetch } from "@/lib/api/client";
+import { apiFetch } from "@/lib/api/client";
 import { apiPaths } from "@/lib/api/paths";
-import type { ChequeDto, CreateChequeRequest } from "@/types/ar";
+import type {
+  ChequeDto,
+  CreateChequeRequest,
+  ExtractedChequeDto,
+  OcrParseResult,
+  OcrUploadResult,
+} from "@/types/ar";
 
 export function listCheques(
   tenantId: string,
@@ -23,6 +29,57 @@ export function createCheque(tenantId: string, body: CreateChequeRequest) {
     tenantId,
     body,
   });
+}
+
+export function bulkCreateCheques(
+  tenantId: string,
+  cheques: CreateChequeRequest[],
+) {
+  return apiFetch<ChequeDto[]>(apiPaths.chequeBulk, {
+    method: "POST",
+    tenantId,
+    body: { cheques },
+  });
+}
+
+export function parseChequeOcrText(
+  tenantId: string,
+  blocks: { sourceName: string; text: string }[],
+) {
+  return apiFetch<OcrParseResult>(apiPaths.chequeOcrParse, {
+    method: "POST",
+    tenantId,
+    body: { blocks },
+  });
+}
+
+/** Multipart PDF/image/text upload for bulk OCR. */
+export async function uploadChequeOcrFiles(
+  tenantId: string,
+  files: File[],
+): Promise<OcrUploadResult> {
+  const form = new FormData();
+  for (const f of files) {
+    form.append("files", f, f.name);
+  }
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "X-Tenant-Id": tenantId.trim(),
+  };
+  const apiKey = process.env.NEXT_PUBLIC_API_KEY?.trim();
+  if (apiKey) headers["X-API-Key"] = apiKey;
+
+  const res = await fetch(apiPaths.chequeOcrUpload, {
+    method: "POST",
+    headers,
+    body: form,
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `OCR upload failed (${res.status})`);
+  }
+  return (await res.json()) as OcrUploadResult;
 }
 
 export function depositCheque(tenantId: string, id: string) {
@@ -50,3 +107,5 @@ export function bounceCheque(tenantId: string, id: string, reason: string) {
     body: { reason },
   });
 }
+
+export type { ExtractedChequeDto };

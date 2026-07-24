@@ -24,6 +24,16 @@ public interface PaymentRepository {
     List<Payment> findUnallocatedByTenantAndCustomer(TenantId tenantId, com.invoicegenie.ar.domain.model.customer.CustomerId customerId);
 
     /**
+     * Finds payments for a customer (all statuses).
+     */
+    List<Payment> findByTenantAndCustomer(TenantId tenantId, com.invoicegenie.ar.domain.model.customer.CustomerId customerId);
+
+    /**
+     * Lists recent payments for a tenant (newest first), capped by limit.
+     */
+    List<Payment> findByTenant(TenantId tenantId, int limit);
+
+    /**
      * Finds all allocations for a given invoice.
      */
     List<PaymentAllocation> findAllocationsByTenantAndInvoice(TenantId tenantId, InvoiceId invoiceId);

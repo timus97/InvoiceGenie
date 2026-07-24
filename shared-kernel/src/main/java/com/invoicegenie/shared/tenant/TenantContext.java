@@ -14,10 +14,14 @@ public final class TenantContext {
         CURRENT.set(tenantId);
     }
 
+    public static TenantId getCurrentTenantOrNull() {
+        return CURRENT.get();
+    }
+
     public static TenantId getCurrentTenant() {
         TenantId tenant = CURRENT.get();
         if (tenant == null) {
-            throw new IllegalStateException("TenantContext not set — ensure TenantFilter runs and tenant is resolved");
+            throw new IllegalStateException("TenantContext not set - ensure TenantFilter runs and tenant is resolved");
         }
         return tenant;
     }

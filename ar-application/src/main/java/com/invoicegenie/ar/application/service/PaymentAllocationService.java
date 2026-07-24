@@ -85,9 +85,13 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
             return Optional.empty();
         }
         Payment payment = paymentOpt.get();
+        String paymentCurrency = payment.getAmount().getCurrencyCode();
 
+        // Same-currency only (STORY-010)
         List<Invoice> customerInvoices = invoiceRepository.findOpenByTenantAndCustomer(
-                tenantId, payment.getCustomerId());
+                tenantId, payment.getCustomerId()).stream()
+                .filter(inv -> paymentCurrency.equalsIgnoreCase(inv.getCurrencyCode()))
+                .toList();
 
         PaymentAllocationEngine.AllocationResult engineResult = allocationEngine.autoAllocateFIFO(
                 tenantId, payment, customerInvoices, allocatedBy);
@@ -154,6 +158,13 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
                     invoiceRepository.findByTenantAndId(tenantId, id).orElse(null));
             if (invoice == null) {
                 preErrors.add("Invoice not found: " + request.invoiceId().getValue());
+                continue;
+            }
+            if (!paymentCurrency.equalsIgnoreCase(invoice.getCurrencyCode())) {
+                preErrors.add("Currency mismatch: payment is " + paymentCurrency
+                        + " but invoice " + request.invoiceId().getValue()
+                        + " is " + invoice.getCurrencyCode()
+                        + " (same-currency allocation only)");
                 continue;
             }
             if (!invoices.contains(invoice)) {

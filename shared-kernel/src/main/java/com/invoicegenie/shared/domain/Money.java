@@ -46,6 +46,23 @@ public final class Money {
         return new Money(amount.subtract(other.amount), currencyCode);
     }
 
+    /**
+     * Convert to another currency using a multiplication rate
+     * (1 unit of this currency = rate units of target).
+     */
+    public Money convert(BigDecimal rate, String targetCurrency) {
+        Objects.requireNonNull(rate, "rate");
+        Objects.requireNonNull(targetCurrency, "targetCurrency");
+        if (rate.signum() <= 0) {
+            throw new IllegalArgumentException("rate must be positive");
+        }
+        String target = targetCurrency.trim().toUpperCase();
+        if (target.length() != 3) {
+            throw new IllegalArgumentException("targetCurrency must be ISO 4217");
+        }
+        return new Money(amount.multiply(rate), target);
+    }
+
     private void requireSameCurrency(Money other) {
         if (!currencyCode.equals(other.currencyCode)) {
             throw new IllegalArgumentException("Cannot operate on different currencies: " + currencyCode + " vs " + other.currencyCode);

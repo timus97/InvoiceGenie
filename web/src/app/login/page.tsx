@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { FormEvent, Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -22,9 +22,7 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
 
   if (ready && session) {
-    if (typeof window !== "undefined") {
-      router.replace(next.startsWith("/") ? next : "/");
-    }
+    router.replace(next.startsWith("/") ? next : "/");
   }
 
   const onSubmit = async (e: FormEvent) => {
@@ -70,20 +68,10 @@ function LoginForm() {
 
       <Card>
         <div className="mb-4 flex gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant={mode === "user" ? "primary" : "secondary"}
-            onClick={() => setMode("user")}
-          >
+          <Button type="button" size="sm" variant={mode === "user" ? "primary" : "secondary"} onClick={() => setMode("user")}>
             Username
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={mode === "apikey" ? "primary" : "secondary"}
-            onClick={() => setMode("apikey")}
-          >
+          <Button type="button" size="sm" variant={mode === "apikey" ? "primary" : "secondary"} onClick={() => setMode("apikey")}>
             API key
           </Button>
         </div>
@@ -93,41 +81,18 @@ function LoginForm() {
             <>
               <div>
                 <Label htmlFor="username">Username</Label>
-                <Input
-                  id="username"
-                  autoComplete="username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="mt-1"
-                />
+                <Input id="username" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} className="mt-1" />
               </div>
               <div>
                 <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="mt-1"
-                />
+                <Input id="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="mt-1" />
               </div>
             </>
           ) : (
             <div>
               <Label htmlFor="apiKey">API key</Label>
-              <Input
-                id="apiKey"
-                type="password"
-                autoComplete="off"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                className="mt-1 font-mono text-sm"
-                spellCheck={false}
-              />
-              <p className="mt-1 text-xs text-zinc-500">
-                Tenant is resolved server-side from the key mapping.
-              </p>
+              <Input id="apiKey" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} className="mt-1 font-mono text-sm" spellCheck={false} />
+              <p className="mt-1 text-xs text-zinc-500">Tenant is resolved server-side from the key mapping.</p>
             </div>
           )}
 
@@ -142,13 +107,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="mx-auto max-w-md p-8 text-center text-sm text-zinc-500">
-          Loading sign-in…
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="mx-auto max-w-md py-24 text-center text-sm text-zinc-500">Loading…</div>}>
       <LoginForm />
     </Suspense>
   );

@@ -3,6 +3,7 @@ package com.invoicegenie.ar.adapter.api.rest;
 import com.invoicegenie.ar.application.port.inbound.PaymentAllocationUseCase;
 import com.invoicegenie.ar.application.port.inbound.PaymentQueryUseCase;
 import com.invoicegenie.ar.application.port.inbound.PaymentReversalUseCase;
+import com.invoicegenie.ar.application.port.inbound.PaymentUnallocateUseCase;
 import com.invoicegenie.ar.application.port.inbound.RecordPaymentUseCase;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.payment.Payment;
@@ -42,20 +43,32 @@ public class PaymentResource {
     private final RecordPaymentUseCase recordPaymentUseCase;
     private final PaymentQueryUseCase paymentQueryUseCase;
     private final PaymentReversalUseCase paymentReversalUseCase;
+    private final PaymentUnallocateUseCase paymentUnallocateUseCase;
 
     /**
-     * Single constructor for CDI (DEF-BE-002). Unit tests pass mocks; optional query/reversal
-     * may be null only in pure unit tests — production always wires all four beans.
+     * Single constructor for CDI (DEF-BE-002). Unit tests pass mocks; optional query/reversal/
+     * unallocate may be null only in pure unit tests — production always wires all beans.
      */
     @jakarta.inject.Inject
     public PaymentResource(PaymentAllocationUseCase allocationUseCase,
                            RecordPaymentUseCase recordPaymentUseCase,
                            PaymentQueryUseCase paymentQueryUseCase,
-                           PaymentReversalUseCase paymentReversalUseCase) {
+                           PaymentReversalUseCase paymentReversalUseCase,
+                           PaymentUnallocateUseCase paymentUnallocateUseCase) {
         this.allocationUseCase = allocationUseCase;
         this.recordPaymentUseCase = recordPaymentUseCase;
         this.paymentQueryUseCase = paymentQueryUseCase;
         this.paymentReversalUseCase = paymentReversalUseCase;
+        this.paymentUnallocateUseCase = paymentUnallocateUseCase;
+    }
+
+    /** Backward-compatible ctor for existing unit tests. */
+    public PaymentResource(PaymentAllocationUseCase allocationUseCase,
+                           RecordPaymentUseCase recordPaymentUseCase,
+                           PaymentQueryUseCase paymentQueryUseCase,
+                           PaymentReversalUseCase paymentReversalUseCase) {
+        this(allocationUseCase, recordPaymentUseCase, paymentQueryUseCase,
+                paymentReversalUseCase, null);
     }
 
     @POST
@@ -162,6 +175,41 @@ public class PaymentResource {
         return paymentReversalUseCase.refund(tenantId, PaymentId.of(UUID.fromString(paymentId)), reason, idempotencyKey)
                 .map(r -> Response.ok(new ReversalDto(r.paymentId().getValue().toString(), r.newStatus(),
                         r.affectedInvoiceIds().stream().map(UUID::toString).toList(), r.message())).build())
+                .orElse(Response.status(404).entity(new ErrorDto("NOT_FOUND", "Payment not found")).build());
+    }
+
+    @POST
+    @Path("/{paymentId}/unallocate")
+    @RequireRoles({ArRoles.AR_CONTROLLER, ArRoles.TENANT_ADMIN})
+    @Operation(summary = "Unallocate payment from specific invoices (payment stays RECEIVED)")
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "Allocations reversed"),
+        @APIResponse(responseCode = "404", description = "Payment not found"),
+        @APIResponse(responseCode = "409", description = "Version conflict or invalid state")
+    })
+    public Response unallocate(
+            @PathParam("paymentId") String paymentId,
+            UnallocateRequestDto dto) {
+        if (paymentUnallocateUseCase == null) {
+            return Response.status(501).entity(new ErrorDto("NOT_IMPLEMENTED", "Unallocate not wired")).build();
+        }
+        if (dto == null || dto.invoiceIds() == null || dto.invoiceIds().isEmpty()) {
+            return Response.status(400).entity(new ErrorDto("VALIDATION_ERROR", "invoiceIds is required")).build();
+        }
+        var tenantId = TenantContext.getCurrentTenant();
+        List<UUID> invoiceIds = dto.invoiceIds().stream().map(UUID::fromString).toList();
+        return paymentUnallocateUseCase.unallocate(
+                        tenantId,
+                        PaymentId.of(UUID.fromString(paymentId)),
+                        invoiceIds,
+                        dto.reason(),
+                        dto.expectedVersion())
+                .map(r -> Response.ok(new UnallocateDto(
+                        r.paymentId().getValue().toString(),
+                        r.paymentStatus(),
+                        r.unallocatedInvoiceIds().stream().map(UUID::toString).toList(),
+                        r.paymentVersion(),
+                        r.message())).build())
                 .orElse(Response.status(404).entity(new ErrorDto("NOT_FOUND", "Payment not found")).build());
     }
 
@@ -316,4 +364,7 @@ public class PaymentResource {
     public record PaymentListDto(List<PaymentDto> items, int count) {}
     public record ReasonDto(String reason) {}
     public record ReversalDto(String paymentId, String status, List<String> affectedInvoiceIds, String message) {}
+    public record UnallocateRequestDto(List<String> invoiceIds, String reason, Long expectedVersion) {}
+    public record UnallocateDto(String paymentId, String status, List<String> unallocatedInvoiceIds,
+                                long version, String message) {}
 }

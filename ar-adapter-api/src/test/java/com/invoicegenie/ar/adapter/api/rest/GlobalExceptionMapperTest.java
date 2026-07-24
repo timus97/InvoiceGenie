@@ -1,6 +1,7 @@
 package com.invoicegenie.ar.adapter.api.rest;
 
 import com.invoicegenie.ar.adapter.api.dto.ErrorResponse;
+import com.invoicegenie.ar.domain.exception.ConcurrencyConflictException;
 import com.invoicegenie.ar.domain.exception.DomainValidationException;
 import com.invoicegenie.ar.domain.exception.InvalidStateTransitionException;
 import com.invoicegenie.ar.domain.exception.NotFoundException;
@@ -44,6 +45,15 @@ class GlobalExceptionMapperTest {
     @DisplayName("maps IllegalStateException to 409")
     void mapsIllegalState() {
         assertEquals(409, mapper.toResponse(new IllegalStateException("x")).getStatus());
+    }
+
+    @Test
+    @DisplayName("maps ConcurrencyConflictException to 409 CONCURRENCY_CONFLICT")
+    void mapsConcurrencyConflict() {
+        Response r = mapper.toResponse(new ConcurrencyConflictException("stale version"));
+        assertEquals(409, r.getStatus());
+        ErrorResponse body = (ErrorResponse) r.getEntity();
+        assertEquals("CONCURRENCY_CONFLICT", body.code());
     }
 
     @Test

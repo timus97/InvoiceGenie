@@ -123,6 +123,29 @@ class PaymentTest {
             
             assertEquals(0, new BigDecimal("700.00").compareTo(payment.getAmountUnallocated().getAmount()));
         }
+
+        @Test
+        @DisplayName("should unallocate invoice and restore unallocated amount")
+        void shouldUnallocateInvoice() {
+            InvoiceId invoiceId = InvoiceId.generate();
+            payment.allocate(invoiceId, Money.of("400.00", "USD"), UUID.randomUUID(), "partial");
+            long versionAfterAlloc = payment.getVersion();
+
+            var removed = payment.unallocate(invoiceId);
+
+            assertEquals(invoiceId, removed.getInvoiceId());
+            assertEquals(0, payment.getAllocations().size());
+            assertEquals(0, new BigDecimal("1000.00").compareTo(payment.getAmountUnallocated().getAmount()));
+            assertEquals(PaymentStatus.RECEIVED, payment.getStatus());
+            assertTrue(payment.getVersion() > versionAfterAlloc);
+        }
+
+        @Test
+        @DisplayName("should throw when unallocate missing invoice")
+        void shouldThrowWhenUnallocateMissing() {
+            assertThrows(IllegalStateException.class, () ->
+                    payment.unallocate(InvoiceId.generate()));
+        }
     }
 
     @Nested

@@ -1,6 +1,7 @@
 package com.invoicegenie.ar.adapter.api.rest;
 
 import com.invoicegenie.ar.adapter.api.dto.ErrorResponse;
+import com.invoicegenie.ar.domain.exception.ConcurrencyConflictException;
 import com.invoicegenie.ar.domain.exception.CustomerNotInvoiceableException;
 import com.invoicegenie.ar.domain.exception.DomainValidationException;
 import com.invoicegenie.ar.domain.exception.IdempotencyConflictException;
@@ -20,6 +21,7 @@ import jakarta.ws.rs.ext.Provider;
  *   <li>DomainValidationException / IllegalArgumentException → 400 VALIDATION_ERROR</li>
  *   <li>CustomerNotInvoiceableException → 409 CUSTOMER_NOT_INVOICEABLE</li>
  *   <li>IdempotencyConflictException → 409 IDEMPOTENCY_CONFLICT</li>
+ *   <li>ConcurrencyConflictException → 409 CONCURRENCY_CONFLICT</li>
  *   <li>InvalidStateTransitionException / IllegalStateException → 409 STATE_ERROR</li>
  *   <li>NotFoundException → 404 NOT_FOUND</li>
  *   <li>everything else → 500 INTERNAL_ERROR</li>
@@ -43,6 +45,9 @@ public class GlobalExceptionMapper implements ExceptionMapper<Throwable> {
         } else if (exception instanceof IdempotencyConflictException) {
             status = 409;
             code = "IDEMPOTENCY_CONFLICT";
+        } else if (exception instanceof ConcurrencyConflictException) {
+            status = 409;
+            code = "CONCURRENCY_CONFLICT";
         } else if (exception instanceof InvalidStateTransitionException
                 || exception instanceof IllegalStateException) {
             status = 409;

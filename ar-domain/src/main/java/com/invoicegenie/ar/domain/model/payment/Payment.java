@@ -23,7 +23,8 @@ import java.util.UUID;
  *   <li>Sum of allocations cannot exceed payment amount</li>
  *   <li>amountUnallocated = amount - sum(allocations)</li>
  *   <li>Reversal/refund only on RECEIVED status; creates reversal logic at application layer</li>
- *   <li>Allocations are immutable once created (no partial un-allocate)</li>
+ *   <li>Allocations may be unallocated (STORY-013) while payment stays RECEIVED; cash remains unapplied</li>
+ *   <li>{@code originalVersion} is the version at load time for optimistic concurrency checks</li>
  * </ul>
  */
 public final class Payment {
@@ -42,6 +43,8 @@ public final class Payment {
     private final Instant createdAt;
     private Instant updatedAt;
     private long version;
+    /** Version loaded from persistence (0 for brand-new aggregates). Used for optimistic lock. */
+    private final long originalVersion;
 
     private final List<PaymentAllocation> allocations = new ArrayList<>();
 
@@ -71,6 +74,7 @@ public final class Payment {
         this.createdAt = Objects.requireNonNull(createdAt);
         this.updatedAt = Objects.requireNonNull(updatedAt);
         this.version = version;
+        this.originalVersion = version;
         if (allocations != null) {
             for (PaymentAllocation a : allocations) {
                 requireSameCurrency(a.getAmount());
@@ -95,6 +99,12 @@ public final class Payment {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public long getVersion() { return version; }
+
+    /**
+     * Version as loaded from persistence (before in-memory mutations).
+     * Repository conditional updates use this as the expected DB version.
+     */
+    public long getOriginalVersion() { return originalVersion; }
 
     public List<PaymentAllocation> getAllocations() {
         return Collections.unmodifiableList(allocations);
@@ -144,6 +154,35 @@ public final class Payment {
     public void addAllocation(PaymentAllocation allocation) {
         requireSameCurrency(allocation.getAmount());
         allocations.add(allocation);
+    }
+
+    /**
+     * Removes the allocation to the given invoice (STORY-013 unallocate).
+     * Payment remains RECEIVED; cash returns to unallocated.
+     *
+     * @return the removed allocation
+     * @throws IllegalStateException if no allocation exists for the invoice
+     */
+    public PaymentAllocation unallocate(InvoiceId invoiceId) {
+        assertReceived();
+        Objects.requireNonNull(invoiceId, "invoiceId");
+        for (int i = 0; i < allocations.size(); i++) {
+            PaymentAllocation a = allocations.get(i);
+            if (a.getInvoiceId().equals(invoiceId)) {
+                allocations.remove(i);
+                touch();
+                return a;
+            }
+        }
+        throw new IllegalStateException("No allocation for invoice: " + invoiceId.getValue());
+    }
+
+    /**
+     * Finds allocation for an invoice if present.
+     */
+    public Optional<PaymentAllocation> findAllocation(InvoiceId invoiceId) {
+        Objects.requireNonNull(invoiceId, "invoiceId");
+        return allocations.stream().filter(a -> a.getInvoiceId().equals(invoiceId)).findFirst();
     }
 
     /**

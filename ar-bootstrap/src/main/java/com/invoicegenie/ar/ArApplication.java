@@ -228,14 +228,16 @@ public class ArApplication {
     @Produces
     @ApplicationScoped
     public LedgerQueryUseCase ledgerQueryUseCase(LedgerService ledgerService,
-                                                 LedgerRepository ledgerRepository) {
-        return new LedgerQueryService(ledgerService, ledgerRepository);
+                                                 LedgerRepository ledgerRepository,
+                                                 com.invoicegenie.ar.domain.model.ledger.ChartOfAccountsRepository chartOfAccountsRepository) {
+        return new LedgerQueryService(ledgerService, ledgerRepository, chartOfAccountsRepository);
     }
 
     @Produces
     @ApplicationScoped
-    public TenantUseCase tenantUseCase(TenantRepository tenantRepository) {
-        return new TenantManagementService(tenantRepository);
+    public TenantUseCase tenantUseCase(TenantRepository tenantRepository,
+                                       com.invoicegenie.ar.domain.model.ledger.ChartOfAccountsRepository chartOfAccountsRepository) {
+        return new TenantManagementService(tenantRepository, chartOfAccountsRepository);
     }
 
     @Produces

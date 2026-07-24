@@ -1,6 +1,7 @@
 package com.invoicegenie.ar.application.service;
 
 import com.invoicegenie.ar.application.port.inbound.TenantUseCase;
+import com.invoicegenie.ar.domain.model.ledger.ChartOfAccountsRepository;
 import com.invoicegenie.ar.domain.model.tenant.Tenant;
 import com.invoicegenie.ar.domain.model.tenant.TenantRepository;
 import com.invoicegenie.ar.domain.model.tenant.TenantStatus;
@@ -9,16 +10,27 @@ import com.invoicegenie.shared.domain.UuidV7;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.logging.Logger;
 
 /**
  * Application service: tenant registry CRUD / lifecycle.
+ * On create, seeds system chart-of-accounts rows when COA persistence is available (STORY-020).
  */
 public class TenantManagementService implements TenantUseCase {
 
+    private static final Logger LOG = Logger.getLogger(TenantManagementService.class.getName());
+
     private final TenantRepository tenantRepository;
+    private final ChartOfAccountsRepository chartOfAccountsRepository;
 
     public TenantManagementService(TenantRepository tenantRepository) {
+        this(tenantRepository, null);
+    }
+
+    public TenantManagementService(TenantRepository tenantRepository,
+                                   ChartOfAccountsRepository chartOfAccountsRepository) {
         this.tenantRepository = tenantRepository;
+        this.chartOfAccountsRepository = chartOfAccountsRepository;
     }
 
     @Override
@@ -37,7 +49,23 @@ public class TenantManagementService implements TenantUseCase {
                 java.time.Instant.now()
         );
         tenantRepository.save(tenant);
+        seedChartOfAccounts(tenant.getId());
         return tenant;
+    }
+
+    private void seedChartOfAccounts(UUID tenantId) {
+        if (chartOfAccountsRepository == null) {
+            return;
+        }
+        try {
+            int n = chartOfAccountsRepository.seedSystemAccounts(tenantId);
+            if (n > 0) {
+                LOG.info("Seeded " + n + " system accounts for new tenant " + tenantId);
+            }
+        } catch (Exception e) {
+            // Do not fail tenant create if COA table is missing or partially migrated
+            LOG.warning("COA seed failed for tenant " + tenantId + ": " + e.getMessage());
+        }
     }
 
     @Override

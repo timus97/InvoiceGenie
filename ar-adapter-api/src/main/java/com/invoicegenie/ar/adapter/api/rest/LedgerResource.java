@@ -35,10 +35,22 @@ public class LedgerResource {
 
     @GET
     @Path("/accounts")
-    @Operation(summary = "List all available accounts")
+    @Operation(summary = "List domain accounts (enum). Prefer /accounts/seeded for tenant COA rows.")
     public Response listAccounts() {
         List<AccountDto> accounts = ledgerQueryUseCase.listAccounts().stream()
                 .map(a -> new AccountDto(a.name(), a.getDisplayName(), a.getType().name()))
+                .collect(Collectors.toList());
+        return Response.ok(accounts).build();
+    }
+
+    @GET
+    @Path("/accounts/seeded")
+    @Operation(summary = "List seeded tenant chart-of-accounts rows (STORY-020)")
+    public Response listSeededAccounts() {
+        var tenantId = TenantContext.getCurrentTenant();
+        List<SeededAccountDto> accounts = ledgerQueryUseCase.listSeededAccounts(tenantId).stream()
+                .map(a -> new SeededAccountDto(
+                        a.id().toString(), a.code(), a.name(), a.type(), a.system(), a.active()))
                 .collect(Collectors.toList());
         return Response.ok(accounts).build();
     }
@@ -156,6 +168,7 @@ public class LedgerResource {
     }
 
     public record AccountDto(String code, String name, String type) {}
+    public record SeededAccountDto(String id, String code, String name, String type, boolean system, boolean active) {}
     public record BalanceDto(String account, BigDecimal balance, String currency) {}
     public record TransactionDto(String transactionId, List<EntryDto> entries, boolean balanced, java.time.Instant createdAt) {}
     public record EntryDto(String id, String account, BigDecimal amount, String entryType,

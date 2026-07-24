@@ -51,7 +51,7 @@
 | P0-04 | **Production container image** | Incomplete | Arena Dockerfile not prod. | `Dockerfile.prod` multi-stage JVM; compose uses it; arena kept as `Dockerfile.arena`. | **Done** |
 | P0-05 | **Schema migration strategy** | Incomplete | Manual SQL only. | Flyway `V1`–`V6` under `db/migration`; migrate-at-start for Postgres/prod. | **Done** |
 | P0-06 | **Dependency security scanning in CI** | Missing process | Local scripts only. | `.github/workflows/ci.yml` + `security.yml` (OWASP + npm audit). | **Done** |
-| P0-07 | **TLS / network hardening** | Missing | HTTP only; Swagger open. | `docs/deploy/nginx-tls.conf`; prod disables Swagger/OpenAPI; edge TLS ops-owned. | **Partial** — docs + prod OpenAPI off; edge TLS required |
+| P0-07 | **TLS / network hardening** | Missing | HTTP only; Swagger open. | `docs/deploy/nginx-tls.conf` + `docker-compose.prod.yml` + `PROD_EDGE_TLS.md`; prod disables Swagger/OpenAPI; `ProdSecurityValidator` refuses demo secrets. | **Partial** — compose/docs landed; cloud LB certs still ops-owned |
 
 ---
 
@@ -78,11 +78,11 @@
 |----|------|------|----------|----------------|--------|
 | P2-01 | **Hexagonal purity for hybrid resources** | Refactor | REST mixed domain historically. | All REST → inbound ports only. | **Done** |
 | P2-02 | **API adapter → messaging dependency** | Boundary smell | Outbox in API module. | Outbox admin in `ar-bootstrap` ops. | **Done** |
-| P2-03 | **Remove unused SQLite JDBC extension** | Cleanup | JDBC removed; `%sqlite` alias remains. | Optional: delete `%sqlite` after release cycle. | **Partial** (dep gone) |
+| P2-03 | **Remove unused SQLite JDBC extension** | Cleanup | JDBC removed; `%sqlite` alias remains. | Delete `%sqlite` alias; docs/scripts mention `dev` only. | **Done** (STORY-022) |
 | P2-04 | **Dedicated API layer tests** | Missing tests | Thin historically. | Resource unit tests for all REST resources. | **Done** (unit contract style) |
 | P2-05 | **Observability** | Incomplete | Health only. | Micrometer Prometheus `/q/metrics`, OpenTelemetry (opt-in), JSON logs in prod. | **Done** |
 | P2-06 | **Idempotency store operationalization** | Incomplete | No TTL job. | Flyway + `IdempotencyCleanupJob` retention cron. | **Done** |
-| P2-07 | **ONBOARDING doc drift** | Docs debt | Stale sections. | Refresh after maturity milestones (see maintenance). | **Partial** — backlog snapshot refreshed 2026-07-24 |
+| P2-07 | **ONBOARDING doc drift** | Docs debt | Stale sections. | Full rewrite modules/workflows/gaps + README align. | **Done** (STORY-016) |
 | P2-08 | **gRPC / Kafka consumers** | Missing (diagram only) | Publisher side only. | Defer until product needs event-driven ingest. | **Deferred** |
 | P2-09 | **Frontend production auth** | Incomplete | Tenant switcher. | API key header + hide override when `NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE=false`. SSO future. | **Partial** |
 | P2-10 | **Coverage gate enforcement in CI** | Process | JaCoCo on verify only. | CI runs `mvn verify` (JaCoCo check 80%). | **Done** |
@@ -148,9 +148,9 @@ Wave 4 (P3): Webhooks + audit UI/export + Playwright smoke               ✅
 |----|----------|
 | **P0-03** | ~~Migrate Quarkus~~ **Done** — on **3.27.3** LTS |
 | **P0-01** | Phase-1 JWT `roles[]` + path RBAC + prod fail-closed **landed**; OIDC provider + web login still open |
-| **P0-07** | Wire TLS into compose/K8s edge (ops); nginx sample already in docs |
-| **P2-03** | Delete `%sqlite` profile alias after notice period |
-| **P2-07** | Full ONBOARDING.md rewrite for sections still naming stubs |
+| **P0-07** | Cloud/K8s certs still ops-owned; compose prod + validator landed (STORY-017) |
+| **P2-03** | ~~Delete `%sqlite`~~ **Done** (STORY-022) |
+| **P2-07** | ~~ONBOARDING rewrite~~ **Done** (STORY-016) |
 | **P2-08** | Kafka/gRPC consumers when product requires inbound events |
 | **P2-09** | SSO login UX |
 | **P3-01..05** | New product modules / platform scale |

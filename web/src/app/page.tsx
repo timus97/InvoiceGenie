@@ -8,7 +8,8 @@ import { TableSkeleton } from "@/components/ui/skeleton";
 import { useTenant } from "@/components/tenant-provider";
 import { apiFetch, checkBackendHealth } from "@/lib/api/client";
 import { apiPaths } from "@/lib/api/paths";
-import type { AgingReportDto, CustomerStatsDto, InvoicePageDto } from "@/types/ar";
+import { getAgingReport } from "@/lib/api/aging";
+import type { CustomerStatsDto, InvoicePageDto } from "@/types/ar";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatMoney } from "@/lib/money";
 
@@ -38,17 +39,20 @@ export default function DashboardPage() {
       }),
   });
 
+  // STORY-008: same GET /api/v1/aging report endpoint as the Aging page
   const aging = useQuery({
-    queryKey: ["aging-dash", tenantId],
+    queryKey: ["aging", tenantId],
     enabled: ready,
-    queryFn: () => apiFetch<AgingReportDto>(apiPaths.aging, { tenantId }),
+    queryFn: ({ signal }) => getAgingReport(tenantId, undefined, signal),
   });
+
+  const r = aging.data;
 
   return (
     <div>
       <PageHeader
         title="Dashboard"
-        description="Multi-tenant AR overview. Start the Quarkus API on :8080 (dev profile) so this page can load live data."
+        description="Multi-tenant AR overview. Start the Quarkus API (default :8080, or BACKEND_URL / :8082 if occupied) so this page can load live data."
         actions={
           <span
             className={`rounded-full px-2.5 py-1 text-xs font-medium ${
@@ -91,8 +95,8 @@ export default function DashboardPage() {
           <div className="mt-2 text-3xl font-semibold tabular-nums">
             {aging.isLoading
               ? "..."
-              : aging.data
-                ? formatMoney(aging.data.grandTotal, aging.data.currencyCode)
+              : r
+                ? formatMoney(r.grandTotal, r.currencyCode)
                 : "-"}
           </div>
           <Link
@@ -109,7 +113,61 @@ export default function DashboardPage() {
           <div className="mt-2 text-3xl font-semibold tabular-nums">
             {invoices.isLoading ? "..." : (invoices.data?.total ?? invoices.data?.items?.length ?? "-")}
           </div>
+          {r ? (
+            <p className="mt-1 text-xs text-zinc-500">
+              Aging open count: {r.totalCount}
+            </p>
+          ) : null}
         </Card>
+      </div>
+
+      <div className="mb-6">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            Aging buckets
+          </h2>
+          <Link
+            href="/aging"
+            className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+          >
+            Full report
+          </Link>
+        </div>
+        {aging.isLoading ? (
+          <Card>
+            <TableSkeleton rows={1} />
+          </Card>
+        ) : aging.isError ? (
+          <Card>
+            <p className="text-sm text-rose-600">
+              {(aging.error as Error).message}
+            </p>
+          </Card>
+        ) : r ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {[
+              { label: "0-30", total: r.total0To30, count: r.count0To30 },
+              { label: "31-60", total: r.total31To60, count: r.count31To60 },
+              { label: "61-90", total: r.total61To90, count: r.count61To90 },
+              { label: "90+", total: r.total90Plus, count: r.count90Plus },
+              { label: "Grand total", total: r.grandTotal, count: r.totalCount },
+            ].map((b) => (
+              <Card key={b.label}>
+                <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                  {b.label}
+                </div>
+                <div className="mt-1 text-xl font-semibold tabular-nums">
+                  {formatMoney(b.total, r.currencyCode)}
+                </div>
+                <div className="mt-1 text-xs text-zinc-500">{b.count} inv</div>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Card>
+            <p className="text-sm text-zinc-500">No aging data yet.</p>
+          </Card>
+        )}
       </div>
 
       <Card>

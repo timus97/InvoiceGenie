@@ -1,9 +1,11 @@
 package com.invoicegenie.ar.adapter.messaging;
 
 import com.invoicegenie.ar.application.port.outbound.EventPublisher;
+import com.invoicegenie.ar.domain.event.DunningNotice;
 import com.invoicegenie.ar.domain.event.InvoiceIssued;
 import com.invoicegenie.ar.domain.event.PaymentAllocated;
 import com.invoicegenie.ar.domain.event.PaymentRecorded;
+import com.invoicegenie.ar.domain.event.StatementGenerated;
 import com.invoicegenie.ar.domain.model.outbox.OutboxEntry;
 import com.invoicegenie.ar.domain.model.outbox.OutboxRepository;
 import com.invoicegenie.shared.domain.DomainEvent;
@@ -53,7 +55,15 @@ public class KafkaEventPublisher implements EventPublisher {
             PaymentRecorded.class, new EventTypeInfo(
                     "PAYMENT",
                     e -> ((PaymentRecorded) e).paymentId().getValue(),
-                    KafkaEventPublisher::paymentRecordedFields)
+                    KafkaEventPublisher::paymentRecordedFields),
+            StatementGenerated.class, new EventTypeInfo(
+                    "CUSTOMER",
+                    e -> ((StatementGenerated) e).customerId().getValue(),
+                    KafkaEventPublisher::statementGeneratedFields),
+            DunningNotice.class, new EventTypeInfo(
+                    "INVOICE",
+                    e -> ((DunningNotice) e).invoiceId().getValue(),
+                    KafkaEventPublisher::dunningNoticeFields)
     );
 
     @Inject
@@ -158,6 +168,29 @@ public class KafkaEventPublisher implements EventPublisher {
         fields.put("customerRef", pr.customerRef());
         fields.put("amount", moneyMap(pr.amount()));
         fields.put("paymentDate", pr.paymentDate() != null ? pr.paymentDate().toString() : null);
+        return fields;
+    }
+
+    private static Map<String, Object> statementGeneratedFields(DomainEvent event) {
+        StatementGenerated sg = (StatementGenerated) event;
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("customerId", sg.customerId().toString());
+        fields.put("asOfDate", sg.asOfDate() != null ? sg.asOfDate().toString() : null);
+        fields.put("openItemCount", sg.openItemCount());
+        fields.put("totalBalance", sg.totalBalance());
+        fields.put("currency", sg.currency());
+        return fields;
+    }
+
+    private static Map<String, Object> dunningNoticeFields(DomainEvent event) {
+        DunningNotice dn = (DunningNotice) event;
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("customerId", dn.customerId().toString());
+        fields.put("invoiceId", dn.invoiceId().toString());
+        fields.put("dunningLevel", dn.dunningLevel());
+        fields.put("daysPastDue", dn.daysPastDue());
+        fields.put("balanceDue", dn.balanceDue());
+        fields.put("currency", dn.currency());
         return fields;
     }
 

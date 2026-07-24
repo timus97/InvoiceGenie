@@ -99,6 +99,15 @@ invoicegenie:
   # Cheque OCR (STORY-018) — reject bulk create when ocrConfidence is present and below this floor
   ocr:
     min-confidence: ${INVOICEGENIE_OCR_MIN_CONFIDENCE:0.45}
+  # STORY-015: dunning policy (days past due → levels 1..N)
+  dunning:
+    enabled: ${INVOICEGENIE_DUNNING_ENABLED:true}
+    levels: ${INVOICEGENIE_DUNNING_LEVELS:30,60,90}
+    job-interval: ${INVOICEGENIE_DUNNING_JOB_INTERVAL:1h}
+  # STORY-019: allocation vs amountPaid reconciliation
+  allocation-reconcile:
+    enabled: ${INVOICEGENIE_ALLOCATION_RECONCILE_ENABLED:true}
+    interval: ${INVOICEGENIE_ALLOCATION_RECONCILE_INTERVAL:6h}
 
 # Local / fast path: H2 in-memory (no Postgres required).
 # Preferred: -Dquarkus.profile=dev

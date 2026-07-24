@@ -89,11 +89,20 @@ export function depositCheque(tenantId: string, id: string) {
   });
 }
 
-export function clearCheque(tenantId: string, id: string) {
-  return apiFetch<{ cheque: ChequeDto; ledgerEntries?: unknown[] }>(
-    apiPaths.chequeClear(id),
-    { method: "POST", tenantId },
-  );
+export function clearCheque(
+  tenantId: string,
+  id: string,
+  invoiceIds?: string[],
+) {
+  return apiFetch<{
+    cheque: ChequeDto;
+    paymentId?: string | null;
+    ledgerEntries?: unknown[];
+  }>(apiPaths.chequeClear(id), {
+    method: "POST",
+    tenantId,
+    body: invoiceIds?.length ? { invoiceIds } : {},
+  });
 }
 
 export function bounceCheque(tenantId: string, id: string, reason: string) {

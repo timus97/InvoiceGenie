@@ -75,7 +75,9 @@ public class ChequeResource {
                             dto.bankName(),
                             dto.bankBranch(),
                             dto.chequeDate(),
-                            dto.notes()
+                            dto.notes(),
+                            List.of(),
+                            dto.ocrConfidence()
                     ))
                     .toList();
             var created = chequeUseCase.bulkCreate(tenantId, commands);
@@ -217,7 +219,8 @@ public class ChequeResource {
 
     public record BulkCreateDto(List<CreateChequeDto> cheques) {}
     public record CreateChequeDto(String chequeNumber, String customerId, BigDecimal amount,
-            String currencyCode, String bankName, String bankBranch, LocalDate chequeDate, String notes) {}
+            String currencyCode, String bankName, String bankBranch, LocalDate chequeDate, String notes,
+            Double ocrConfidence) {}
     public record ChequeDto(String id, String chequeNumber, String customerId, BigDecimal amount,
             String currencyCode, String bankName, String bankBranch, LocalDate chequeDate,
             LocalDate receivedDate, LocalDate depositedDate, LocalDate clearedDate,

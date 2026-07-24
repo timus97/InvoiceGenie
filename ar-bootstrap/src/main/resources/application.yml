@@ -83,19 +83,26 @@ webhook:
     retry-batch: ${WEBHOOK_DELIVERY_RETRY_BATCH:50}
 
 # API security (disabled by default for local/dev/test)
+# mode: api-key | jwt | hybrid (Bearer JWT or X-API-Key)
 invoicegenie:
   security:
     enabled: ${INVOICEGENIE_SECURITY_ENABLED:false}
     mode: ${INVOICEGENIE_SECURITY_MODE:api-key}
     # Format: apiKey:tenantUuid,otherKey:otherTenantUuid
     api-keys: ${INVOICEGENIE_API_KEYS:none}
+    # Web users: username:password:tenantUuid:ROLE1|ROLE2 (comma-separated)
+    users: ${INVOICEGENIE_SECURITY_USERS:none}
     jwt:
       secret: ${INVOICEGENIE_JWT_SECRET:none}
+      ttl-seconds: ${INVOICEGENIE_JWT_TTL_SECONDS:28800}
     allow-openapi: ${INVOICEGENIE_SECURITY_ALLOW_OPENAPI:true}
+  # Cheque OCR (STORY-018) — reject bulk create when ocrConfidence is present and below this floor
+  ocr:
+    min-confidence: ${INVOICEGENIE_OCR_MIN_CONFIDENCE:0.45}
 
 # Local / fast path: H2 in-memory (no Postgres required).
 # Preferred: -Dquarkus.profile=dev
-# Legacy alias: -Dquarkus.profile=sqlite (same parent config)
+# (STORY-022: legacy %sqlite alias removed — use dev only)
 "%dev":
   quarkus:
     http:

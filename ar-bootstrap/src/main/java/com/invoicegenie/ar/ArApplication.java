@@ -197,10 +197,14 @@ public class ArApplication {
                                        PaymentAllocationUseCase paymentAllocationUseCase,
                                        PaymentRepository paymentRepository,
                                        InvoiceRepository invoiceRepository,
-                                       LedgerService ledgerService) {
+                                       LedgerService ledgerService,
+                                       CustomerRepository customerRepository,
+                                       @org.eclipse.microprofile.config.inject.ConfigProperty(
+                                               name = "invoicegenie.ocr.min-confidence",
+                                               defaultValue = "0.45") double minOcrConfidence) {
         return new ChequeApplicationService(chequeService, chequeRepository, invoiceLifecycleUseCase,
                 ledgerRepository, recordPaymentUseCase, paymentAllocationUseCase, paymentRepository,
-                invoiceRepository, ledgerService);
+                invoiceRepository, ledgerService, customerRepository, minOcrConfidence);
     }
 
     @Produces

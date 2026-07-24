@@ -11,6 +11,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import org.jboss.logging.Logger;
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 
@@ -19,14 +20,31 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Cheque OCR endpoints: parse OCR text and upload multi-file / PDF bulk processing.
+ *
+ * <p>Supported modes (see {@code docs/CHEQUE_OCR.md}):
+ * <ul>
+ *   <li><b>Client OCR</b> — browser Tesseract.js → {@code POST /parse} (product path for images)</li>
+ *   <li><b>Server PDF text</b> — PDFBox text layer on {@code POST /upload} (no Tesseract in API image)</li>
+ * </ul>
+ *
+ * <p>Parse success rate is logged (and process-lifetime counters exposed in log lines).
+ * Prometheus Micrometer wiring is optional at bootstrap; avoid Tesseract in the API image.
  */
 @Path("/api/v1/cheques/ocr")
 @Produces(MediaType.APPLICATION_JSON)
 @Tag(name = "Cheque OCR", description = "OCR extraction for cheques (images via client text, PDFs server-side)")
 public class ChequeOcrResource {
+
+    private static final Logger LOG = Logger.getLogger(ChequeOcrResource.class);
+
+    /** Process-lifetime counters for ops (grep "OCR metrics" or scrape logs). */
+    private static final AtomicLong TOTAL = new AtomicLong();
+    private static final AtomicLong COMPLETE = new AtomicLong();
+    private static final AtomicLong INCOMPLETE = new AtomicLong();
 
     private final ChequeOcrUseCase chequeOcrUseCase;
 
@@ -48,6 +66,7 @@ public class ChequeOcrResource {
                 .map(b -> new ChequeOcrUseCase.TextBlock(b.sourceName(), b.text()))
                 .toList();
         List<ChequeOcrParser.ExtractedCheque> extracted = chequeOcrUseCase.parseTexts(blocks);
+        recordParseMetrics(extracted, "parse");
         return Response.ok(new OcrResultDto(extracted.stream().map(this::toDto).toList(), extracted.size())).build();
     }
 
@@ -97,11 +116,39 @@ public class ChequeOcrResource {
             }
         }
 
+        recordParseMetrics(all, "upload");
         return Response.ok(new OcrUploadResultDto(
                 all.stream().map(this::toDto).toList(),
                 all.size(),
                 warnings
         )).build();
+    }
+
+    private void recordParseMetrics(List<ChequeOcrParser.ExtractedCheque> extracted, String mode) {
+        if (extracted == null || extracted.isEmpty()) {
+            LOG.infof("OCR metrics mode=%s batchExtracted=0 batchCompleteRate=n/a lifetimeTotal=%d lifetimeCompleteRate=%.2f",
+                    mode, TOTAL.get(), lifetimeCompleteRate());
+            return;
+        }
+        int complete = 0;
+        for (ChequeOcrParser.ExtractedCheque c : extracted) {
+            TOTAL.incrementAndGet();
+            if (c.isCompleteEnough() && !"IMAGE_PENDING_CLIENT_OCR".equals(c.notes())) {
+                complete++;
+                COMPLETE.incrementAndGet();
+            } else {
+                INCOMPLETE.incrementAndGet();
+            }
+        }
+        double batchRate = (double) complete / extracted.size();
+        LOG.infof("OCR metrics mode=%s batchExtracted=%d batchComplete=%d batchCompleteRate=%.2f lifetimeTotal=%d lifetimeComplete=%d lifetimeIncomplete=%d lifetimeCompleteRate=%.2f",
+                mode, extracted.size(), complete, batchRate,
+                TOTAL.get(), COMPLETE.get(), INCOMPLETE.get(), lifetimeCompleteRate());
+    }
+
+    private static double lifetimeCompleteRate() {
+        long t = TOTAL.get();
+        return t == 0 ? 0.0 : (double) COMPLETE.get() / t;
     }
 
     private static boolean isImage(String lower) {

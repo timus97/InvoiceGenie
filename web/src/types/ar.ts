@@ -217,6 +217,8 @@ export type CreateChequeRequest = {
   bankBranch?: string;
   chequeDate?: string;
   notes?: string;
+  /** OCR confidence 0..1; server rejects below invoicegenie.ocr.min-confidence when set. */
+  ocrConfidence?: number;
 };
 
 export type AgingInvoiceDetailDto = {

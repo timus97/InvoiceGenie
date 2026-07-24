@@ -46,7 +46,9 @@ public interface ChequeUseCase {
             String bankBranch,
             LocalDate chequeDate,
             String notes,
-            List<UUID> invoiceIds
+            List<UUID> invoiceIds,
+            /** OCR parse confidence 0..1; null when not from OCR or unknown. */
+            Double ocrConfidence
     ) {
         public CreateChequeCommand(
                 String chequeNumber,
@@ -56,7 +58,19 @@ public interface ChequeUseCase {
                 String bankBranch,
                 LocalDate chequeDate,
                 String notes) {
-            this(chequeNumber, customerId, amount, bankName, bankBranch, chequeDate, notes, List.of());
+            this(chequeNumber, customerId, amount, bankName, bankBranch, chequeDate, notes, List.of(), null);
+        }
+
+        public CreateChequeCommand(
+                String chequeNumber,
+                String customerId,
+                Money amount,
+                String bankName,
+                String bankBranch,
+                LocalDate chequeDate,
+                String notes,
+                List<UUID> invoiceIds) {
+            this(chequeNumber, customerId, amount, bankName, bankBranch, chequeDate, notes, invoiceIds, null);
         }
     }
 

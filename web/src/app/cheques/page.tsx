@@ -39,6 +39,13 @@ import type {
 
 const STATUSES = ["RECEIVED", "DEPOSITED", "CLEARED", "BOUNCED"] as const;
 
+/** Mirrors invoicegenie.ocr.min-confidence default; overridable via NEXT_PUBLIC_OCR_MIN_CONFIDENCE. */
+const MIN_OCR_CONFIDENCE = (() => {
+  const raw = process.env.NEXT_PUBLIC_OCR_MIN_CONFIDENCE;
+  const n = raw != null && raw !== "" ? Number(raw) : 0.45;
+  return Number.isFinite(n) ? n : 0.45;
+})();
+
 type ReviewRow = {
   key: string;
   sourceFile: string;
@@ -51,10 +58,12 @@ type ReviewRow = {
   chequeDate: string;
   notes: string;
   confidence: number;
+  payeeHint: string;
   selected: boolean;
 };
 
 function toReviewRow(c: ExtractedChequeDto, idx: number): ReviewRow {
+  const confidence = c.confidence ?? 0;
   return {
     key: `${c.sourceFile ?? "src"}-${c.segmentIndex ?? idx}-${idx}`,
     sourceFile: c.sourceFile ?? "",
@@ -66,9 +75,32 @@ function toReviewRow(c: ExtractedChequeDto, idx: number): ReviewRow {
     bankBranch: c.bankBranch ?? "",
     chequeDate: c.chequeDate ?? new Date().toISOString().slice(0, 10),
     notes: c.notes ?? "",
-    confidence: c.confidence ?? 0,
-    selected: !!(c.chequeNumber && c.amount),
+    confidence,
+    payeeHint: c.payeeHint ?? "",
+    selected: !!(c.chequeNumber && c.amount) && confidence >= MIN_OCR_CONFIDENCE,
   };
+}
+
+function matchCustomerId(
+  payeeHint: string,
+  customers: { id: string; displayName?: string | null; legalName?: string | null; code?: string | null }[],
+): string {
+  if (!payeeHint?.trim() || !customers?.length) return "";
+  const hint = payeeHint.trim().toLowerCase();
+  const exact = customers.find((c) => {
+    const names = [c.displayName, c.legalName, c.code]
+      .filter(Boolean)
+      .map((s) => String(s).trim().toLowerCase());
+    return names.some((n) => n === hint);
+  });
+  if (exact) return exact.id;
+  const partial = customers.find((c) => {
+    const names = [c.displayName, c.legalName, c.code]
+      .filter(Boolean)
+      .map((s) => String(s).trim().toLowerCase());
+    return names.some((n) => n.includes(hint) || hint.includes(n));
+  });
+  return partial?.id ?? "";
 }
 
 export default function ChequesPage() {
@@ -202,16 +234,35 @@ export default function ChequesPage() {
           return;
         }
 
+        const list = customers.data ?? [];
         const rows = extracted.map((c, i) => {
           const row = toReviewRow(c, i);
-          if (defaultCustomerId) row.customerId = defaultCustomerId;
+          if (defaultCustomerId) {
+            row.customerId = defaultCustomerId;
+          } else if (row.payeeHint) {
+            row.customerId = matchCustomerId(
+              row.payeeHint,
+              list.map((c) => ({
+                id: c.id,
+                displayName: c.displayName,
+                legalName: c.legalName,
+                code: c.customerCode,
+              })),
+            );
+          }
           return row;
         });
+        const low = rows.filter((r) => r.confidence < MIN_OCR_CONFIDENCE).length;
         setReviewRows((prev) => [...prev, ...rows]);
         setShowOcr(true);
         toast.success(
           `Extracted ${rows.length} cheque candidate(s). Review and receive.`,
         );
+        if (low > 0) {
+          toast.message(
+            `${low} row(s) below confidence ${(MIN_OCR_CONFIDENCE * 100).toFixed(0)}% — correct fields or leave unselected.`,
+          );
+        }
       } catch (e) {
         onErr(e instanceof Error ? e : new Error(String(e)));
       } finally {
@@ -220,7 +271,7 @@ export default function ChequesPage() {
         if (fileRef.current) fileRef.current.value = "";
       }
     },
-    [tenantId, defaultCustomerId],
+    [tenantId, defaultCustomerId, customers.data],
   );
 
   const applyDefaultCustomer = () => {
@@ -248,11 +299,17 @@ export default function ChequesPage() {
         return;
       }
       if (!r.customerId) {
-        toast.error("Each selected row needs a customer");
+        toast.error("Each selected row needs a matched customer");
         return;
       }
       if (Number.isNaN(n) || n <= 0) {
         toast.error(`Invalid amount on cheque ${r.chequeNumber}`);
+        return;
+      }
+      if (r.confidence < MIN_OCR_CONFIDENCE) {
+        toast.error(
+          `Cheque ${r.chequeNumber}: confidence ${(r.confidence * 100).toFixed(0)}% below ${(MIN_OCR_CONFIDENCE * 100).toFixed(0)}% threshold — correct fields after re-OCR or unselect`,
+        );
         return;
       }
       payload.push({
@@ -264,6 +321,7 @@ export default function ChequesPage() {
         bankBranch: r.bankBranch || undefined,
         chequeDate: r.chequeDate || undefined,
         notes: r.notes || undefined,
+        ocrConfidence: r.confidence,
       });
     }
     bulkMut.mutate(payload);

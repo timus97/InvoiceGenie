@@ -1,0 +1,9 @@
+variable "name_prefix" { type = string }
+variable "github_org" { type = string }
+variable "github_repo" { type = string }
+variable "ecr_api_arn" { type = string }
+variable "ecr_web_arn" { type = string }
+variable "ecs_cluster_arn" { type = string }
+variable "ecs_execution_role_arn" { type = string }
+variable "ecs_task_role_arn" { type = string }
+variable "tags" { type = map(string) }

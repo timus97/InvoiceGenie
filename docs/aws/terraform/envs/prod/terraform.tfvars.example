@@ -1,0 +1,17 @@
+aws_region         = "us-east-1"
+env                = "prod"
+project            = "invoicegenie"
+vpc_cidr           = "10.30.0.0/16"
+single_nat_gateway = false   # HA NAT per AZ
+db_instance_class  = "db.r6g.large"
+db_multi_az        = true
+api_desired_count  = 2
+web_desired_count  = 2
+api_cpu            = 2048
+api_memory         = 4096
+# certificate_arn  = "arn:aws:acm:us-east-1:ACCOUNT:certificate/UUID"
+security_mode      = "api-key"
+github_org         = "timus97"
+github_repo        = "InvoiceGenie"
+alarm_email        = "ops@example.com"
+enable_cicd_iam    = true

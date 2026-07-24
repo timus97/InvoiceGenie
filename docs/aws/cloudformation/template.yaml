@@ -1,0 +1,665 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  InvoiceGenie AR P0 stack — VPC (public/app/data), ALB, ECS Fargate (api+web),
+  RDS PostgreSQL 15 private, ECR, Secrets Manager, CloudWatch. Aligns with docs/aws/AWS_HOSTING_DESIGN.md.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: Environment }
+        Parameters: [ProjectName, EnvironmentName, LatestAmiId]
+      - Label: { default: Network }
+        Parameters: [VpcCidr, SingleNatGateway]
+      - Label: { default: Database }
+        Parameters: [DbInstanceClass, DbMultiAz, DbName, DbUsername, DbPassword]
+      - Label: { default: Images & scale }
+        Parameters: [ApiImageUri, WebImageUri, ApiDesiredCount, WebDesiredCount]
+      - Label: { default: Security }
+        Parameters: [ApiKeysCsv, JwtSecret, CertificateArn]
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: invoicegenie
+  EnvironmentName:
+    Type: String
+    Default: staging
+    AllowedValues: [dev, staging, prod]
+  VpcCidr:
+    Type: String
+    Default: 10.20.0.0/16
+  SingleNatGateway:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+  DbInstanceClass:
+    Type: String
+    Default: db.t4g.medium
+  DbMultiAz:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+  DbName:
+    Type: String
+    Default: invoicegenie
+  DbUsername:
+    Type: String
+    Default: invoicegenie
+    NoEcho: true
+  DbPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 16
+    Description: Strong password (not ar/password/demo). Used by RDS and injected to API.
+  ApiKeysCsv:
+    Type: String
+    NoEcho: true
+    Description: "Format key:tenantUuid — do NOT use dev-local-key / test-key / demo prefixes"
+    Default: "ig-cf-smoke-key-change-me:00000000-0000-0000-0000-000000000001"
+  JwtSecret:
+    Type: String
+    NoEcho: true
+    MinLength: 16
+    Default: "change-this-jwt-secret-min-16"
+  ApiImageUri:
+    Type: String
+    Description: Full ECR URI with tag, e.g. 123.dkr.ecr.us-east-1.amazonaws.com/invoicegenie-staging/api:latest
+  WebImageUri:
+    Type: String
+  ApiDesiredCount:
+    Type: Number
+    Default: 1
+  WebDesiredCount:
+    Type: Number
+    Default: 1
+  CertificateArn:
+    Type: String
+    Default: ""
+    Description: Optional ACM certificate ARN for HTTPS
+
+Conditions:
+  UseHttps: !Not [!Equals [!Ref CertificateArn, ""]]
+  CreateSecondNat: !Equals [!Ref SingleNatGateway, "false"]
+  IsMultiAz: !Equals [!Ref DbMultiAz, "true"]
+
+Resources:
+  # ----- Network -----
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${EnvironmentName}-vpc
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [0, !Cidr [!Ref VpcCidr, 16, 8]]
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: !Sub ${ProjectName}-${EnvironmentName}-public-1 }]
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [1, !Cidr [!Ref VpcCidr, 16, 8]]
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags: [{ Key: Name, Value: !Sub ${ProjectName}-${EnvironmentName}-public-2 }]
+
+  AppSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [4, !Cidr [!Ref VpcCidr, 16, 8]]
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags: [{ Key: Name, Value: !Sub ${ProjectName}-${EnvironmentName}-app-1 }]
+
+  AppSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [5, !Cidr [!Ref VpcCidr, 16, 8]]
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags: [{ Key: Name, Value: !Sub ${ProjectName}-${EnvironmentName}-app-2 }]
+
+  DataSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [8, !Cidr [!Ref VpcCidr, 16, 8]]
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags: [{ Key: Name, Value: !Sub ${ProjectName}-${EnvironmentName}-data-1 }]
+
+  DataSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Select [9, !Cidr [!Ref VpcCidr, 16, 8]]
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags: [{ Key: Name, Value: !Sub ${ProjectName}-${EnvironmentName}-data-2 }]
+
+  NatEip1:
+    Type: AWS::EC2::EIP
+    DependsOn: AttachGateway
+    Properties:
+      Domain: vpc
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEip1.AllocationId
+      SubnetId: !Ref PublicSubnet1
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1Assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2Assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateAppRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PrivateAppRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateAppRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway1
+
+  AppSubnet1Assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref AppSubnet1
+      RouteTableId: !Ref PrivateAppRouteTable
+
+  AppSubnet2Assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref AppSubnet2
+      RouteTableId: !Ref PrivateAppRouteTable
+
+  DataRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  DataSubnet1Assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DataSubnet1
+      RouteTableId: !Ref DataRouteTable
+
+  DataSubnet2Assoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref DataSubnet2
+      RouteTableId: !Ref DataRouteTable
+
+  # ----- Security groups -----
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: ALB 80/443
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Next.js ECS
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+
+  ApiSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Quarkus ECS
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref WebSecurityGroup
+
+  RdsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Postgres from API only
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref ApiSecurityGroup
+
+  # ----- Secrets -----
+  DbPasswordSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${ProjectName}-${EnvironmentName}/db-password
+      SecretString: !Ref DbPassword
+
+  ApiKeysSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${ProjectName}-${EnvironmentName}/api-keys
+      SecretString: !Ref ApiKeysCsv
+
+  JwtSecretResource:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${ProjectName}-${EnvironmentName}/jwt-secret
+      SecretString: !Ref JwtSecret
+
+  # ----- RDS -----
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: InvoiceGenie private data
+      SubnetIds: [!Ref DataSubnet1, !Ref DataSubnet2]
+
+  DbParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: Force SSL
+      Family: postgres15
+      Parameters:
+        rds.force_ssl: "1"
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub ${ProjectName}-${EnvironmentName}-pg
+      Engine: postgres
+      EngineVersion: "15.8"
+      DBInstanceClass: !Ref DbInstanceClass
+      AllocatedStorage: 50
+      MaxAllocatedStorage: 200
+      StorageType: gp3
+      StorageEncrypted: true
+      DBName: !Ref DbName
+      MasterUsername: !Ref DbUsername
+      MasterUserPassword: !Ref DbPassword
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VPCSecurityGroups: [!Ref RdsSecurityGroup]
+      DBParameterGroupName: !Ref DbParameterGroup
+      MultiAZ: !If [IsMultiAz, true, false]
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+      DeletionProtection: false
+
+  # ----- ECR -----
+  ApiRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub ${ProjectName}-${EnvironmentName}/api
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EmptyOnDelete: true
+
+  WebRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub ${ProjectName}-${EnvironmentName}/web
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EmptyOnDelete: true
+
+  # ----- ALB -----
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${ProjectName}-${EnvironmentName}-alb
+      Scheme: internet-facing
+      Type: application
+      Subnets: [!Ref PublicSubnet1, !Ref PublicSubnet2]
+      SecurityGroups: [!Ref AlbSecurityGroup]
+
+  ApiTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${ProjectName}-${EnvironmentName}-api
+      Port: 8080
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: ip
+      HealthCheckPath: /q/health
+      HealthCheckProtocol: HTTP
+      Matcher:
+        HttpCode: "200"
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  WebTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${ProjectName}-${EnvironmentName}-web
+      Port: 3000
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      TargetType: ip
+      HealthCheckPath: /
+      Matcher:
+        HttpCode: 200-399
+
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - !If
+          - UseHttps
+          - Type: redirect
+            RedirectConfig:
+              Protocol: HTTPS
+              Port: "443"
+              StatusCode: HTTP_301
+          - Type: forward
+            TargetGroupArn: !Ref WebTargetGroup
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: UseHttps
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref WebTargetGroup
+
+  ApiListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !If [UseHttps, !Ref HttpsListener, !Ref HttpListener]
+      Priority: 10
+      Conditions:
+        - Field: path-pattern
+          Values: ["/api/*", "/q/health", "/q/health/*"]
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref ApiTargetGroup
+
+  BlockOpenApiRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !If [UseHttps, !Ref HttpsListener, !Ref HttpListener]
+      Priority: 5
+      Conditions:
+        - Field: path-pattern
+          Values: ["/q/swagger-ui", "/q/swagger-ui/*", "/q/openapi", "/q/openapi/*"]
+      Actions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: "404"
+            ContentType: text/plain
+            MessageBody: Not Found
+
+  # ----- ECS -----
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${ProjectName}-${EnvironmentName}-cluster
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+
+  EcsExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: secrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [secretsmanager:GetSecretValue]
+                Resource:
+                  - !Ref DbPasswordSecret
+                  - !Ref ApiKeysSecret
+                  - !Ref JwtSecretResource
+
+  EcsTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /invoicegenie/${ProjectName}-${EnvironmentName}/api
+      RetentionInDays: 30
+
+  WebLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /invoicegenie/${ProjectName}-${EnvironmentName}/web
+      RetentionInDays: 30
+
+  ApiTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${ProjectName}-${EnvironmentName}-api
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "1024"
+      Memory: "2048"
+      ExecutionRoleArn: !GetAtt EcsExecutionRole.Arn
+      TaskRoleArn: !GetAtt EcsTaskRole.Arn
+      ContainerDefinitions:
+        - Name: api
+          Image: !Ref ApiImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+          Environment:
+            - Name: QUARKUS_PROFILE
+              Value: prod
+            - Name: QUARKUS_HTTP_HOST
+              Value: 0.0.0.0
+            - Name: QUARKUS_DATASOURCE_JDBC_URL
+              Value: !Sub jdbc:postgresql://${Database.Endpoint.Address}:${Database.Endpoint.Port}/${DbName}?sslmode=require
+            - Name: QUARKUS_DATASOURCE_USERNAME
+              Value: !Ref DbUsername
+            - Name: INVOICEGENIE_SECURITY_ENABLED
+              Value: "true"
+            - Name: INVOICEGENIE_SECURITY_MODE
+              Value: api-key
+            - Name: INVOICEGENIE_SECURITY_ALLOW_OPENAPI
+              Value: "false"
+            - Name: QUARKUS_FLYWAY_MIGRATE_AT_START
+              Value: "true"
+            - Name: OUTBOX_KAFKA_ENABLED
+              Value: "false"
+            - Name: QUARKUS_LOG_CONSOLE_JSON
+              Value: "true"
+          Secrets:
+            - Name: QUARKUS_DATASOURCE_PASSWORD
+              ValueFrom: !Ref DbPasswordSecret
+            - Name: INVOICEGENIE_API_KEYS
+              ValueFrom: !Ref ApiKeysSecret
+            - Name: INVOICEGENIE_JWT_SECRET
+              ValueFrom: !Ref JwtSecretResource
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ApiLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: api
+          HealthCheck:
+            Command: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/q/health || exit 1"]
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 90
+
+  WebTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${ProjectName}-${EnvironmentName}-web
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "512"
+      Memory: "1024"
+      ExecutionRoleArn: !GetAtt EcsExecutionRole.Arn
+      TaskRoleArn: !GetAtt EcsTaskRole.Arn
+      ContainerDefinitions:
+        - Name: web
+          Image: !Ref WebImageUri
+          Essential: true
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+          Environment:
+            # ALB internal DNS for server-side rewrites (same VPC)
+            - Name: BACKEND_URL
+              Value: !Sub http://${ApplicationLoadBalancer.DNSName}
+            - Name: NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE
+              Value: "false"
+            - Name: NEXT_PUBLIC_APP_NAME
+              Value: InvoiceGenie AR
+            - Name: PORT
+              Value: "3000"
+            - Name: HOSTNAME
+              Value: 0.0.0.0
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref WebLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: web
+
+  ApiService:
+    Type: AWS::ECS::Service
+    DependsOn: [HttpListener, ApiListenerRule]
+    Properties:
+      ServiceName: !Sub ${ProjectName}-${EnvironmentName}-api
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref ApiTaskDefinition
+      DesiredCount: !Ref ApiDesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups: [!Ref ApiSecurityGroup]
+          Subnets: [!Ref AppSubnet1, !Ref AppSubnet2]
+      LoadBalancers:
+        - ContainerName: api
+          ContainerPort: 8080
+          TargetGroupArn: !Ref ApiTargetGroup
+      HealthCheckGracePeriodSeconds: 120
+      DeploymentConfiguration:
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+
+  WebService:
+    Type: AWS::ECS::Service
+    DependsOn: [HttpListener, ApiService]
+    Properties:
+      ServiceName: !Sub ${ProjectName}-${EnvironmentName}-web
+      Cluster: !Ref EcsCluster
+      TaskDefinition: !Ref WebTaskDefinition
+      DesiredCount: !Ref WebDesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups: [!Ref WebSecurityGroup]
+          Subnets: [!Ref AppSubnet1, !Ref AppSubnet2]
+      LoadBalancers:
+        - ContainerName: web
+          ContainerPort: 3000
+          TargetGroupArn: !Ref WebTargetGroup
+      HealthCheckGracePeriodSeconds: 60
+
+Outputs:
+  AlbDnsName:
+    Description: Public ALB DNS
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+  ApiUrl:
+    Value: !Sub http://${ApplicationLoadBalancer.DNSName}/api/v1
+  HealthUrl:
+    Value: !Sub http://${ApplicationLoadBalancer.DNSName}/q/health
+  EcrApiUri:
+    Value: !GetAtt ApiRepository.RepositoryUri
+  EcrWebUri:
+    Value: !GetAtt WebRepository.RepositoryUri
+  RdsEndpoint:
+    Value: !GetAtt Database.Endpoint.Address
+  JdbcUrl:
+    Value: !Sub jdbc:postgresql://${Database.Endpoint.Address}:${Database.Endpoint.Port}/${DbName}?sslmode=require

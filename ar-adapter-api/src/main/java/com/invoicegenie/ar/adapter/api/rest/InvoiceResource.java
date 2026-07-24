@@ -11,6 +11,9 @@ import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceStatus;
 import com.invoicegenie.shared.tenant.TenantContext;
 
+import com.invoicegenie.ar.adapter.api.security.ArRoles;
+import com.invoicegenie.ar.adapter.api.security.RequireRoles;
+
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -182,6 +185,7 @@ public class InvoiceResource {
 
     @POST
     @Path("/{id}/writeoff")
+    @RequireRoles({ArRoles.AR_CONTROLLER, ArRoles.TENANT_ADMIN})
     @Operation(summary = "Write off invoice (OVERDUE → WRITTEN_OFF)")
     @APIResponses({
         @APIResponse(responseCode = "200", description = "Written off"),

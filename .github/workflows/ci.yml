@@ -76,6 +76,8 @@ jobs:
         run: npm run build
         env:
           BACKEND_URL: http://localhost:8080
+          # STORY-021: prod-like web build — no tenant override, no embedded demo secrets
+          NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE: "false"
 
   docker-smoke:
     name: Docker prod smoke

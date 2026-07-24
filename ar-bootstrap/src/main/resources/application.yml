@@ -143,13 +143,6 @@ invoicegenie:
     security:
       enabled: false
 
-# Deprecated alias for %dev (historical name; not SQLite). Remove after one release cycle.
-"%sqlite":
-  quarkus:
-    config:
-      profile:
-        parent: dev
-
 # Test profile - uses H2 in-memory database
 "%test":
   quarkus:

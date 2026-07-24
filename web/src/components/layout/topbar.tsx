@@ -4,10 +4,14 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Activity, ExternalLink } from "lucide-react";
 import { useTenant } from "@/components/tenant-provider";
+import { useAuth } from "@/components/auth-provider";
 import { checkBackendHealth } from "@/lib/api/client";
 
 export function Topbar() {
   const { tenantId, ready } = useTenant();
+  const { session, logout } = useAuth();
+  const allowOverride =
+    process.env.NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE !== "false";
   const [health, setHealth] = useState<"unknown" | "up" | "down">("unknown");
 
   useEffect(() => {
@@ -31,14 +35,37 @@ export function Topbar() {
         <code className="truncate rounded-md bg-zinc-100 px-2 py-1 font-mono text-xs text-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
           {ready ? tenantId : "…"}
         </code>
-        <Link
-          href="/settings"
-          className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
-        >
-          Change
-        </Link>
+        {allowOverride ? (
+          <Link
+            href="/settings"
+            className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+          >
+            Change
+          </Link>
+        ) : session ? (
+          <span className="text-xs text-zinc-500">from session</span>
+        ) : (
+          <Link
+            href="/login"
+            className="text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+          >
+            Sign in
+          </Link>
+        )}
       </div>
       <div className="flex items-center gap-4 text-sm">
+        {session ? (
+          <span className="hidden text-xs text-zinc-500 sm:inline">
+            {session.subject}
+            <button
+              type="button"
+              onClick={() => logout()}
+              className="ml-2 font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+            >
+              Sign out
+            </button>
+          </span>
+        ) : null}
         <span className="inline-flex items-center gap-1.5 text-zinc-600 dark:text-zinc-300">
           <Activity
             className={

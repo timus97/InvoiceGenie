@@ -1,4 +1,8 @@
 import { ApiError, parseApiError } from "@/lib/errors";
+import {
+  readAuthSession,
+  sessionToAuthHeaders,
+} from "@/lib/auth-session";
 
 export type ApiRequestOptions = {
   method?: string;
@@ -21,8 +25,15 @@ function buildUrl(path: string, query?: ApiRequestOptions["query"]): string {
   return qs ? `${base}?${qs}` : base;
 }
 
+/** Auth headers from login session (JWT / API key), falling back to env key. */
+export function buildAuthHeaders(): Record<string, string> {
+  return sessionToAuthHeaders(readAuthSession());
+}
+
 /**
  * Browser-side API client. Calls same-origin paths; Next.js rewrites proxy to Quarkus.
+ * Credentials come from login session when present; tenant is still sent as X-Tenant-Id
+ * and must match the authenticated tenant (server enforces).
  */
 export async function apiFetch<T>(
   path: string,
@@ -38,12 +49,8 @@ export async function apiFetch<T>(
   const headers: Record<string, string> = {
     Accept: "application/json",
     "X-Tenant-Id": tenantId.trim(),
+    ...buildAuthHeaders(),
   };
-  // Optional browser-side API key for prod-like security (NEXT_PUBLIC_API_KEY)
-  const apiKey = process.env.NEXT_PUBLIC_API_KEY?.trim();
-  if (apiKey) {
-    headers["X-API-Key"] = apiKey;
-  }
   if (body !== undefined) {
     headers["Content-Type"] = "application/json";
   }

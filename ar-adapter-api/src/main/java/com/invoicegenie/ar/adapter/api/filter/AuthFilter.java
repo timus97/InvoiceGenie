@@ -27,6 +27,7 @@ import org.jboss.logging.Logger;
  *       mapped via {@code invoicegenie.security.api-keys=key:tenantUuid,...}</li>
  *   <li>{@code jwt} mode - require HS256 JWT (Bearer) with {@code tenant_id} claim,
  *       optional {@code roles[]} claim, signed with {@code invoicegenie.security.jwt.secret}</li>
+ *   <li>{@code hybrid} mode - accept either Bearer JWT or {@code X-API-Key} (web + M2M)</li>
  * </ul>
  *
  * <p>Public paths (health) always bypass. OpenAPI/Swagger bypass only when
@@ -88,6 +89,7 @@ public class AuthFilter implements ContainerRequestFilter {
         Optional<AuthResult> auth = switch (modeNorm) {
             case "jwt" -> authenticateJwt(requestContext);
             case "api-key" -> authenticateApiKey(requestContext);
+            case "hybrid", "api-key-or-jwt", "both" -> authenticateHybrid(requestContext);
             default -> {
                 LOG.warnf("Unknown security mode '%s' - rejecting request", mode);
                 yield Optional.empty();
@@ -112,6 +114,14 @@ public class AuthFilter implements ContainerRequestFilter {
         String ua = requestContext.getHeaderString("User-Agent");
         String actorType = "jwt".equals(result.method()) ? "USER" : "API";
         ActorContext.set(ActorContext.Actor.of(result.subject(), actorType, ip, ua));
+    }
+
+    private Optional<AuthResult> authenticateHybrid(ContainerRequestContext ctx) {
+        Optional<AuthResult> jwt = authenticateJwt(ctx);
+        if (jwt.isPresent()) {
+            return jwt;
+        }
+        return authenticateApiKey(ctx);
     }
 
     private Optional<AuthResult> authenticateApiKey(ContainerRequestContext ctx) {
@@ -165,6 +175,10 @@ public class AuthFilter implements ContainerRequestFilter {
             if (path.equals(prefix) || path.startsWith(prefix + "/")) {
                 return true;
             }
+        }
+        // STORY-003 Phase 2: login is always unauthenticated
+        if (path.equals("/api/v1/auth/login") || path.startsWith("/api/v1/auth/login/")) {
+            return true;
         }
         if (allowOpenApi && (path.startsWith("/q/swagger")
                 || path.startsWith("/q/openapi")

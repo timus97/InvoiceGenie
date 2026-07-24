@@ -99,6 +99,10 @@ public class RoleAuthorizationFilter implements ContainerRequestFilter {
         String method = ctx.getMethod() != null ? ctx.getMethod().toUpperCase(Locale.ROOT) : "GET";
         String path = normalize(ctx.getUriInfo() != null ? ctx.getUriInfo().getPath() : "");
 
+        if (path.startsWith("/api/v1/auth")) {
+            return Set.of();
+        }
+
         if ("GET".equals(method) || "HEAD".equals(method) || "OPTIONS".equals(method)) {
             if (path.startsWith("/api/v1/audit")) {
                 return Set.of(ArRoles.AR_AUDITOR, ArRoles.TENANT_ADMIN, ArRoles.AR_CONTROLLER);

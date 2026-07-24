@@ -11,6 +11,11 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 # BACKEND_URL is read at runtime for rewrites; build still needs a default
 ENV BACKEND_URL=http://app:8080
+# NEXT_PUBLIC_* are inlined at build time — prod image must not allow free tenant spoofing
+ENV NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE=false
+ENV NEXT_PUBLIC_APP_NAME=InvoiceGenie AR
+# Do not bake demo API keys into the image
+ENV NEXT_PUBLIC_API_KEY=
 RUN npm run build
 
 FROM node:22-alpine AS runner

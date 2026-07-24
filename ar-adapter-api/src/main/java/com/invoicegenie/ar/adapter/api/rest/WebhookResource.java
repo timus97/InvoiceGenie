@@ -1,6 +1,8 @@
 package com.invoicegenie.ar.adapter.api.rest;
 
 import com.invoicegenie.ar.adapter.api.dto.ErrorResponse;
+import com.invoicegenie.ar.adapter.api.security.ArRoles;
+import com.invoicegenie.ar.adapter.api.security.RequireRoles;
 import com.invoicegenie.ar.application.port.inbound.WebhookUseCase;
 import com.invoicegenie.ar.domain.model.webhook.WebhookDeliveryLog;
 import com.invoicegenie.ar.domain.model.webhook.WebhookDeliveryRepository;
@@ -20,6 +22,7 @@ import java.util.stream.Collectors;
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @Tag(name = "Webhooks", description = "Customer webhook subscriptions")
+@RequireRoles({ArRoles.TENANT_ADMIN})
 public class WebhookResource {
 
     private final WebhookUseCase webhookUseCase;

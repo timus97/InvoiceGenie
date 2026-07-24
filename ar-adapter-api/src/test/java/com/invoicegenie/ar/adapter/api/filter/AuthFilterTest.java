@@ -86,4 +86,30 @@ class AuthFilterTest {
         verify(requestContext).setProperty(SecurityConstants.AUTH_TENANT_PROPERTY,
                 "00000000-0000-0000-0000-000000000001");
     }
+
+    @Test
+    @DisplayName("allows login path when security enabled")
+    void loginPublic() throws Exception {
+        when(requestContext.getUriInfo()).thenReturn(uriInfo);
+        when(uriInfo.getPath()).thenReturn("api/v1/auth/login");
+        filter(true, "api-key", "k:00000000-0000-0000-0000-000000000001", "").filter(requestContext);
+        verify(requestContext, never()).abortWith(any());
+    }
+
+    @Test
+    @DisplayName("hybrid accepts JWT bearer")
+    void hybridJwt() throws Exception {
+        String secret = "test-secret-key-which-is-long-enough";
+        String token = com.invoicegenie.ar.adapter.api.security.ApiKeyRegistry.signHs256Jwt(
+                secret, "00000000-0000-0000-0000-000000000001", "u",
+                java.util.Set.of("AR_CLERK"), 3600);
+        when(requestContext.getUriInfo()).thenReturn(uriInfo);
+        when(uriInfo.getPath()).thenReturn("/api/v1/invoices");
+        when(requestContext.getHeaderString(SecurityConstants.HEADER_AUTHORIZATION))
+                .thenReturn("Bearer " + token);
+        filter(true, "hybrid", "k:00000000-0000-0000-0000-000000000001", secret).filter(requestContext);
+        verify(requestContext, never()).abortWith(any());
+        verify(requestContext).setProperty(SecurityConstants.AUTH_TENANT_PROPERTY,
+                "00000000-0000-0000-0000-000000000001");
+    }
 }

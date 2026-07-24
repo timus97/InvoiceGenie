@@ -12,6 +12,9 @@ import com.invoicegenie.ar.domain.model.payment.PaymentStatus;
 import com.invoicegenie.shared.domain.Money;
 import com.invoicegenie.shared.tenant.TenantContext;
 
+import com.invoicegenie.ar.adapter.api.security.ArRoles;
+import com.invoicegenie.ar.adapter.api.security.RequireRoles;
+
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -40,6 +43,10 @@ public class PaymentResource {
     private final PaymentQueryUseCase paymentQueryUseCase;
     private final PaymentReversalUseCase paymentReversalUseCase;
 
+    /**
+     * Single constructor for CDI (DEF-BE-002). Unit tests pass mocks; optional query/reversal
+     * may be null only in pure unit tests — production always wires all four beans.
+     */
     @jakarta.inject.Inject
     public PaymentResource(PaymentAllocationUseCase allocationUseCase,
                            RecordPaymentUseCase recordPaymentUseCase,
@@ -51,13 +58,8 @@ public class PaymentResource {
         this.paymentReversalUseCase = paymentReversalUseCase;
     }
 
-    /** Test helper constructor. */
-    public PaymentResource(PaymentAllocationUseCase allocationUseCase,
-                           RecordPaymentUseCase recordPaymentUseCase) {
-        this(allocationUseCase, recordPaymentUseCase, null, null);
-    }
-
     @POST
+    @RequireRoles({ArRoles.AR_CLERK, ArRoles.AR_CONTROLLER, ArRoles.TENANT_ADMIN})
     @Operation(summary = "Create/record a new payment received from a customer")
     @APIResponses({
         @APIResponse(responseCode = "201", description = "Payment created"),
@@ -127,6 +129,7 @@ public class PaymentResource {
 
     @POST
     @Path("/{paymentId}/reverse")
+    @RequireRoles({ArRoles.AR_CONTROLLER, ArRoles.TENANT_ADMIN})
     @Operation(summary = "Reverse a RECEIVED payment (unwind allocations + ledger)")
     public Response reverse(
             @PathParam("paymentId") String paymentId,
@@ -145,6 +148,7 @@ public class PaymentResource {
 
     @POST
     @Path("/{paymentId}/refund")
+    @RequireRoles({ArRoles.AR_CONTROLLER, ArRoles.TENANT_ADMIN})
     @Operation(summary = "Refund a RECEIVED payment (unwind allocations + ledger)")
     public Response refund(
             @PathParam("paymentId") String paymentId,

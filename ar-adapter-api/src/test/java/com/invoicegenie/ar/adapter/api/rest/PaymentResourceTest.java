@@ -1,6 +1,8 @@
 package com.invoicegenie.ar.adapter.api.rest;
 
 import com.invoicegenie.ar.application.port.inbound.PaymentAllocationUseCase;
+import com.invoicegenie.ar.application.port.inbound.PaymentQueryUseCase;
+import com.invoicegenie.ar.application.port.inbound.PaymentReversalUseCase;
 import com.invoicegenie.ar.application.port.inbound.RecordPaymentUseCase;
 import com.invoicegenie.ar.domain.model.payment.PaymentId;
 import com.invoicegenie.ar.domain.model.payment.PaymentMethod;
@@ -30,13 +32,16 @@ class PaymentResourceTest {
 
     @Mock private PaymentAllocationUseCase allocationUseCase;
     @Mock private RecordPaymentUseCase recordPaymentUseCase;
+    @Mock private PaymentQueryUseCase paymentQueryUseCase;
+    @Mock private PaymentReversalUseCase paymentReversalUseCase;
 
     private PaymentResource resource;
     private TenantId tenantId;
 
     @BeforeEach
     void setUp() {
-        resource = new PaymentResource(allocationUseCase, recordPaymentUseCase);
+        resource = new PaymentResource(allocationUseCase, recordPaymentUseCase,
+                paymentQueryUseCase, paymentReversalUseCase);
         tenantId = TenantId.of(UUID.randomUUID());
         TenantContext.setCurrentTenant(tenantId);
     }

@@ -100,11 +100,12 @@ jobs:
       QUARKUS_PROFILE: prod
       INVOICEGENIE_SECURITY_ENABLED: "true"
       INVOICEGENIE_SECURITY_MODE: api-key
-      INVOICEGENIE_API_KEYS: "dev-local-key:00000000-0000-0000-0000-000000000001"
+      # Must not use demo prefixes banned by ProdSecurityValidator (dev-local-key, test-key, demo)
+      INVOICEGENIE_API_KEYS: "ci-smoke-key-9f3a2b1c:00000000-0000-0000-0000-000000000001"
       INVOICEGENIE_JWT_SECRET: "none"
       INVOICEGENIE_SECURITY_ALLOW_OPENAPI: "false"
       TENANT_ID: "00000000-0000-0000-0000-000000000001"
-      INVOICEGENIE_API_KEY: dev-local-key
+      INVOICEGENIE_API_KEY: ci-smoke-key-9f3a2b1c
     steps:
       - name: Checkout
         uses: actions/checkout@v4

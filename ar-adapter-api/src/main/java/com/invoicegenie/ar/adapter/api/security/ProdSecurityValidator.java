@@ -70,12 +70,22 @@ public class ProdSecurityValidator {
         }
         rejectDefaultDatasourceCredentials();
         String m = mode == null ? "api-key" : mode.trim().toLowerCase(Locale.ROOT);
-        if ("api-key".equals(m)) {
+        if ("api-key".equals(m) || "hybrid".equals(m)) {
             if (isBlankSecret(apiKeys)) {
                 throw new IllegalStateException(
-                        "Production startup aborted: invoicegenie.security.api-keys required for api-key mode");
+                        "Production startup aborted: invoicegenie.security.api-keys required for " + m + " mode");
             }
             rejectDemoApiKeys(apiKeys);
+            if ("hybrid".equals(m)) {
+                if (isBlankSecret(jwtSecret)) {
+                    throw new IllegalStateException(
+                            "Production startup aborted: invoicegenie.security.jwt.secret required for hybrid mode");
+                }
+                if (jwtSecret.trim().length() < 16) {
+                    throw new IllegalStateException(
+                            "Production startup aborted: JWT secret must be at least 16 characters");
+                }
+            }
         } else if ("jwt".equals(m)) {
             if (isBlankSecret(jwtSecret)) {
                 throw new IllegalStateException(
@@ -91,7 +101,8 @@ public class ProdSecurityValidator {
             }
         } else {
             throw new IllegalStateException(
-                    "Production startup aborted: unknown invoicegenie.security.mode=" + mode);
+                    "Production startup aborted: unknown invoicegenie.security.mode=" + mode
+                            + " (expected api-key, jwt, or hybrid)");
         }
         LOG.info("Production security validation passed (mode=" + m + ")");
     }

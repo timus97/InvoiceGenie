@@ -1,0 +1,15 @@
+aws_region         = "us-east-1"
+env                = "staging"
+project            = "invoicegenie"
+vpc_cidr           = "10.20.0.0/16"
+single_nat_gateway = true
+db_instance_class  = "db.t4g.medium"
+db_multi_az        = false
+api_desired_count  = 1
+web_desired_count  = 1
+# certificate_arn  = "arn:aws:acm:us-east-1:123456789012:certificate/..."
+security_mode      = "api-key"
+github_org         = "timus97"
+github_repo        = "InvoiceGenie"
+# alarm_email      = "ops@example.com"
+enable_cicd_iam    = true

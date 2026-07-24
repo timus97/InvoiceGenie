@@ -47,7 +47,7 @@
 |----|------|------|----------------|----------------|--------|
 | P0-01 | **Authentication & authorization** | Missing feature | Any client knowing a tenant UUID can call the API. | API-key + HS256 JWT gate (`AuthFilter`); JWT `roles[]` + `RoleAuthorizationFilter`; prod fail-closed (`ProdSecurityValidator`); UI sends `X-API-Key` when configured. Full OIDC still future. | **Partial** — Phase-1 RBAC landed; OIDC deferred |
 | P0-02 | **Secrets & config for production** | Incomplete | Default Postgres password in compose/yml. | Env-based datasource + security secrets; `.env.example`; compose requires passwords. | **Done** |
-| P0-03 | **Quarkus platform still on EOL LTS** | Vulnerable dependency / debt | `3.8.6.1` last 3.8 patch; EOL. | See `docs/QUARKUS_LTS_MIGRATION.md` — dedicated migration PR (REST extension renames). | **Planned** |
+| P0-03 | **Quarkus platform still on EOL LTS** | Vulnerable dependency / debt | Migrated to **3.27.3** LTS (STORY-004). | See `docs/QUARKUS_LTS_MIGRATION.md`. | **Done** |
 | P0-04 | **Production container image** | Incomplete | Arena Dockerfile not prod. | `Dockerfile.prod` multi-stage JVM; compose uses it; arena kept as `Dockerfile.arena`. | **Done** |
 | P0-05 | **Schema migration strategy** | Incomplete | Manual SQL only. | Flyway `V1`–`V6` under `db/migration`; migrate-at-start for Postgres/prod. | **Done** |
 | P0-06 | **Dependency security scanning in CI** | Missing process | Local scripts only. | `.github/workflows/ci.yml` + `security.yml` (OWASP + npm audit). | **Done** |

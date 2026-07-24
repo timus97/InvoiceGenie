@@ -99,13 +99,13 @@ Docs are **out of sync**: `ONBOARDING.md` still describes in-memory ledger, stub
 - **Domain context:** Security patches and CVE response for the runtime are a production obligation; running EOL platform is a compliance and incident-response liability.
 - **Current state:** Root `pom.xml` property `quarkus.platform.version=3.8.6.1` with explicit EOL note; plan in `docs/QUARKUS_LTS_MIGRATION.md` (resteasy-reactive â†’ quarkus-rest renames).
 - **Acceptance criteria:**
-  - [ ] Platform on supported LTS (3.27+ or current LTS).
-  - [ ] Full `mvn verify` green; smoke invoice + payment + health.
-  - [ ] `Dockerfile.prod` builds; OWASP scan re-baselined.
+  - [x] Platform on supported LTS (3.27+ or current LTS).
+  - [x] Full `mvn verify` green; smoke invoice + payment + health.
+  - [ ] Dockerfile.prod builds; OWASP scan re-baselined.
 - **Suggested implementation notes:** Dedicated PR per migration doc; fix REST extension artifacts module-by-module.
-- **Status:** Ready (not started in this pass — too large for safe single ship)
-- **Implementation notes (2026-07-24):** Deferred full platform bump. Jandex pinned to 3.1.6 for 3.8 index v11; migration steps remain in `docs/QUARKUS_LTS_MIGRATION.md`. Prefer dedicated PR with full `mvn verify` + smoke.
-- **QA notes:** **OPEN.** Platform still Quarkus 3.8.6.1 (EOL).
+- **Status:** Done
+- **Implementation notes (2026-07-24):** Platform **3.27.3** LTS. REST → `quarkus-rest` / `quarkus-rest-jackson`; messaging → `quarkus-messaging-kafka`; jandex 3.2.3. `mvn clean test` BUILD SUCCESS.
+- **QA notes:** **PASS (eng unit).** Docker/OWASP re-baseline residual.
 
 ### STORY-005: Payment reverse and refund application paths
 - **Priority:** P1

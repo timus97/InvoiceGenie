@@ -4,6 +4,7 @@ export const apiPaths = {
   customerBlock: (id: string) => `/api/v1/customers/${id}/block`,
   customerUnblock: (id: string) => `/api/v1/customers/${id}/unblock`,
   customerCreditCheck: (id: string) => `/api/v1/customers/${id}/credit-check`,
+  customerArSummary: (id: string) => `/api/v1/customers/${id}/ar-summary`,
   customerStats: "/api/v1/customers/stats",
   invoices: "/api/v1/invoices",
   invoice: (id: string) => `/api/v1/invoices/${id}`,

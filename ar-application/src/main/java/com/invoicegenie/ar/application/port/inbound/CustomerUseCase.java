@@ -7,6 +7,7 @@ import com.invoicegenie.shared.domain.TenantId;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -38,6 +39,12 @@ public interface CustomerUseCase {
     CustomerService.CreditCheckResult checkCredit(TenantId tenantId, CustomerId customerId,
                                                    BigDecimal outstanding, BigDecimal invoiceAmount);
 
+    /**
+     * System-calculated open AR for a customer (STORY-014).
+     * Empty optional when customer not found.
+     */
+    Optional<ArSummary> arSummary(TenantId tenantId, CustomerId customerId);
+
     CustomerStats stats(TenantId tenantId);
 
     record UpdateCustomerCommand(
@@ -50,6 +57,25 @@ public interface CustomerUseCase {
     ) {}
 
     record CustomerStats(long active, long blocked, long deleted) {}
+
+    /**
+     * Open AR summary by currency (STORY-014).
+     */
+    record ArSummary(
+            String customerId,
+            int openInvoiceCount,
+            Map<String, CurrencyBalance> byCurrency,
+            BigDecimal totalBalanceBaseCurrency,
+            String baseCurrency
+    ) {
+        public record CurrencyBalance(
+                String currency,
+                int openCount,
+                BigDecimal totalBilled,
+                BigDecimal totalPaid,
+                BigDecimal balance
+        ) {}
+    }
 
     /**
      * List outcome: either customers or an invalid-status error.

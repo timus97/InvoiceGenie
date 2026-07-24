@@ -148,10 +148,11 @@ public class CustomerResource {
 
     @GET
     @Path("/{id}/credit-check")
-    @Operation(summary = "Check if customer can be invoiced for an amount")
+    @Operation(summary = "Check if customer can be invoiced for an amount",
+            description = "When outstanding is omitted/0, system open AR is used (STORY-014).")
     public Response checkCredit(
             @PathParam("id") String id,
-            @QueryParam("outstanding") @DefaultValue("0") BigDecimal outstanding,
+            @QueryParam("outstanding") BigDecimal outstanding,
             @QueryParam("invoiceAmount") BigDecimal invoiceAmount) {
 
         var tenantId = TenantContext.getCurrentTenant();
@@ -161,13 +162,34 @@ public class CustomerResource {
             return Response.status(400).entity(new ErrorResponse("MISSING_PARAM", "invoiceAmount is required")).build();
         }
 
-        var result = customerUseCase.checkCredit(tenantId, customerId, outstanding, invoiceAmount);
+        var result = customerUseCase.checkCredit(tenantId, customerId,
+                outstanding != null ? outstanding : BigDecimal.ZERO, invoiceAmount);
 
         return Response.ok(new CreditCheckDto(
                 result.canInvoice(),
                 result.availableCredit(),
                 result.message()
         )).build();
+    }
+
+    @GET
+    @Path("/{id}/ar-summary")
+    @Operation(summary = "System-calculated open AR for a customer (STORY-014)")
+    public Response arSummary(@PathParam("id") String id) {
+        var tenantId = TenantContext.getCurrentTenant();
+        var customerId = CustomerId.of(UUID.fromString(id));
+        return customerUseCase.arSummary(tenantId, customerId)
+                .map(s -> Response.ok(new ArSummaryDto(
+                        s.customerId(),
+                        s.openInvoiceCount(),
+                        s.byCurrency().values().stream()
+                                .map(c -> new CurrencyBalanceDto(
+                                        c.currency(), c.openCount(), c.totalBilled(), c.totalPaid(), c.balance()))
+                                .toList(),
+                        s.totalBalanceBaseCurrency(),
+                        s.baseCurrency()
+                )).build())
+                .orElse(Response.status(404).entity(new ErrorResponse("NOT_FOUND", "Customer not found")).build());
     }
 
     @GET
@@ -210,6 +232,22 @@ public class CustomerResource {
             String createdAt, String updatedAt, long version) {}
 
     public record CreditCheckDto(boolean canInvoice, BigDecimal availableCredit, String message) {}
+
+    public record ArSummaryDto(
+            String customerId,
+            int openInvoiceCount,
+            java.util.List<CurrencyBalanceDto> byCurrency,
+            BigDecimal totalBalance,
+            String baseCurrency
+    ) {}
+
+    public record CurrencyBalanceDto(
+            String currency,
+            int openCount,
+            BigDecimal totalBilled,
+            BigDecimal totalPaid,
+            BigDecimal balance
+    ) {}
 
     public record CustomerStatsDto(long active, long blocked, long deleted) {}
 }

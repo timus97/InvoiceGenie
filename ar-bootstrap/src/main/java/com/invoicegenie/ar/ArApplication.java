@@ -171,8 +171,9 @@ public class ArApplication {
     @Produces
     @ApplicationScoped
     public CustomerUseCase customerUseCase(CustomerService customerService,
-                                           CustomerRepository customerRepository) {
-        return new CustomerManagementService(customerService, customerRepository);
+                                           CustomerRepository customerRepository,
+                                           InvoiceRepository invoiceRepository) {
+        return new CustomerManagementService(customerService, customerRepository, invoiceRepository);
     }
 
     @Produces

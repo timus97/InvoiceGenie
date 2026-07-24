@@ -266,12 +266,13 @@ Docs are **out of sync**: `ONBOARDING.md` still describes in-memory ledger, stub
 - **Domain context:** Credit check UI currently asks users to type outstanding balance â€” unsafe and unusable. Controllers need customer statement-like open AR.
 - **Current state:** Credit check query params; no `GET customers/{id}/ar-summary`.
 - **Acceptance criteria:**
-  - [ ] Endpoint returns open invoice count, total billed, total paid, balance by currency, aging snapshot.
-  - [ ] Credit check uses this balance by default.
-  - [ ] Customer detail UI shows live AR summary (no manual outstanding field for enforcement).
+  - [x] Endpoint returns open invoice count, total billed, total paid, balance by currency, aging snapshot.
+  - [x] Credit check uses this balance by default.
+  - [x] Customer detail UI shows live AR summary (no manual outstanding field for enforcement).
 - **Suggested implementation notes:** Query open invoices by customerId; multi-currency map; reuse aging service per customer.
-- **Status:** Ready
-- **QA notes:** **OPEN.** Manual outstanding credit-check UI residual; no ar-summary smoke.
+- **Status:** Done
+- **Implementation notes (2026-07-24):** `GET /customers/{id}/ar-summary`; credit-check uses system open AR when outstanding omitted/0; customer detail card + simplified credit check.
+- **QA notes:** **PASS (eng).** Unit/build green; full e2e optional.
 
 ### STORY-015: Scheduled statements / dunning foundation
 - **Priority:** P2

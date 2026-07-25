@@ -71,6 +71,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!ready) return;
     if (!isAuthRequired()) return;
     if (pathname === "/login") return;
+    // Soft-navigate once session check fails. Prefer router over full reload;
+    // apiFetch 401s use a single-flight hard redirect only as a fallback.
     if (!session) {
       router.replace(`/login?next=${encodeURIComponent(pathname || "/")}`);
     }

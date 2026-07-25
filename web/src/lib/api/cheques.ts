@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api/client";
+import { apiFetch, redirectToLogin } from "@/lib/api/client";
 import { apiPaths } from "@/lib/api/paths";
 import type {
   ChequeDto,
@@ -75,10 +75,8 @@ export async function uploadChequeOcrFiles(
     cache: "no-store",
     credentials: "include",
   });
-  if (res.status === 401 && typeof window !== "undefined") {
-    window.location.assign(
-      `/login?next=${encodeURIComponent(window.location.pathname)}`,
-    );
+  if (res.status === 401) {
+    redirectToLogin();
   }
   if (!res.ok) {
     const text = await res.text();

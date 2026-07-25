@@ -9,6 +9,29 @@ export type ApiRequestOptions = {
   query?: Record<string, string | number | boolean | undefined | null>;
 };
 
+/** Prevent multi-query 401 storms from assigning /login repeatedly. */
+let loginRedirectScheduled = false;
+
+/**
+ * Single-flight hard redirect to login. Parallel React Query failures must not
+ * each call location.assign — that looks like an infinite browser refresh.
+ */
+export function redirectToLogin(nextPath?: string): void {
+  if (typeof window === "undefined") return;
+  if (window.location.pathname.startsWith("/login")) return;
+  if (loginRedirectScheduled) return;
+  loginRedirectScheduled = true;
+  const next = encodeURIComponent(
+    nextPath ?? window.location.pathname + window.location.search,
+  );
+  window.location.assign(`/login?next=${next}`);
+}
+
+/** Test / post-login helper — resets the single-flight guard. */
+export function _resetLoginRedirectGuardForTests(): void {
+  loginRedirectScheduled = false;
+}
+
 function buildUrl(path: string, query?: ApiRequestOptions["query"]): string {
   const base = path.startsWith("/") ? path : `/${path}`;
   if (!query) return base;
@@ -72,12 +95,7 @@ export async function apiFetch<T>(
   }
 
   if (res.status === 401) {
-    if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
-      const next = encodeURIComponent(
-        window.location.pathname + window.location.search,
-      );
-      window.location.assign(`/login?next=${next}`);
-    }
+    redirectToLogin();
     throw new ApiError(401, "UNAUTHORIZED", "Sign in required");
   }
 

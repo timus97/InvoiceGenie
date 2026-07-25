@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   backendBaseUrl,
+  buildClearCookieHeaders,
   buildUpstreamAuthHeaders,
   hasCredentialCookies,
   publicSessionFromLogin,
   readAuthCookies,
   type BackendLoginResponse,
 } from "@/lib/server/auth";
-import { getSession, updateSessionTokens } from "@/lib/server/session-store";
+import {
+  deleteSession,
+  getSession,
+  updateSessionTokens,
+} from "@/lib/server/session-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,10 +76,18 @@ async function proxy(req: NextRequest, pathParts: string[]) {
 
   let bundle = await readAuthCookies();
   if (!hasCredentialCookies(bundle)) {
-    return NextResponse.json(
+    // Stale ig_sid (e.g. after BFF restart) — clear so middleware stops treating
+    // the browser as authenticated and avoids login↔home redirect loops.
+    if (bundle.sessionId) deleteSession(bundle.sessionId);
+    const unauthorized = NextResponse.json(
       { error: "UNAUTHORIZED", message: "Sign in required" },
       { status: 401 },
     );
+    for (const c of buildClearCookieHeaders()) {
+      unauthorized.headers.append("Set-Cookie", c);
+    }
+    unauthorized.headers.set("Cache-Control", "no-store");
+    return unauthorized;
   }
 
   // Proactive refresh if access token near expiry (< 60s)

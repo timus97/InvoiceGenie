@@ -27,12 +27,11 @@ export function middleware(req: NextRequest) {
   }
 
   if (isPublic(pathname)) {
-    // Already signed in â†’ bounce away from login
-    if (pathname === "/login" && hasSessionCookie(req)) {
-      const next = req.nextUrl.searchParams.get("next") || "/";
-      const dest = next.startsWith("/") ? next : "/";
-      return NextResponse.redirect(new URL(dest, req.url));
-    }
+    // Do NOT bounce /login away based on cookie presence alone.
+    // ig_sid is opaque and the session store is in-memory — after a BFF
+    // restart the cookie is stale. Client AuthProvider / LoginForm verify
+    // the session via /api/auth/session (which clears dead cookies) and
+    // redirect only when a real session exists.
     return NextResponse.next();
   }
 

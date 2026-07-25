@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api/client";
+import { apiFetch, redirectToLogin } from "@/lib/api/client";
 import { apiPaths } from "@/lib/api/paths";
 import type { AuditDto } from "@/types/ar";
 
@@ -21,10 +21,8 @@ export async function exportAuditCsv(tenantId: string, limit = 500): Promise<str
     cache: "no-store",
     credentials: "include",
   });
-  if (res.status === 401 && typeof window !== "undefined") {
-    window.location.assign(
-      `/login?next=${encodeURIComponent(window.location.pathname)}`,
-    );
+  if (res.status === 401) {
+    redirectToLogin();
   }
   if (!res.ok) throw new Error(`Audit export failed: ${res.status}`);
   return res.text();

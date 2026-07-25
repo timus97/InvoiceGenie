@@ -14,7 +14,7 @@ import static org.hamcrest.Matchers.*;
  * End-to-End Workflow Tests for InvoiceGenie AR Backend.
  * 
  * <p>These tests exercise complete business workflows through the full HTTP API stack
- * with a real (in-memory H2) database. They are designed to:
+ * with a real (PostgreSQL (Dev Services)) database. They are designed to:
  * <ul>
  *   <li>Catch integration bugs between layers</li>
  *   <li>Validate complete user scenarios</li>

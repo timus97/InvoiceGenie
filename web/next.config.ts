@@ -6,7 +6,8 @@ const nextConfig: NextConfig = {
   output: "standalone",
   async rewrites() {
     return [
-      { source: "/api/:path*", destination: `${backend}/api/:path*` },
+      // /api/v1/* is handled by the BFF route (httpOnly cookies → upstream auth).
+      // Only health/OpenAPI stay as transparent rewrites (no secrets).
       { source: "/q/:path*", destination: `${backend}/q/:path*` },
     ];
   },

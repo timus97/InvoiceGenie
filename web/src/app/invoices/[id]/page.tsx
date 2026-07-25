@@ -23,6 +23,7 @@ import {
 } from "@/lib/api/invoices";
 import { getInvoiceAllocations } from "@/lib/api/payments";
 import { getLedgerByReference } from "@/lib/api/ledger";
+import { sendNotification } from "@/lib/api/notifications";
 import { formatMoney } from "@/lib/money";
 import { ApiError } from "@/lib/errors";
 
@@ -137,6 +138,23 @@ export default function InvoiceDetailPage() {
     onSuccess: () => {
       toast.success("Due date updated");
       invalidate();
+    },
+    onError: onErr,
+  });
+
+  const notifyMut = useMutation({
+    mutationFn: () =>
+      sendNotification(tenantId, {
+        invoiceId: id,
+        eventType: "INVOICE_ISSUED",
+        channels: ["EMAIL"],
+        // force=false: honor tenant policy/channel disables (QA-NOTIFY-002)
+        force: false,
+      }),
+    onSuccess: (rows) => {
+      const statuses = (rows ?? []).map((r) => r.status).join(", ");
+      toast.success(`Notification enqueued: ${statuses || "ok"}`);
+      void queryClient.invalidateQueries({ queryKey: ["notifications", tenantId] });
     },
     onError: onErr,
   });
@@ -274,6 +292,16 @@ export default function InvoiceDetailPage() {
                 onClick={() => issueMut.mutate()}
               >
                 Issue
+              </Button>
+            ) : null}
+            {status !== "DRAFT" ? (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={notifyMut.isPending}
+                onClick={() => notifyMut.mutate()}
+              >
+                {notifyMut.isPending ? "Sending…" : "Send notification (email)"}
               </Button>
             ) : null}
             {status === "ISSUED" || status === "PARTIALLY_PAID" ? (

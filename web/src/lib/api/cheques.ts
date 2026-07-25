@@ -1,4 +1,4 @@
-import { apiFetch, buildAuthHeaders } from "@/lib/api/client";
+import { apiFetch } from "@/lib/api/client";
 import { apiPaths } from "@/lib/api/paths";
 import type {
   ChequeDto,
@@ -62,10 +62,10 @@ export async function uploadChequeOcrFiles(
   for (const f of files) {
     form.append("files", f, f.name);
   }
+  // Auth via httpOnly cookies (BFF) — never send Authorization / X-API-Key from the browser.
   const headers: Record<string, string> = {
     Accept: "application/json",
     "X-Tenant-Id": tenantId.trim(),
-    ...buildAuthHeaders(),
   };
 
   const res = await fetch(apiPaths.chequeOcrUpload, {
@@ -73,7 +73,13 @@ export async function uploadChequeOcrFiles(
     headers,
     body: form,
     cache: "no-store",
+    credentials: "include",
   });
+  if (res.status === 401 && typeof window !== "undefined") {
+    window.location.assign(
+      `/login?next=${encodeURIComponent(window.location.pathname)}`,
+    );
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || `OCR upload failed (${res.status})`);

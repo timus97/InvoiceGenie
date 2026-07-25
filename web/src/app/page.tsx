@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { useTenant } from "@/components/tenant-provider";
+import { useAuth } from "@/components/auth-provider";
 import { apiFetch, checkBackendHealth } from "@/lib/api/client";
 import { apiPaths } from "@/lib/api/paths";
 import { getAgingReport } from "@/lib/api/aging";
@@ -14,7 +15,10 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { formatMoney } from "@/lib/money";
 
 export default function DashboardPage() {
-  const { tenantId, ready } = useTenant();
+  const { tenantId, ready: tenantReady } = useTenant();
+  const { ready: authReady, session } = useAuth();
+  // Wait for auth session hydration so tenant setTenantId does not race queries
+  const ready = tenantReady && authReady && !!session;
 
   const health = useQuery({
     queryKey: ["backend-health"],
@@ -25,23 +29,24 @@ export default function DashboardPage() {
   const stats = useQuery({
     queryKey: ["customer-stats", tenantId],
     enabled: ready,
-    queryFn: () =>
-      apiFetch<CustomerStatsDto>(apiPaths.customerStats, { tenantId }),
+    queryFn: ({ signal }) =>
+      apiFetch<CustomerStatsDto>(apiPaths.customerStats, { tenantId, signal }),
   });
 
   const invoices = useQuery({
     queryKey: ["invoices-recent", tenantId],
     enabled: ready,
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       apiFetch<InvoicePageDto>(apiPaths.invoices, {
         tenantId,
+        signal,
         query: { limit: 5 },
       }),
   });
 
-  // STORY-008: same GET /api/v1/aging report endpoint as the Aging page
+  // Distinct key from Aging page report (avoids cache collisions / abort races)
   const aging = useQuery({
-    queryKey: ["aging", tenantId],
+    queryKey: ["aging", "summary", tenantId],
     enabled: ready,
     queryFn: ({ signal }) => getAgingReport(tenantId, undefined, signal),
   });

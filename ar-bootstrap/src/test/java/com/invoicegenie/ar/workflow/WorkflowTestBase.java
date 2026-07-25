@@ -81,7 +81,7 @@ public abstract class WorkflowTestBase {
     }
 
     protected UUID createCustomer(String code, String legalName) {
-        // Append unique suffix to avoid 409 conflicts across tests sharing H2 DB
+        // Append unique suffix to avoid 409 conflicts across tests sharing test DB
         String uniqueCode = code + "-" + uniqueSuffix();
         String body = String.format("""
             {"customerCode": "%s", "legalName": "%s", "currency": "USD"}

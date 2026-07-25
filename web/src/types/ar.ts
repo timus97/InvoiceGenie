@@ -385,3 +385,70 @@ export type OcrUploadResult = {
   count: number;
   warnings?: string[];
 };
+
+export type NotificationStatus =
+  | "PENDING"
+  | "QUEUED"
+  | "SENDING"
+  | "SENT"
+  | "FAILED"
+  | "CANCELLED"
+  | "SKIPPED";
+
+export type NotificationDto = {
+  id: string;
+  customerId?: string | null;
+  invoiceId?: string | null;
+  eventType: string;
+  channel: string;
+  status: NotificationStatus | string;
+  idempotencyKey?: string | null;
+  destination?: string | null;
+  subject?: string | null;
+  skipReason?: string | null;
+  errorMessage?: string | null;
+  attemptCount?: number;
+  providerMessageId?: string | null;
+  sentAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
+export type NotificationAttemptDto = {
+  id: string;
+  notificationId: string;
+  attemptNumber: number;
+  status: string;
+  provider?: string | null;
+  providerMessageId?: string | null;
+  httpStatus?: number | null;
+  errorMessage?: string | null;
+  attemptedAt?: string | null;
+};
+
+export type NotificationPreferenceDto = {
+  channel: string;
+  enabled: boolean;
+  destinationOverride?: string | null;
+  optedOutAt?: string | null;
+};
+
+export type NotificationPolicyDto = {
+  enabled: boolean;
+  emailEnabled: boolean;
+  whatsappEnabled: boolean;
+  autoSendOnIssue: boolean;
+  preDueReminderEnabled: boolean;
+  preDueDays: number;
+  dunningNoticeEnabled: boolean;
+  channelsInvoiceIssued: string;
+  channelsPaymentReminder: string;
+  channelsDunningNotice: string;
+};
+
+export type SendNotificationRequest = {
+  invoiceId: string;
+  eventType?: string;
+  channels?: string[];
+  force?: boolean;
+};

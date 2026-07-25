@@ -11,7 +11,7 @@ export function Topbar() {
   const { tenantId, ready } = useTenant();
   const { session, logout } = useAuth();
   const allowOverride =
-    process.env.NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE !== "false";
+    process.env.NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE === "true";
   const [health, setHealth] = useState<"unknown" | "up" | "down">("unknown");
 
   useEffect(() => {
@@ -59,7 +59,7 @@ export function Topbar() {
             {session.subject}
             <button
               type="button"
-              onClick={() => logout()}
+              onClick={() => void logout()}
               className="ml-2 font-medium text-indigo-600 hover:underline dark:text-indigo-400"
             >
               Sign out
@@ -80,7 +80,7 @@ export function Topbar() {
           {health === "up" ? "up" : health === "down" ? "down" : "checking…"}
         </span>
         <a
-          href="http://localhost:8080/q/swagger-ui/"
+          href="/q/swagger-ui/"
           target="_blank"
           rel="noreferrer"
           className="inline-flex items-center gap-1 text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"

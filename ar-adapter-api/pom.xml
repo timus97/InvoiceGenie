@@ -27,6 +27,17 @@
             <artifactId>shared-kernel</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- Auth services persist users/refresh tokens -->
+        <dependency>
+            <groupId>com.invoicegenie</groupId>
+            <artifactId>ar-adapter-persistence</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>at.favre.lib</groupId>
+            <artifactId>bcrypt</artifactId>
+            <version>0.10.2</version>
+        </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-rest</artifactId>

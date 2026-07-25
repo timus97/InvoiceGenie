@@ -94,7 +94,18 @@ invoicegenie:
     users: ${INVOICEGENIE_SECURITY_USERS:none}
     jwt:
       secret: ${INVOICEGENIE_JWT_SECRET:none}
-      ttl-seconds: ${INVOICEGENIE_JWT_TTL_SECONDS:28800}
+      # Access JWT lifetime (default 15 minutes)
+      access-ttl-seconds: ${INVOICEGENIE_JWT_ACCESS_TTL_SECONDS:900}
+      # Refresh token lifetime (default 7 days) — stored hashed in DB with rotation
+      refresh-ttl-seconds: ${INVOICEGENIE_JWT_REFRESH_TTL_SECONDS:604800}
+      # Legacy alias (prefer access-ttl-seconds)
+      ttl-seconds: ${INVOICEGENIE_JWT_TTL_SECONDS:900}
+    # First-boot admin (only when ar_app_user is empty)
+    bootstrap:
+      email: ${INVOICEGENIE_BOOTSTRAP_EMAIL:admin@invoicegenie.local}
+      password: ${INVOICEGENIE_BOOTSTRAP_PASSWORD:Admin123!}
+      display-name: ${INVOICEGENIE_BOOTSTRAP_DISPLAY_NAME:System Admin}
+      tenant-id: ${INVOICEGENIE_BOOTSTRAP_TENANT_ID:00000000-0000-0000-0000-000000000001}
     allow-openapi: ${INVOICEGENIE_SECURITY_ALLOW_OPENAPI:true}
   # Cheque OCR (STORY-018) — reject bulk create when ocrConfidence is present and below this floor
   ocr:
@@ -108,28 +119,58 @@ invoicegenie:
   allocation-reconcile:
     enabled: ${INVOICEGENIE_ALLOCATION_RECONCILE_ENABLED:true}
     interval: ${INVOICEGENIE_ALLOCATION_RECONCILE_INTERVAL:6h}
+  # Customer notifications (Email + WhatsApp) — P0 MVP
+  notifications:
+    enabled: ${INVOICEGENIE_NOTIFICATIONS_ENABLED:true}
+    # Log full destination/body only when true (QA-NOTIFY-003 — default redacted)
+    log-payloads: ${INVOICEGENIE_NOTIFICATIONS_LOG_PAYLOADS:false}
+    # Manual send rate limit per tenant (QA-NOTIFY-014)
+    send-rate-per-minute: ${INVOICEGENIE_NOTIFICATIONS_SEND_RATE_PER_MINUTE:30}
+    email:
+      enabled: ${INVOICEGENIE_NOTIFICATIONS_EMAIL_ENABLED:true}
+      provider: ${INVOICEGENIE_NOTIFICATIONS_EMAIL_PROVIDER:logging}
+    whatsapp:
+      enabled: ${INVOICEGENIE_NOTIFICATIONS_WHATSAPP_ENABLED:false}
+      provider: ${INVOICEGENIE_NOTIFICATIONS_WHATSAPP_PROVIDER:logging}
+    pre-due-days: ${INVOICEGENIE_NOTIFICATIONS_PRE_DUE_DAYS:3}
+    max-attempts: ${INVOICEGENIE_NOTIFICATIONS_MAX_ATTEMPTS:5}
+    dispatch:
+      interval: ${INVOICEGENIE_NOTIFICATIONS_DISPATCH_INTERVAL:15s}
+      batch: ${INVOICEGENIE_NOTIFICATIONS_DISPATCH_BATCH:50}
+    reminder:
+      job-interval: ${INVOICEGENIE_NOTIFICATIONS_REMINDER_JOB_INTERVAL:1h}
+    smtp:
+      # Use "none" not empty — SmallRye rejects empty String defaults
+      host: ${INVOICEGENIE_SMTP_HOST:none}
+      port: ${INVOICEGENIE_SMTP_PORT:587}
+      username: ${INVOICEGENIE_SMTP_USERNAME:none}
+      password: ${INVOICEGENIE_SMTP_PASSWORD:none}
+      from: ${INVOICEGENIE_SMTP_FROM:noreply@invoicegenie.local}
+      starttls: ${INVOICEGENIE_SMTP_STARTTLS:true}
+    whatsapp-meta:
+      access-token: ${INVOICEGENIE_WHATSAPP_ACCESS_TOKEN:none}
+      phone-number-id: ${INVOICEGENIE_WHATSAPP_PHONE_NUMBER_ID:none}
+      api-version: ${INVOICEGENIE_WHATSAPP_API_VERSION:v18.0}
 
-# Local / fast path: H2 in-memory (no Postgres required).
+# Local / developer profile — PostgreSQL only (Docker: docker compose up -d postgres).
 # Preferred: -Dquarkus.profile=dev
-# (STORY-022: legacy %sqlite alias removed — use dev only)
 "%dev":
   quarkus:
     http:
       port: 8080
       host: 0.0.0.0
     datasource:
-      db-kind: h2
-      username: sa
-      # SmallRye rejects empty String as null — use non-empty for Quarkus 3.27+
-      password: sa
+      db-kind: postgresql
+      username: ${QUARKUS_DATASOURCE_USERNAME:ar}
+      password: ${QUARKUS_DATASOURCE_PASSWORD:ar}
       jdbc:
-        url: jdbc:h2:mem:testdb
-        driver: org.h2.Driver
+        url: ${QUARKUS_DATASOURCE_JDBC_URL:jdbc:postgresql://localhost:5432/invoicegenie}
     hibernate-orm:
       database:
-        generation: update
+        generation: none
     flyway:
-      migrate-at-start: false
+      migrate-at-start: true
+      baseline-on-migrate: true
     kafka:
       devservices:
         enabled: false
@@ -151,32 +192,45 @@ invoicegenie:
         artifact-id: ar-application
   invoicegenie:
     security:
-      enabled: false
+      # Local console: JWT users (DB) + API keys for M2M
+      enabled: true
+      mode: hybrid
+      api-keys: "dev-local-key:00000000-0000-0000-0000-000000000001"
+      jwt:
+        secret: "dev-only-jwt-secret-change-me"
+        access-ttl-seconds: 900
+        refresh-ttl-seconds: 604800
+      bootstrap:
+        email: admin@invoicegenie.local
+        password: Admin123!
+        display-name: System Admin
+        tenant-id: "00000000-0000-0000-0000-000000000001"
+      allow-openapi: true
 
-# Test profile - uses H2 in-memory database
+# Test profile — PostgreSQL via Quarkus Dev Services (Docker required for @QuarkusTest)
 "%test":
   quarkus:
     http:
       port: 8080
       host: 0.0.0.0
     datasource:
-      db-kind: h2
-      username: sa
-      # SmallRye rejects empty String as null — use non-empty for Quarkus 3.27+
-      password: sa
-      jdbc:
-        url: jdbc:h2:mem:testdb
-        driver: org.h2.Driver
+      db-kind: postgresql
+      # No fixed JDBC URL: Dev Services starts an ephemeral Postgres for tests
+      devservices:
+        enabled: true
+        image-name: postgres:15-alpine
+        db-name: invoicegenie_test
+        username: ar
+        password: ar
     hibernate-orm:
       database:
-        generation: update
+        generation: none
     flyway:
-      migrate-at-start: false
+      migrate-at-start: true
+      baseline-on-migrate: true
     kafka:
       devservices:
         enabled: false
-    devservices:
-      enabled: false
     index-dependency:
       ar-domain:
         group-id: com.invoicegenie
@@ -251,7 +305,7 @@ outbox:
   cleanup-cron: "0 0 0 * * ?"
 
 # RLS: TenantFilter sets app.current_tenant_id via DbTenantContext.setTenantLocal(EntityManager)
-# when Postgres is in use. On H2 the call is a graceful no-op.
+# for PostgreSQL (app.current_tenant_id GUC + optional row-level security).
 
 # Idempotency retention (P2-06)
 idempotency:

@@ -1,27 +1,28 @@
-# Test configuration for QuarkusTest - uses H2 in-memory DB
+# Test configuration for QuarkusTest — PostgreSQL only (Dev Services / Docker)
 quarkus:
   http:
     port: 0  # random available port for tests
   datasource:
-    db-kind: h2
-    username: sa
-    # SmallRye rejects empty String as null — use non-empty for Quarkus 3.27+
-    password: sa
-    jdbc:
-      url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
-      driver: org.h2.Driver
+    db-kind: postgresql
+    devservices:
+      enabled: true
+      image-name: postgres:15-alpine
+      db-name: invoicegenie_test
+      username: ar
+      password: ar
   hibernate-orm:
     database:
-      generation: update  # create schema from entities
+      generation: none
     log:
       sql: false
+  flyway:
+    migrate-at-start: true
+    baseline-on-migrate: true
   log:
     level: WARN
   kafka:
     devservices:
       enabled: false
-  devservices:
-    enabled: false
 
 # Disable outbox worker in tests (no Kafka)
 outbox:

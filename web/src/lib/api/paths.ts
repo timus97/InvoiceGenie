@@ -54,4 +54,13 @@ export const apiPaths = {
   webhooks: "/api/v1/webhooks",
   webhook: (id: string) => `/api/v1/webhooks/${id}`,
   invoiceVersions: (id: string) => `/api/v1/invoices/${id}/versions`,
+  notifications: "/api/v1/notifications",
+  notification: (id: string) => `/api/v1/notifications/${id}`,
+  notificationAttempts: (id: string) => `/api/v1/notifications/${id}/attempts`,
+  notificationsSend: "/api/v1/notifications/send",
+  invoiceNotifications: (invoiceId: string) =>
+    `/api/v1/invoices/${invoiceId}/notifications`,
+  customerNotificationPreferences: (customerId: string) =>
+    `/api/v1/customers/${customerId}/notification-preferences`,
+  notificationPolicy: "/api/v1/notification-policy",
 } as const;

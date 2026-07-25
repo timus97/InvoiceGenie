@@ -15,6 +15,9 @@ import com.invoicegenie.ar.application.port.inbound.InvoiceVersionUseCase;
 import com.invoicegenie.ar.application.port.inbound.IssueInvoiceUseCase;
 import com.invoicegenie.ar.application.port.inbound.LedgerQueryUseCase;
 import com.invoicegenie.ar.application.port.inbound.ListInvoicesUseCase;
+import com.invoicegenie.ar.application.port.inbound.NotificationPreferenceUseCase;
+import com.invoicegenie.ar.application.port.inbound.NotificationPolicyUseCase;
+import com.invoicegenie.ar.application.port.inbound.NotificationUseCase;
 import com.invoicegenie.ar.application.port.inbound.PaymentAllocationUseCase;
 import com.invoicegenie.ar.application.port.inbound.PaymentQueryUseCase;
 import com.invoicegenie.ar.application.port.inbound.PaymentReversalUseCase;
@@ -42,6 +45,11 @@ import com.invoicegenie.ar.application.service.InvoiceVersionQueryService;
 import com.invoicegenie.ar.application.service.IssueInvoiceService;
 import com.invoicegenie.ar.application.service.LedgerQueryService;
 import com.invoicegenie.ar.application.service.ListInvoicesService;
+import com.invoicegenie.ar.application.service.NotificationApplicationService;
+import com.invoicegenie.ar.application.service.NotificationEnqueueService;
+import com.invoicegenie.ar.application.service.NotificationPreferenceApplicationService;
+import com.invoicegenie.ar.application.service.NotificationPolicyApplicationService;
+import com.invoicegenie.ar.application.service.NotificationRateLimiter;
 import com.invoicegenie.ar.application.service.PaymentAllocationService;
 import com.invoicegenie.ar.application.service.PaymentQueryService;
 import com.invoicegenie.ar.application.service.PaymentReversalService;
@@ -56,6 +64,11 @@ import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceRepository;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceVersionRepository;
 import com.invoicegenie.ar.domain.model.ledger.LedgerRepository;
+import com.invoicegenie.ar.domain.model.notification.NotificationAttemptRepository;
+import com.invoicegenie.ar.domain.model.notification.NotificationPolicyRepository;
+import com.invoicegenie.ar.domain.model.notification.NotificationPreferenceRepository;
+import com.invoicegenie.ar.domain.model.notification.NotificationRepository;
+import com.invoicegenie.ar.domain.model.notification.NotificationTemplateRepository;
 import com.invoicegenie.ar.domain.model.outbox.AuditRepository;
 import com.invoicegenie.ar.domain.model.payment.ChequeRepository;
 import com.invoicegenie.ar.domain.model.payment.CreditNoteRepository;
@@ -294,6 +307,53 @@ public class ArApplication {
     @ApplicationScoped
     public WebhookUseCase webhookUseCase(WebhookRepository webhookRepository) {
         return new WebhookApplicationService(webhookRepository);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public NotificationEnqueueService notificationEnqueueService(
+            NotificationRepository notificationRepository,
+            NotificationPolicyRepository policyRepository,
+            NotificationPreferenceRepository preferenceRepository,
+            NotificationTemplateRepository templateRepository,
+            InvoiceRepository invoiceRepository,
+            CustomerRepository customerRepository,
+            @org.eclipse.microprofile.config.inject.ConfigProperty(
+                    name = "invoicegenie.notifications.enabled", defaultValue = "true") boolean enabled,
+            @org.eclipse.microprofile.config.inject.ConfigProperty(
+                    name = "invoicegenie.notifications.max-attempts", defaultValue = "5") int maxAttempts) {
+        return new NotificationEnqueueService(notificationRepository, policyRepository, preferenceRepository,
+                templateRepository, invoiceRepository, customerRepository, enabled, maxAttempts);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public NotificationUseCase notificationUseCase(NotificationRepository notificationRepository,
+                                                   NotificationAttemptRepository attemptRepository,
+                                                   NotificationEnqueueService enqueueService) {
+        return new NotificationApplicationService(notificationRepository, attemptRepository, enqueueService);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public NotificationPreferenceUseCase notificationPreferenceUseCase(
+            NotificationPreferenceRepository preferenceRepository,
+            CustomerRepository customerRepository) {
+        return new NotificationPreferenceApplicationService(preferenceRepository, customerRepository);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public NotificationRateLimiter notificationRateLimiter(
+            @org.eclipse.microprofile.config.inject.ConfigProperty(
+                    name = "invoicegenie.notifications.send-rate-per-minute", defaultValue = "30") int maxPerMinute) {
+        return new NotificationRateLimiter(maxPerMinute);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public NotificationPolicyUseCase notificationPolicyUseCase(NotificationPolicyRepository policyRepository) {
+        return new NotificationPolicyApplicationService(policyRepository);
     }
 
     @Produces

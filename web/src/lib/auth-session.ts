@@ -1,86 +1,74 @@
-/** Browser session for STORY-003 Phase 2 login (sessionStorage — not free tenant spoofing). */
-
-export const AUTH_SESSION_KEY = "ig-auth-session";
+/**
+ * Browser-safe auth session helpers. Tokens never leave the BFF.
+ */
 
 export type AuthSession = {
-  accessToken?: string | null;
-  apiKey?: string | null;
   tenantId: string;
   subject: string;
   method: string;
   roles: string[];
   expiresAt?: number | null;
+  email?: string | null;
+  displayName?: string | null;
+  userId?: string | null;
 };
 
 export type LoginResponse = {
-  accessToken?: string | null;
-  tokenType?: string | null;
   tenantId: string;
   subject: string;
   method: string;
   roles: string[];
   expiresInSeconds?: number | null;
+  refreshExpiresInSeconds?: number | null;
+  expiresAt?: number | null;
+  email?: string | null;
+  displayName?: string | null;
+  userId?: string | null;
 };
 
-export function readAuthSession(): AuthSession | null {
-  if (typeof window === "undefined") return null;
+export function isAuthRequired(): boolean {
+  return process.env.NEXT_PUBLIC_AUTH_REQUIRED !== "false";
+}
+
+export async function fetchSession(): Promise<AuthSession | null> {
   try {
-    const raw = window.sessionStorage.getItem(AUTH_SESSION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as AuthSession;
-    if (!parsed?.tenantId) return null;
-    if (parsed.expiresAt && Date.now() > parsed.expiresAt) {
-      clearAuthSession();
+    const res = await fetch("/api/auth/session", {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      authenticated?: boolean;
+      session?: AuthSession | null;
+    };
+    if (!data.authenticated || !data.session?.tenantId) return null;
+    if (data.session.expiresAt && Date.now() > data.session.expiresAt) {
       return null;
     }
-    return parsed;
+    return data.session;
   } catch {
     return null;
   }
 }
 
-export function writeAuthSession(session: AuthSession): void {
-  if (typeof window === "undefined") return;
-  window.sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
-}
-
-export function clearAuthSession(): void {
-  if (typeof window === "undefined") return;
-  window.sessionStorage.removeItem(AUTH_SESSION_KEY);
-}
-
-/** When tenant override is disabled, console requires a login session. */
-export function isAuthRequired(): boolean {
-  return process.env.NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE === "false";
-}
-
-export function sessionToAuthHeaders(session: AuthSession | null): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (!session) {
-    const envKey = process.env.NEXT_PUBLIC_API_KEY?.trim();
-    if (envKey) headers["X-API-Key"] = envKey;
-    return headers;
-  }
-  if (session.accessToken) {
-    headers["Authorization"] = `Bearer ${session.accessToken}`;
-  } else if (session.apiKey) {
-    headers["X-API-Key"] = session.apiKey;
-  } else {
-    const envKey = process.env.NEXT_PUBLIC_API_KEY?.trim();
-    if (envKey) headers["X-API-Key"] = envKey;
-  }
-  return headers;
-}
-
 export async function loginRequest(body: {
+  email?: string;
   username?: string;
   password?: string;
   apiKey?: string;
 }): Promise<LoginResponse> {
-  const res = await fetch("/api/v1/auth/login", {
+  const res = await fetch("/api/auth/login", {
     method: "POST",
+    credentials: "include",
     headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({
+      email: body.email,
+      username: body.username,
+      password: body.password,
+      apiKey: body.apiKey,
+    }),
     cache: "no-store",
   });
   if (!res.ok) {
@@ -93,5 +81,25 @@ export async function loginRequest(body: {
     }
     throw new Error(message);
   }
-  return (await res.json()) as LoginResponse;
+  const data = (await res.json()) as LoginResponse & {
+    accessToken?: string;
+    refreshToken?: string;
+    apiKey?: string;
+  };
+  if ("accessToken" in data) delete data.accessToken;
+  if ("refreshToken" in data) delete data.refreshToken;
+  if ("apiKey" in data) delete data.apiKey;
+  return data;
+}
+
+export async function logoutRequest(): Promise<void> {
+  try {
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+    });
+  } catch {
+    /* best-effort */
+  }
 }

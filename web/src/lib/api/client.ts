@@ -1,8 +1,4 @@
 import { ApiError, parseApiError } from "@/lib/errors";
-import {
-  readAuthSession,
-  sessionToAuthHeaders,
-} from "@/lib/auth-session";
 
 export type ApiRequestOptions = {
   method?: string;
@@ -25,15 +21,10 @@ function buildUrl(path: string, query?: ApiRequestOptions["query"]): string {
   return qs ? `${base}?${qs}` : base;
 }
 
-/** Auth headers from login session (JWT / API key), falling back to env key. */
-export function buildAuthHeaders(): Record<string, string> {
-  return sessionToAuthHeaders(readAuthSession());
-}
-
 /**
- * Browser-side API client. Calls same-origin paths; Next.js rewrites proxy to Quarkus.
- * Credentials come from login session when present; tenant is still sent as X-Tenant-Id
- * and must match the authenticated tenant (server enforces).
+ * Browser-side API client.
+ * Calls same-origin /api/v1/* which the BFF proxies to Quarkus with httpOnly cookies.
+ * Never attaches Authorization / X-API-Key from the browser — credentials stay server-side.
  */
 export async function apiFetch<T>(
   path: string,
@@ -49,7 +40,6 @@ export async function apiFetch<T>(
   const headers: Record<string, string> = {
     Accept: "application/json",
     "X-Tenant-Id": tenantId.trim(),
-    ...buildAuthHeaders(),
   };
   if (body !== undefined) {
     headers["Content-Type"] = "application/json";
@@ -58,13 +48,38 @@ export async function apiFetch<T>(
     headers["Idempotency-Key"] = idempotencyKey;
   }
 
-  const res = await fetch(buildUrl(path, query), {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal,
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(buildUrl(path, query), {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
+      cache: "no-store",
+      credentials: "include",
+    });
+  } catch (e) {
+    // React Query aborts superseded requests; rethrow as-is so RQ treats them
+    // as cancellations (not user-visible errors).
+    if (
+      (e instanceof DOMException && e.name === "AbortError") ||
+      (e instanceof Error && e.name === "AbortError") ||
+      signal?.aborted
+    ) {
+      throw e;
+    }
+    throw e;
+  }
+
+  if (res.status === 401) {
+    if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+      const next = encodeURIComponent(
+        window.location.pathname + window.location.search,
+      );
+      window.location.assign(`/login?next=${next}`);
+    }
+    throw new ApiError(401, "UNAUTHORIZED", "Sign in required");
+  }
 
   if (!res.ok) {
     throw await parseApiError(res);

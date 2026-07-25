@@ -59,6 +59,12 @@ public class OutboxWorker {
     @Inject
     Instance<WebhookDispatcher> webhookDispatcher;
 
+    /**
+     * Optional customer notification enqueue from domain outbox events (NOTIFY MVP).
+     */
+    @Inject
+    Instance<NotificationOutboxBridge> notificationOutboxBridge;
+
     @ConfigProperty(name = "outbox.batch-size", defaultValue = "100")
     int batchSize;
 
@@ -168,6 +174,16 @@ public class OutboxWorker {
                 webhookDispatcher.get().dispatch(entry);
             } catch (Exception e) {
                 LOG.warnf(e, "Webhook dispatch failed for event %s (id=%s): %s",
+                        entry.getEventType(), entry.getId(), e.getMessage());
+            }
+        }
+
+        // Customer notifications (Email/WhatsApp) from InvoiceIssued / DunningNotice
+        if (notificationOutboxBridge != null && !notificationOutboxBridge.isUnsatisfied()) {
+            try {
+                notificationOutboxBridge.get().onOutboxPublished(entry);
+            } catch (Exception e) {
+                LOG.warnf(e, "Notification bridge failed for event %s (id=%s): %s",
                         entry.getEventType(), entry.getId(), e.getMessage());
             }
         }

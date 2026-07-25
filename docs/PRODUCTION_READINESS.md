@@ -1,4 +1,8 @@
-# Production Readiness & Machine Verification — InvoiceGenie
+> **SUPERSEDED for current status:** See [`docs/PROJECT_STATUS.md`](PROJECT_STATUS.md) (2026-07-26).  
+> This document is retained as a historical machine audit (2026-07-20) and may list auth/H2 items that have since been implemented.
+
+---
+# Production Readiness & Machine Verification â€” InvoiceGenie
 
 > **Date:** 2026-07-20  
 > **Machine audited:** `TIMUS` (Windows 10/11 Home Single Language, build 10.0.26200)  
@@ -16,7 +20,7 @@
 | **Maven** | **3.9+** recommended | Used to build multi-module reactor |
 | **OS** | Linux preferred for servers; Windows/macOS for ops tooling | Containers abstract most OS deps |
 | **CPU** | 2+ vCPU (app), 1+ vCPU (web), 2+ vCPU (Postgres) | Scale with concurrent tenants |
-| **RAM** | **4 GB+** JVM heap headroom for app; **512 MB–1 GB** for Next.js; **2 GB+** Postgres | Total host **8 GB+** recommended for all-in-one |
+| **RAM** | **4 GB+** JVM heap headroom for app; **512 MBâ€“1 GB** for Next.js; **2 GB+** Postgres | Total host **8 GB+** recommended for all-in-one |
 | **Disk** | **20 GB+** free for images, logs, DB volume | Plus backup volume |
 | **PostgreSQL** | **15+** | Default profile; apply SQL migrations |
 | **Kafka** | Optional today (`outbox.kafka-enabled=false`) | Required when enabling real event publish |
@@ -36,15 +40,15 @@
 | `BACKEND_URL` (web) | `http://localhost:8080` | Internal service URL |
 | `NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE` | `true` in compose | **`false`** |
 | Auth | None (header tenant only) | OIDC/JWT required before public exposure |
-| Logging | File under `logs/` | Centralized (stdout → aggregator) |
+| Logging | File under `logs/` | Centralized (stdout â†’ aggregator) |
 
 ### 1.3 Security baseline (production)
 
-- [ ] Authentication (OIDC/JWT) — **not implemented**
-- [ ] Authorization / roles — **not implemented**
-- [ ] TLS termination — **ops responsibility**
-- [ ] Secrets not in git / compose defaults — **needs work**
-- [ ] Dependency scanning in CI — **scripts added; CI not yet**
+- [ ] Authentication (OIDC/JWT) â€” **not implemented**
+- [ ] Authorization / roles â€” **not implemented**
+- [ ] TLS termination â€” **ops responsibility**
+- [ ] Secrets not in git / compose defaults â€” **needs work**
+- [ ] Dependency scanning in CI â€” **scripts added; CI not yet**
 - [ ] Postgres not publicly reachable
 - [ ] Swagger/OpenAPI disabled or protected in prod
 - [ ] Tenant isolation proven with tests (app filter + RLS)
@@ -53,12 +57,12 @@
 
 | Artifact | How to produce | Production-ready? |
 |----------|----------------|-------------------|
-| `ar-bootstrap` Quarkus app | `mvn -pl ar-bootstrap -am package` → `target/quarkus-app/` | **Yes** (JVM mode) |
-| Root `Dockerfile` | Arena/eval base image | **No** — not a prod image |
+| `ar-bootstrap` Quarkus app | `mvn -pl ar-bootstrap -am package` â†’ `target/quarkus-app/` | **Yes** (JVM mode) |
+| Root `Dockerfile` | Arena/eval base image | **No** â€” not a prod image |
 | `web/Dockerfile` | Next.js image | Review for standalone/prod flags |
 | `docker-compose.yml` | Local full stack | Env-driven secrets; still demo-oriented ports |
 | `docker-compose.prod.yml` | Prod-like stack | TLS nginx edge, private DB, security forced (STORY-017) |
-| SQL / Flyway | `ar-bootstrap/.../db/migration` V1–V7 | Flyway migrate-at-start in prod |
+| SQL / Flyway | `ar-bootstrap/.../db/migration` V1â€“V7 | Flyway migrate-at-start in prod |
 
 ---
 
@@ -68,12 +72,12 @@
 
 | Requirement | Required | Detected on TIMUS | Status |
 |-------------|----------|-------------------|--------|
-| JDK 17+ | Yes (build/run) | **JDK 17.0.5** via `JAVA_HOME`; **JDK 21.0.11** on `PATH` (`java`) | **PASS** (Maven uses 17) — see note |
-| Maven 3.9+ | Yes | **Apache Maven 3.8.5** | **WARN** — works but below docs recommendation |
+| JDK 17+ | Yes (build/run) | **JDK 17.0.5** via `JAVA_HOME`; **JDK 21.0.11** on `PATH` (`java`) | **PASS** (Maven uses 17) â€” see note |
+| Maven 3.9+ | Yes | **Apache Maven 3.8.5** | **WARN** â€” works but below docs recommendation |
 | Node.js 20+ | Yes (web) | **v24.18.0** | **PASS** |
 | npm | Yes | **11.16.0** | **PASS** |
 | Git | Yes | **2.52.0** | **PASS** |
-| Docker / Compose | Recommended | Docker **29.5.3-rd** (Rancher Desktop), Compose **v5.1.4** installed | **FAIL runtime** — daemon not running |
+| Docker / Compose | Recommended | Docker **29.5.3-rd** (Rancher Desktop), Compose **v5.1.4** installed | **FAIL runtime** â€” daemon not running |
 | curl / HTTP client | Optional | Available via OS / tools | PASS enough |
 | Kafka | Optional | Not required for current defaults | N/A |
 | PostgreSQL client | Optional | Via Docker image when daemon up | Deferred |
@@ -82,23 +86,23 @@
 
 | Resource | Detected | Production all-in-one guidance | Status |
 |----------|----------|--------------------------------|--------|
-| CPU | Intel i7-10750H, **12** logical processors | ≥ 4 cores | **PASS** |
-| RAM | **~16 GB** (16,993,009,664 bytes) | ≥ 8 GB | **PASS** |
-| Free disk (C:) | **~361 GB** free | ≥ 20 GB | **PASS** |
+| CPU | Intel i7-10750H, **12** logical processors | â‰¥ 4 cores | **PASS** |
+| RAM | **~16 GB** (16,993,009,664 bytes) | â‰¥ 8 GB | **PASS** |
+| Free disk (C:) | **~361 GB** free | â‰¥ 20 GB | **PASS** |
 | Arch | **amd64** | amd64/arm64 | **PASS** |
 
 ### 2.3 Runtime nuances on this machine
 
 1. **Java split-brain:**  
-   - `java -version` → Temurin **21**  
-   - `JAVA_HOME` / Maven → Oracle **17.0.5**  
+   - `java -version` â†’ Temurin **21**  
+   - `JAVA_HOME` / Maven â†’ Oracle **17.0.5**  
    - **Impact:** Builds are consistent with project target 17. Ad-hoc `java -jar` may use 21 (usually fine). Prefer aligning PATH and `JAVA_HOME` to one JDK for less confusion.
 
 2. **Docker daemon down:**  
    - CLI present (Rancher Desktop) but `docker info` fails: cannot connect to `docker_engine` pipe.  
    - **Impact:** Cannot run `docker compose up`, Postgres container, or image builds until Rancher Desktop / Docker is started.
 
-3. **Maven version:** 3.8.5 is slightly below README “3.9+”. Most goals work; upgrade if plugin compatibility issues appear.
+3. **Maven version:** 3.8.5 is slightly below README â€œ3.9+â€. Most goals work; upgrade if plugin compatibility issues appear.
 
 4. **Local run without Docker:** Fully supported via H2 `dev` profile:
 
@@ -175,15 +179,15 @@
 - Sample nginx: [deploy/nginx-tls.conf](./deploy/nginx-tls.conf)
 - Compose: `docker compose -f docker-compose.prod.yml up -d --build`
 - Startup: `ProdSecurityValidator` refuses `%prod` when security is off, secrets missing, or demo passwords/API keys remain
-- **DEF-BE-007:** packaged `quarkus-run.jar` / `Dockerfile.prod` cannot switch to H2 via `-Dquarkus.profile=dev` alone — use `quarkus:dev` for H2 local smoke
+- **DEF-BE-007:** packaged `quarkus-run.jar` / `Dockerfile.prod` cannot switch to H2 via `-Dquarkus.profile=dev` alone â€” use `quarkus:dev` for H2 local smoke
 
 ## 6. Related docs
 
-- [FEATURE_PRIORITY_BACKLOG.md](./FEATURE_PRIORITY_BACKLOG.md) — prioritized gaps  
-- [PRODUCT_OWNER_STORIES.md](./PRODUCT_OWNER_STORIES.md) — eng stories  
-- [ONBOARDING.md](./ONBOARDING.md) — architecture  
-- [SCHEMA.md](./SCHEMA.md) — data model  
-- [deploy/PROD_EDGE_TLS.md](./deploy/PROD_EDGE_TLS.md) — TLS + prod compose  
-- [../README.md](../README.md) — quick start  
+- [FEATURE_PRIORITY_BACKLOG.md](./FEATURE_PRIORITY_BACKLOG.md) â€” prioritized gaps  
+- [PRODUCT_OWNER_STORIES.md](./PRODUCT_OWNER_STORIES.md) â€” eng stories  
+- [ONBOARDING.md](./ONBOARDING.md) â€” architecture  
+- [SCHEMA.md](./SCHEMA.md) â€” data model  
+- [deploy/PROD_EDGE_TLS.md](./deploy/PROD_EDGE_TLS.md) â€” TLS + prod compose  
+- [../README.md](../README.md) â€” quick start  
 
 *Machine facts captured from live shell checks on 2026-07-20; compose/TLS notes updated 2026-07-24.*

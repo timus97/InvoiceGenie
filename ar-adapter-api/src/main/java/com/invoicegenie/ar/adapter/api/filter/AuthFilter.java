@@ -176,8 +176,9 @@ public class AuthFilter implements ContainerRequestFilter {
                 return true;
             }
         }
-        // STORY-003 Phase 2: login is always unauthenticated
-        if (path.equals("/api/v1/auth/login") || path.startsWith("/api/v1/auth/login/")) {
+        // Public auth endpoints (login + refresh). logout/me require a valid access token.
+        if (path.equals("/api/v1/auth/login") || path.startsWith("/api/v1/auth/login/")
+                || path.equals("/api/v1/auth/refresh") || path.startsWith("/api/v1/auth/refresh/")) {
             return true;
         }
         if (allowOpenApi && (path.startsWith("/q/swagger")

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, Ban, CheckCircle2, Trash2 } from "lucide-react";
@@ -21,9 +21,13 @@ import {
   unblockCustomer,
   updateCustomer,
 } from "@/lib/api/customers";
+import {
+  getCustomerNotificationPreferences,
+  putCustomerNotificationPreferences,
+} from "@/lib/api/notifications";
 import { formatMoney } from "@/lib/money";
 import { ApiError } from "@/lib/errors";
-import type { CustomerStatus } from "@/types/ar";
+import type { CustomerStatus, NotificationPreferenceDto } from "@/types/ar";
 
 export default function CustomerDetailPage() {
   const params = useParams<{ id: string }>();
@@ -59,6 +63,28 @@ export default function CustomerDetailPage() {
     queryFn: ({ signal }) => getCustomerArSummary(tenantId, id, signal),
   });
 
+  const prefsQ = useQuery({
+    queryKey: ["customer-notif-prefs", tenantId, id],
+    enabled: ready && !!id,
+    queryFn: ({ signal }) =>
+      getCustomerNotificationPreferences(tenantId, id, signal),
+  });
+
+  const [emailEnabled, setEmailEnabled] = useState(true);
+  const [waEnabled, setWaEnabled] = useState(true);
+  const [emailOverride, setEmailOverride] = useState("");
+  const [waOverride, setWaOverride] = useState("");
+
+  useEffect(() => {
+    if (!prefsQ.data) return;
+    const emailPref = prefsQ.data.find((p) => p.channel === "EMAIL");
+    const waPref = prefsQ.data.find((p) => p.channel === "WHATSAPP");
+    setEmailEnabled(emailPref?.enabled ?? true);
+    setWaEnabled(waPref?.enabled ?? true);
+    setEmailOverride(emailPref?.destinationOverride ?? "");
+    setWaOverride(waPref?.destinationOverride ?? "");
+  }, [prefsQ.data]);
+
   // Sync form when customer loads
   const formReady = c != null;
   const dn = displayName ?? c?.displayName ?? "";
@@ -80,6 +106,31 @@ export default function CustomerDetailPage() {
 
   const onErr = (err: Error) =>
     toast.error(err instanceof ApiError ? err.message : err.message);
+
+  const prefsMut = useMutation({
+    mutationFn: () => {
+      const body: NotificationPreferenceDto[] = [
+        {
+          channel: "EMAIL",
+          enabled: emailEnabled,
+          destinationOverride: emailOverride || null,
+        },
+        {
+          channel: "WHATSAPP",
+          enabled: waEnabled,
+          destinationOverride: waOverride || null,
+        },
+      ];
+      return putCustomerNotificationPreferences(tenantId, id, body);
+    },
+    onSuccess: () => {
+      toast.success("Notification preferences saved");
+      void queryClient.invalidateQueries({
+        queryKey: ["customer-notif-prefs", tenantId, id],
+      });
+    },
+    onError: onErr,
+  });
 
   const updateMut = useMutation({
     mutationFn: () =>
@@ -318,6 +369,70 @@ export default function CustomerDetailPage() {
         </Card>
 
         <div className="space-y-6">
+          <Card>
+            <h2 className="mb-4 text-sm font-semibold">
+              Notification preferences
+            </h2>
+            <p className="mb-3 text-xs text-zinc-500">
+              Opt-out blocks automated and manual customer sends for that
+              channel. Destination override optional.
+            </p>
+            {prefsQ.isLoading ? (
+              <p className="text-sm text-zinc-500">Loading…</p>
+            ) : (
+              <div className="space-y-3 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={emailEnabled}
+                    onChange={(e) => setEmailEnabled(e.target.checked)}
+                    disabled={isDeleted}
+                  />
+                  Email enabled
+                </label>
+                <div>
+                  <Label htmlFor="emailOverride">Email override</Label>
+                  <Input
+                    id="emailOverride"
+                    value={emailOverride}
+                    onChange={(e) => setEmailOverride(e.target.value)}
+                    placeholder={c.email ?? "customer email"}
+                    disabled={isDeleted}
+                  />
+                </div>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={waEnabled}
+                    onChange={(e) => setWaEnabled(e.target.checked)}
+                    disabled={isDeleted}
+                  />
+                  WhatsApp enabled
+                </label>
+                <div>
+                  <Label htmlFor="waOverride">WhatsApp / phone override</Label>
+                  <Input
+                    id="waOverride"
+                    value={waOverride}
+                    onChange={(e) => setWaOverride(e.target.value)}
+                    placeholder={c.phone ?? "phone E.164"}
+                    disabled={isDeleted}
+                  />
+                </div>
+                {!isDeleted ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={prefsMut.isPending}
+                    onClick={() => prefsMut.mutate()}
+                  >
+                    {prefsMut.isPending ? "Saving…" : "Save preferences"}
+                  </Button>
+                ) : null}
+              </div>
+            )}
+          </Card>
+
           <Card>
             <h2 className="mb-4 text-sm font-semibold">Open AR summary</h2>
             <p className="mb-3 text-xs text-zinc-500">

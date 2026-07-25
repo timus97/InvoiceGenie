@@ -17,6 +17,8 @@ import {
   ArrowLeftRight,
   ScrollText,
   Webhook,
+  UserCog,
+  Bell,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
@@ -52,9 +54,21 @@ const NAV: NavItem[] = [
     roles: ["AR_AUDITOR", "AR_CONTROLLER", "TENANT_ADMIN"],
   },
   {
+    href: "/notifications",
+    label: "Notifications",
+    icon: Bell,
+    roles: ["AR_CLERK", "AR_CONTROLLER", "AR_AUDITOR", "TENANT_ADMIN"],
+  },
+  {
     href: "/webhooks",
     label: "Webhooks",
     icon: Webhook,
+    roles: ["TENANT_ADMIN"],
+  },
+  {
+    href: "/users",
+    label: "Users",
+    icon: UserCog,
     roles: ["TENANT_ADMIN"],
   },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -67,8 +81,8 @@ export function Sidebar() {
 
   const items = NAV.filter((item) => {
     if (!item.roles?.length) return true;
-    // Without a session (dev, security off), show all nav links
-    if (!session) return true;
+    // Hide privileged nav until roles are known from a signed-in session
+    if (!session) return false;
     return hasRole(...item.roles);
   });
 

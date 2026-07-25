@@ -12,11 +12,10 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  clearAuthSession,
+  fetchSession,
   isAuthRequired,
   loginRequest,
-  readAuthSession,
-  writeAuthSession,
+  logoutRequest,
   type AuthSession,
 } from "@/lib/auth-session";
 import { useTenant } from "@/components/tenant-provider";
@@ -24,10 +23,11 @@ import { useTenant } from "@/components/tenant-provider";
 type AuthContextValue = {
   session: AuthSession | null;
   ready: boolean;
-  loginWithPassword: (username: string, password: string) => Promise<void>;
+  loginWithPassword: (email: string, password: string) => Promise<void>;
   loginWithApiKey: (apiKey: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   hasRole: (...roles: string[]) => boolean;
+  refreshSession: () => Promise<void>;
 };
 
 const AuthCtx = createContext<AuthContextValue | null>(null);
@@ -40,13 +40,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  useEffect(() => {
-    const s = readAuthSession();
+  const refreshSession = useCallback(async () => {
+    const s = await fetchSession();
     setSession(s);
     if (s?.tenantId) {
       setTenantId(s.tenantId);
     }
-    setReady(true);
+  }, [setTenantId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await fetchSession();
+        if (cancelled) return;
+        setSession(s);
+        if (s?.tenantId) {
+          setTenantId(s.tenantId);
+        }
+      } finally {
+        if (!cancelled) setReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [setTenantId]);
 
   useEffect(() => {
@@ -59,22 +77,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [ready, session, pathname, router]);
 
   const applyLogin = useCallback(
-    async (body: { username?: string; password?: string; apiKey?: string }) => {
+    async (body: {
+      email?: string;
+      username?: string;
+      password?: string;
+      apiKey?: string;
+    }) => {
       const res = await loginRequest(body);
-      const expiresAt =
-        res.expiresInSeconds != null
-          ? Date.now() + res.expiresInSeconds * 1000
-          : null;
       const next: AuthSession = {
-        accessToken: res.accessToken ?? null,
-        apiKey: body.apiKey && !res.accessToken ? body.apiKey : null,
         tenantId: res.tenantId,
         subject: res.subject,
         method: res.method,
         roles: res.roles ?? [],
-        expiresAt,
+        expiresAt: res.expiresAt ?? null,
+        email: res.email ?? null,
+        displayName: res.displayName ?? null,
+        userId: res.userId ?? null,
       };
-      writeAuthSession(next);
       setSession(next);
       setTenantId(res.tenantId);
       queryClient.clear();
@@ -83,8 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const loginWithPassword = useCallback(
-    (username: string, password: string) =>
-      applyLogin({ username, password }),
+    (email: string, password: string) => applyLogin({ email, password }),
     [applyLogin],
   );
 
@@ -93,13 +111,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [applyLogin],
   );
 
-  const logout = useCallback(() => {
-    clearAuthSession();
+  const logout = useCallback(async () => {
+    await logoutRequest();
     setSession(null);
     queryClient.clear();
-    if (isAuthRequired()) {
-      router.replace("/login");
-    }
+    router.replace("/login");
   }, [queryClient, router]);
 
   const hasRole = useCallback(
@@ -119,8 +135,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loginWithApiKey,
       logout,
       hasRole,
+      refreshSession,
     }),
-    [session, ready, loginWithPassword, loginWithApiKey, logout, hasRole],
+    [
+      session,
+      ready,
+      loginWithPassword,
+      loginWithApiKey,
+      logout,
+      hasRole,
+      refreshSession,
+    ],
   );
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;

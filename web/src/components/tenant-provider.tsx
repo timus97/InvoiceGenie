@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -29,9 +30,12 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [tenantId, setTenantIdState] = useState(DEFAULT_TENANT_ID);
   const [ready, setReady] = useState(false);
+  const tenantIdRef = useRef(tenantId);
+  tenantIdRef.current = tenantId;
 
   useEffect(() => {
     const id = readTenantFromStorage();
+    tenantIdRef.current = id;
     setTenantIdState(id);
     writeTenantToStorage(id);
     setReady(true);
@@ -41,8 +45,14 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     (id: string) => {
       const trimmed = id.trim();
       if (!isValidTenantId(trimmed)) return false;
-      // Production builds disable free-form override; still allow auth-derived updates.
-      // Callers that must set from login (AuthProvider) always pass a valid authenticated tenant.
+      // Only clear React Query when the tenant actually changes.
+      // Auth hydration often re-applies the same tenant and used to cancel
+      // in-flight requests (aging, etc.) → browser Network "canceled".
+      if (tenantIdRef.current === trimmed) {
+        writeTenantToStorage(trimmed);
+        return true;
+      }
+      tenantIdRef.current = trimmed;
       setTenantIdState(trimmed);
       writeTenantToStorage(trimmed);
       queryClient.clear();

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { useTenant } from "@/components/tenant-provider";
+import { useAuth } from "@/components/auth-provider";
 import {
   calculateDiscount,
   getAgingBuckets,
@@ -20,7 +21,10 @@ import { formatMoney } from "@/lib/money";
 import { ApiError } from "@/lib/errors";
 
 export default function AgingPage() {
-  const { tenantId, ready } = useTenant();
+  const { tenantId, ready: tenantReady } = useTenant();
+  const { ready: authReady, session } = useAuth();
+  // Session must be present so BFF cookie is ready and tenant is stable
+  const ready = tenantReady && authReady && !!session;
   const [asOfDate, setAsOfDate] = useState(
     () => new Date().toISOString().slice(0, 10),
   );
@@ -34,14 +38,16 @@ export default function AgingPage() {
   );
 
   const report = useQuery({
-    queryKey: ["aging", tenantId, asOfDate],
-    enabled: ready,
+    queryKey: ["aging", "report", tenantId, asOfDate],
+    enabled: ready && !!tenantId,
     queryFn: ({ signal }) => getAgingReport(tenantId, asOfDate, signal),
+    // Keep previous report while asOfDate changes instead of abort-flash
+    placeholderData: (prev) => prev,
   });
 
   const buckets = useQuery({
     queryKey: ["aging-buckets", tenantId],
-    enabled: ready,
+    enabled: ready && !!tenantId,
     queryFn: ({ signal }) => getAgingBuckets(tenantId, signal),
   });
 

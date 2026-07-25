@@ -120,7 +120,8 @@ public class TenantFilter implements ContainerRequestFilter {
     }
 
     private static boolean isAuthPublicPath(String path) {
-        return path.equals("/api/v1/auth/login") || path.startsWith("/api/v1/auth/login/");
+        return path.equals("/api/v1/auth/login") || path.startsWith("/api/v1/auth/login/")
+                || path.equals("/api/v1/auth/refresh") || path.startsWith("/api/v1/auth/refresh/");
     }
 
     private static String normalizePath(String path) {

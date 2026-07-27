@@ -4,7 +4,7 @@
 > **Audience:** Engineering, product, ops, leadership  
 > **Date:** 2026-07-24  
 > **Repo:** InvoiceGenie (Quarkus multi-module Java 17 + Next.js web console)  
-> **Related:** [PRODUCTION_READINESS.md](../PRODUCTION_READINESS.md), [FEATURE_PRIORITY_BACKLOG.md](../FEATURE_PRIORITY_BACKLOG.md), [PRODUCT_OWNER_STORIES.md](../PRODUCT_OWNER_STORIES.md) (STORY-003), [SCHEMA.md](../SCHEMA.md), [deploy/nginx-tls.conf](../deploy/nginx-tls.conf)
+> **Related:** [PROJECT_STATUS.md](../PROJECT_STATUS.md), [SCHEMA.md](../SCHEMA.md), [deploy/nginx-tls.conf](../deploy/nginx-tls.conf), [deploy/OIDC.md](../deploy/OIDC.md)
 
 ---
 
@@ -278,7 +278,7 @@ QUARKUS_HTTP_HOST=0.0.0.0
 | CDN | **CloudFront** in front of ALB (or CF → web origin only, API separate) | TLS, caching static `_next/static`, WAF attachment |
 | S3 | Optional for pure static assets only | Not sufficient alone while rewrites/SSR remain |
 | `BACKEND_URL` | Internal service discovery: `http://invoicegenie-api.<namespace>:8080` **or** ALB internal listener URL | Must not point at public internet from web→API if avoidable |
-| Tenant override | `NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE=false` | Prod requirement from PRODUCTION_READINESS |
+| Tenant override | `NEXT_PUBLIC_ALLOW_TENANT_OVERRIDE=false` | Prod requirement from PROJECT_STATUS / compose |
 | API key | Prefer server-side session later; until then carefully managed `NEXT_PUBLIC_API_KEY` or drop public key and use login | STORY-003 |
 
 **SSR consideration:** Browser stays same-origin to the web host; Next server proxies to Quarkus. On AWS, keep web and API in the same VPC; set `BACKEND_URL` to the **private** API service DNS (Cloud Map / ECS Service Connect) rather than the public ALB when possible (reduces hop + public attack surface).
@@ -540,7 +540,7 @@ Promote images by **digest**, not just `latest`.
 
 ### 9.4 Decommission local compose for prod use
 
-Compose remains **dev/demo only** (as documented in PRODUCTION_READINESS).
+Compose remains **dev/demo only** for local stacks; use AWS IaC for staging/prod.
 
 ---
 

@@ -153,7 +153,7 @@ cd web && npm install && npm run dev
 3. **Reminders & dunning** run on schedule; one message per invoice/channel/level.  
 4. **History** in **Notifications** UI; **opt-out** on customer; **policy** in Settings (admin).  
 
-Docs: `docs/notifications/` (product, architecture, implementation, QA findings).
+Docs: start at [`docs/README.md`](docs/README.md) · demo [`docs/DEMO.md`](docs/DEMO.md) · status [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md).
 
 ---
 
@@ -175,6 +175,6 @@ Built so **Accounts Payable (AP)** and **General Ledger (GL)** can share the sam
 
 ## License & contact
 
-Internal product / evaluation build. For deployment, security review, and pilot onboarding, see `docs/` and your engagement owner.
+Internal product / evaluation build. See `docs/PROJECT_STATUS.md`, `docs/PO_NEXT_REVIEW.md`, and your engagement owner.
 
 **InvoiceGenie — AR that collects, not just records.**

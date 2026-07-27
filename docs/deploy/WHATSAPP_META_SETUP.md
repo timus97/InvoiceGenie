@@ -221,4 +221,4 @@ Use this to validate Meta credentials **before** pointing the app at `provider=m
 - `docs/notifications/IMPLEMENTATION_NOTES.md`  
 - `docs/deploy/EMAIL_DELIVERABILITY.md`  
 - `docs/deploy/PRODUCTION_PATH_RUNBOOK.md`  
-- `docs/PRODUCTION_PATH_STORIES.md` (PP-002, PP-003)
+- `docs/PROJECT_STATUS.md`, `docs/DEMO.md`

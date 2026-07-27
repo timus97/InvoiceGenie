@@ -1,6 +1,6 @@
 # Production edge TLS & compose hardening (STORY-017)
 
-> Pair with [PRODUCTION_READINESS.md](../PRODUCTION_READINESS.md), [AWS_DEPLOYMENT_CHECKLIST.md](../aws/AWS_DEPLOYMENT_CHECKLIST.md), and `ProdSecurityValidator`.
+> Pair with [PROJECT_STATUS.md](../PROJECT_STATUS.md), [AWS_DEPLOYMENT_CHECKLIST.md](../aws/AWS_DEPLOYMENT_CHECKLIST.md), and `ProdSecurityValidator`.
 
 ## Goals
 

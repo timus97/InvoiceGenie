@@ -10,9 +10,10 @@
 
 | Doc | Role |
 |-----|------|
-| [PRODUCT_OWNER_STORIES.md](./PRODUCT_OWNER_STORIES.md) | Ordered eng stories, acceptance criteria, status |
-| [FEATURE_PRIORITY_BACKLOG.md](./FEATURE_PRIORITY_BACKLOG.md) | P0–P3 residual backlog + maturity snapshot |
-| [PRODUCTION_READINESS.md](./PRODUCTION_READINESS.md) | Prod requirements + machine verification |
+| [PROJECT_STATUS.md](./PROJECT_STATUS.md) | Current product status |
+| [DEMO.md](./DEMO.md) | Demo script for stakeholders |
+| [PO_NEXT_REVIEW.md](./PO_NEXT_REVIEW.md) | Product Owner next-review backlog |
+| [README.md](./README.md) | Docs index |
 | [SCHEMA.md](./SCHEMA.md) | Data model commentary |
 | [README.md](../README.md) | Quick start + API catalog |
 | [deploy/OIDC.md](./deploy/OIDC.md) | Optional OIDC / JWKS resource-server path (PP-020) |
@@ -81,7 +82,7 @@ InvoiceGenie is a production-oriented multi-tenant AR stack:
 1. **Tenant always first** — no use case or repository call without `TenantId`.
 2. **Prefer application ports** — REST resources depend on inbound use cases (hexagonal cleanup landed).
 3. **Local exploration:** `quarkus.profile=dev` (H2). **Prod-like:** Postgres + Flyway + `%prod` security.
-4. Prioritize work from [PRODUCT_OWNER_STORIES.md](./PRODUCT_OWNER_STORIES.md) / residual table in [FEATURE_PRIORITY_BACKLOG.md](./FEATURE_PRIORITY_BACKLOG.md), not historical gap lists in older doc revisions.
+4. Prioritize work from [PO_NEXT_REVIEW.md](./PO_NEXT_REVIEW.md) and [PROJECT_STATUS.md](./PROJECT_STATUS.md).
 
 ---
 
@@ -97,9 +98,9 @@ InvoiceGenie/
 ├── README.md                    # Quick start + API catalog
 ├── docs/
 │   ├── ONBOARDING.md            # ← this document
-│   ├── PRODUCT_OWNER_STORIES.md
-│   ├── FEATURE_PRIORITY_BACKLOG.md
-│   ├── PRODUCTION_READINESS.md
+│   ├── PROJECT_STATUS.md
+│   ├── DEMO.md
+│   ├── PO_NEXT_REVIEW.md
 │   ├── SCHEMA.md
 │   ├── deploy/                  # nginx TLS sample, prod edge notes
 │   └── sql/                     # Historical SQL (Flyway is source of truth)
@@ -333,7 +334,7 @@ Never add `findById(id)` without tenant.
 | V6 | Webhooks + indexes |
 | V7 | Webhook delivery log |
 
-Historical copies under `docs/sql/` are documentation only — prefer Flyway.
+Schema changes ship only via Flyway under `ar-bootstrap/.../db/migration`.
 
 IDs: **UUID v7**. Money: **NUMERIC(19,2)** + `Money` VO. See [SCHEMA.md](./SCHEMA.md).
 
@@ -533,12 +534,12 @@ Honest residuals — prefer stories/backlog for status:
 
 ## 14. Suggested first week
 
-1. Read this doc + skim [SCHEMA.md](./SCHEMA.md) + residual table in [FEATURE_PRIORITY_BACKLOG.md](./FEATURE_PRIORITY_BACKLOG.md).
+1. Read this doc + skim [SCHEMA.md](./SCHEMA.md) + [PROJECT_STATUS.md](./PROJECT_STATUS.md).
 2. Run H2 + web; create customer → invoice → payment → allocate; open Swagger.
 3. Debugger trace: filters → `InvoiceResource` → `IssueInvoiceService` → domain → JPA → outbox.
 4. Read `InvoiceLifecycleEngine` + domain tests.
 5. `mvn -pl ar-domain,ar-application test`.
-6. Pick a story from [PRODUCT_OWNER_STORIES.md](./PRODUCT_OWNER_STORIES.md) with **Status: Ready**.
+6. Pick prioritized items from [PO_NEXT_REVIEW.md](./PO_NEXT_REVIEW.md).
 
 ---
 
@@ -549,8 +550,8 @@ Honest residuals — prefer stories/backlog for status:
 | Module boundaries | §3–4 |
 | HTTP surface | §5 + README |
 | Schema | Flyway + SCHEMA.md + §7 |
-| Profiles / security | §8 + README + PRODUCTION_READINESS |
-| Maturity / stubs closed | §12 + PRODUCT_OWNER_STORIES + FEATURE_PRIORITY_BACKLOG |
+| Profiles / security | §8 + README + PROJECT_STATUS |
+| Maturity / residual | PROJECT_STATUS + PO_NEXT_REVIEW |
 
 ---
 

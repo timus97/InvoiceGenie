@@ -4,7 +4,7 @@
 **Audience:** Platform / DevOps / on-call  
 **Date:** 2026-07-27  
 **Scope:** Staging readiness and production-path smoke **without** requiring a live AWS deploy in this pass.  
-**Source stories:** `docs/PRODUCTION_PATH_STORIES.md` (PP-040…PP-043)
+**Related:** `docs/PROJECT_STATUS.md`, `docs/DEMO.md`
 
 ---
 

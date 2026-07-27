@@ -1,54 +1,47 @@
-﻿# Project Status — InvoiceGenie (as of 2026-07-27)
+﻿# Project Status — InvoiceGenie
 
-> **Authoritative current status** after Production Path integration (`feat/production-path-integration`).
+**Updated:** 2026-07-27  
+**Branch:** `Development` (Production Path integrated)
 
-## Runtime (local)
+## What InvoiceGenie is
 
-| Service | URL | Notes |
-|---------|-----|--------|
-| Web console | http://localhost:3000 | Next.js BFF (default API :8082) |
-| API | http://localhost:8082 | Quarkus + Postgres |
-| Adminer | http://localhost:8081 | SQL console |
-| Bootstrap login | admin@invoicegenie.local / Admin123! | Change after first use |
+Multi-tenant **Accounts Receivable** platform: customers, invoices, payments/cheques, aging, ledger, webhooks, audit, and customer notifications (Email + WhatsApp pipeline) with an operator console.
 
-## Completed features (AR core + Production Path)
+## Local URLs
 
-- Multi-tenant AR core (customers, invoices, payments, cheques, credit notes, aging, ledger, FX, tenants, statements)
-- Auth: email/password, BCrypt, JWT + refresh, RBAC, **OIDC/JWKS modes** (`oidc` / `hybrid-oidc`)
-- Notifications pipeline: issue / pre-due / dunning / **statement send**
-- **Real SMTP** (Jakarta Mail) + **Meta WhatsApp** + logging demo adapters
-- **Bounce suppressions** + provider webhooks; **channel fallback**
-- **Quiet hours**, **unsubscribe** tokens, **PDF** invoice/statement, attach-on-issue
-- **Template preview**, **notification metrics**, policy/pref/send **audit**
-- **Cursor pagination** (payments, notifications)
-- **Cross-currency allocation** (flag `allow-fx-allocation`)
-- **Posting period close** MVP + admin API
-- **Webhook redrive**
-- Console: metrics, preview, policy, PDF, statement send, redrive, public `/unsubscribe`
-- Platform: Flyway **V1–V15**, webhooks, outbox, Docker Compose, AWS/TLS docs, production path runbooks
+| Service | URL |
+|---------|-----|
+| Console | http://localhost:3000 |
+| API | http://localhost:8082 |
+| OpenAPI | http://localhost:8082/q/swagger-ui/ |
+| Adminer | http://localhost:8081 |
+| Login | `admin@invoicegenie.local` / `Admin123!` |
+| Demo tenant | `00000000-0000-0000-0000-000000000001` |
 
-## Remaining for true production go-live (ops / pilot)
+## Shipped capabilities
 
-| Item | Notes |
-|------|--------|
-| Live cloud staging | Terraform present; deploy + TLS certs ops-owned |
-| Email domain warm-up | SPF/DKIM/SES config in real DNS |
-| Meta template approval | Business verification + approved template names |
-| Load / pen-test burn-in | Staging required |
-| Full FX gain/loss ledger | Lite conversion shipped; multi-currency P&L residual |
-| AP / full GL / multi-region | Intentionally deferred product modules |
-| Customer payment portal + PSP | Future differentiator |
-| CI `mvn verify` coverage gate | Still using `mvn test` until coverage remediation sprint |
+- AR core: customers, invoices (draft/issue/write-off), payments (FIFO/manual/reverse/unallocate), cheques, credit notes, aging, statements
+- Security: login + JWT/refresh, RBAC, optional OIDC JWKS (`oidc` / `hybrid-oidc`)
+- Notifications: auto on issue, pre-due, dunning, statement send; quiet hours; unsubscribe; metrics; template preview
+- Delivery: **logging** (demo), **SMTP** (Jakarta Mail), **Meta WhatsApp**; bounce suppressions; channel fallback
+- PDF invoice & statement; posting periods; webhook delivery + redrive; cursor pagination; optional FX allocation
+- Flyway V1–V15; Docker Compose; AWS IaC docs
 
-## Doc map
+## Configure delivery
 
-- `docs/PROJECT_REVIEW_STAKEHOLDER.md` — stakeholder review
-- `docs/PRODUCTION_PATH_STORIES.md` — story catalog
-- `docs/deploy/EMAIL_DELIVERABILITY.md`, `WHATSAPP_META_SETUP.md`, `PRODUCTION_PATH_RUNBOOK.md`, `OIDC.md`
-- `docs/notifications/*`, `docs/aws/*`
+| Goal | Env |
+|------|-----|
+| Demo email (no inbox) | `INVOICEGENIE_NOTIFICATIONS_EMAIL_PROVIDER=logging` |
+| Real email | `=smtp` + `INVOICEGENIE_SMTP_*` (see `deploy/EMAIL_DELIVERABILITY.md`) |
+| WhatsApp Meta | `INVOICEGENIE_NOTIFICATIONS_WHATSAPP_PROVIDER=meta` + token/phone id |
 
-## Test gate (2026-07-27)
+## Still ops / product (not code gaps)
 
-- Unit modules: **935 tests, 0 fail / 0 error** (shared-kernel through ar-adapter-messaging)
-- `ar-bootstrap` Quarkus E2E: requires local Postgres credentials (env-dependent)
+- Live cloud staging + TLS certs
+- SES domain / Meta template approval
+- Load test + pilot tenants
+- Deferred modules: AP, full GL product, multi-region, customer payment portal
 
+## Docs map
+
+See [docs/README.md](README.md). Demo: [DEMO.md](DEMO.md). Next PO review: [PO_NEXT_REVIEW.md](PO_NEXT_REVIEW.md).

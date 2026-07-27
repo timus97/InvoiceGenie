@@ -106,6 +106,12 @@ public class RoleAuthorizationFilter implements ContainerRequestFilter {
             }
             return Set.of();
         }
+        // PP-011 public unsubscribe (no auth)
+        if (path.startsWith("/api/v1/public/")
+                || path.equals("/api/v1/notifications/unsubscribe")
+                || path.startsWith("/api/v1/notifications/unsubscribe/")) {
+            return Set.of();
+        }
 
         if ("GET".equals(method) || "HEAD".equals(method) || "OPTIONS".equals(method)) {
             if (path.startsWith("/api/v1/audit")) {

@@ -48,6 +48,18 @@ public class NotificationPolicyEntity {
     @Column(name = "channels_dunning_notice", nullable = false, length = 64)
     private String channelsDunningNotice;
 
+    @Column(name = "quiet_hours_start")
+    private Integer quietHoursStart;
+
+    @Column(name = "quiet_hours_end")
+    private Integer quietHoursEnd;
+
+    @Column(name = "timezone", nullable = false, length = 64)
+    private String timezone = "UTC";
+
+    @Column(name = "attach_pdf_on_issue", nullable = false)
+    private boolean attachPdfOnIssue;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -78,6 +90,14 @@ public class NotificationPolicyEntity {
     public void setChannelsPaymentReminder(String channelsPaymentReminder) { this.channelsPaymentReminder = channelsPaymentReminder; }
     public String getChannelsDunningNotice() { return channelsDunningNotice; }
     public void setChannelsDunningNotice(String channelsDunningNotice) { this.channelsDunningNotice = channelsDunningNotice; }
+    public Integer getQuietHoursStart() { return quietHoursStart; }
+    public void setQuietHoursStart(Integer quietHoursStart) { this.quietHoursStart = quietHoursStart; }
+    public Integer getQuietHoursEnd() { return quietHoursEnd; }
+    public void setQuietHoursEnd(Integer quietHoursEnd) { this.quietHoursEnd = quietHoursEnd; }
+    public String getTimezone() { return timezone; }
+    public void setTimezone(String timezone) { this.timezone = timezone; }
+    public boolean isAttachPdfOnIssue() { return attachPdfOnIssue; }
+    public void setAttachPdfOnIssue(boolean attachPdfOnIssue) { this.attachPdfOnIssue = attachPdfOnIssue; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

@@ -50,6 +50,8 @@ import com.invoicegenie.ar.application.service.NotificationEnqueueService;
 import com.invoicegenie.ar.application.service.NotificationPreferenceApplicationService;
 import com.invoicegenie.ar.application.service.NotificationPolicyApplicationService;
 import com.invoicegenie.ar.application.service.NotificationRateLimiter;
+import com.invoicegenie.ar.application.service.PdfDocumentService;
+import com.invoicegenie.ar.application.service.UnsubscribeTokenService;
 import com.invoicegenie.ar.application.service.PaymentAllocationService;
 import com.invoicegenie.ar.application.service.PaymentQueryService;
 import com.invoicegenie.ar.application.service.PaymentReversalService;
@@ -311,6 +313,26 @@ public class ArApplication {
 
     @Produces
     @ApplicationScoped
+    public PdfDocumentService pdfDocumentService() {
+        return new PdfDocumentService();
+    }
+
+    @Produces
+    @ApplicationScoped
+    public UnsubscribeTokenService unsubscribeTokenService(
+            @org.eclipse.microprofile.config.inject.ConfigProperty(
+                    name = "invoicegenie.notifications.unsubscribe.secret", defaultValue = "none") String unsubSecret,
+            @org.eclipse.microprofile.config.inject.ConfigProperty(
+                    name = "invoicegenie.security.jwt.secret", defaultValue = "none") String jwtSecret) {
+        String secret = unsubSecret;
+        if (secret == null || secret.isBlank() || "none".equalsIgnoreCase(secret.trim())) {
+            secret = jwtSecret;
+        }
+        return new UnsubscribeTokenService(secret);
+    }
+
+    @Produces
+    @ApplicationScoped
     public NotificationEnqueueService notificationEnqueueService(
             NotificationRepository notificationRepository,
             NotificationPolicyRepository policyRepository,
@@ -318,28 +340,39 @@ public class ArApplication {
             NotificationTemplateRepository templateRepository,
             InvoiceRepository invoiceRepository,
             CustomerRepository customerRepository,
+            PdfDocumentService pdfDocumentService,
+            UnsubscribeTokenService unsubscribeTokenService,
             @org.eclipse.microprofile.config.inject.ConfigProperty(
                     name = "invoicegenie.notifications.enabled", defaultValue = "true") boolean enabled,
             @org.eclipse.microprofile.config.inject.ConfigProperty(
-                    name = "invoicegenie.notifications.max-attempts", defaultValue = "5") int maxAttempts) {
+                    name = "invoicegenie.notifications.max-attempts", defaultValue = "5") int maxAttempts,
+            @org.eclipse.microprofile.config.inject.ConfigProperty(
+                    name = "invoicegenie.notifications.public-base-url", defaultValue = "http://localhost:8080") String publicBaseUrl) {
         return new NotificationEnqueueService(notificationRepository, policyRepository, preferenceRepository,
-                templateRepository, invoiceRepository, customerRepository, enabled, maxAttempts);
+                templateRepository, invoiceRepository, customerRepository, enabled, maxAttempts,
+                unsubscribeTokenService, publicBaseUrl, pdfDocumentService);
     }
 
     @Produces
     @ApplicationScoped
     public NotificationUseCase notificationUseCase(NotificationRepository notificationRepository,
                                                    NotificationAttemptRepository attemptRepository,
-                                                   NotificationEnqueueService enqueueService) {
-        return new NotificationApplicationService(notificationRepository, attemptRepository, enqueueService);
+                                                   NotificationEnqueueService enqueueService,
+                                                   NotificationTemplateRepository templateRepository,
+                                                   AuditRepository auditRepository) {
+        return new NotificationApplicationService(notificationRepository, attemptRepository, enqueueService,
+                templateRepository, auditRepository);
     }
 
     @Produces
     @ApplicationScoped
     public NotificationPreferenceUseCase notificationPreferenceUseCase(
             NotificationPreferenceRepository preferenceRepository,
-            CustomerRepository customerRepository) {
-        return new NotificationPreferenceApplicationService(preferenceRepository, customerRepository);
+            CustomerRepository customerRepository,
+            UnsubscribeTokenService unsubscribeTokenService,
+            AuditRepository auditRepository) {
+        return new NotificationPreferenceApplicationService(preferenceRepository, customerRepository,
+                unsubscribeTokenService, auditRepository);
     }
 
     @Produces
@@ -352,8 +385,9 @@ public class ArApplication {
 
     @Produces
     @ApplicationScoped
-    public NotificationPolicyUseCase notificationPolicyUseCase(NotificationPolicyRepository policyRepository) {
-        return new NotificationPolicyApplicationService(policyRepository);
+    public NotificationPolicyUseCase notificationPolicyUseCase(NotificationPolicyRepository policyRepository,
+                                                               AuditRepository auditRepository) {
+        return new NotificationPolicyApplicationService(policyRepository, auditRepository);
     }
 
     @Produces

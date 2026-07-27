@@ -22,6 +22,10 @@ public interface NotificationPolicyUseCase {
             boolean dunningNoticeEnabled,
             String channelsInvoiceIssued,
             String channelsPaymentReminder,
-            String channelsDunningNotice
+            String channelsDunningNotice,
+            Integer quietHoursStart,
+            Integer quietHoursEnd,
+            String timezone,
+            Boolean attachPdfOnIssue
     ) {}
 }

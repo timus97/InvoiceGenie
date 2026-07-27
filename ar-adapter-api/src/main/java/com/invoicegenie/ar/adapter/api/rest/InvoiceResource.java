@@ -6,6 +6,9 @@ import com.invoicegenie.ar.application.port.inbound.InvoiceLifecycleUseCase;
 import com.invoicegenie.ar.application.port.inbound.IssueInvoiceUseCase;
 import com.invoicegenie.ar.application.port.inbound.InvoiceVersionUseCase;
 import com.invoicegenie.ar.application.port.inbound.ListInvoicesUseCase;
+import com.invoicegenie.ar.application.service.PdfDocumentService;
+import com.invoicegenie.ar.domain.model.customer.Customer;
+import com.invoicegenie.ar.domain.model.customer.CustomerRepository;
 import com.invoicegenie.ar.domain.model.invoice.Invoice;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceStatus;
@@ -14,6 +17,7 @@ import com.invoicegenie.shared.tenant.TenantContext;
 import com.invoicegenie.ar.adapter.api.security.ArRoles;
 import com.invoicegenie.ar.adapter.api.security.RequireRoles;
 
+import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -44,19 +48,37 @@ public class InvoiceResource {
     private final InvoiceLifecycleUseCase lifecycleUseCase;
     private final ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase;
     private final InvoiceVersionUseCase invoiceVersionUseCase;
+    private final PdfDocumentService pdfDocumentService;
+    private final CustomerRepository customerRepository;
 
+    /** Test-friendly constructor without PDF deps. */
     public InvoiceResource(IssueInvoiceUseCase issueInvoiceUseCase,
                            GetInvoiceUseCase getInvoiceUseCase,
                            ListInvoicesUseCase listInvoicesUseCase,
                            InvoiceLifecycleUseCase lifecycleUseCase,
                            ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase,
                            InvoiceVersionUseCase invoiceVersionUseCase) {
+        this(issueInvoiceUseCase, getInvoiceUseCase, listInvoicesUseCase, lifecycleUseCase,
+                applyInvoicePaymentUseCase, invoiceVersionUseCase, null, null);
+    }
+
+    @Inject
+    public InvoiceResource(IssueInvoiceUseCase issueInvoiceUseCase,
+                           GetInvoiceUseCase getInvoiceUseCase,
+                           ListInvoicesUseCase listInvoicesUseCase,
+                           InvoiceLifecycleUseCase lifecycleUseCase,
+                           ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase,
+                           InvoiceVersionUseCase invoiceVersionUseCase,
+                           PdfDocumentService pdfDocumentService,
+                           CustomerRepository customerRepository) {
         this.issueInvoiceUseCase = issueInvoiceUseCase;
         this.getInvoiceUseCase = getInvoiceUseCase;
         this.listInvoicesUseCase = listInvoicesUseCase;
         this.lifecycleUseCase = lifecycleUseCase;
         this.applyInvoicePaymentUseCase = applyInvoicePaymentUseCase;
         this.invoiceVersionUseCase = invoiceVersionUseCase;
+        this.pdfDocumentService = pdfDocumentService;
+        this.customerRepository = customerRepository;
     }
 
     // ==================== CREATE ====================
@@ -129,6 +151,36 @@ public class InvoiceResource {
         var invoiceId = InvoiceId.of(UUID.fromString(id));
         return getInvoiceUseCase.get(tenantId, invoiceId)
                 .map(inv -> Response.ok(toDto(inv)).build())
+                .orElse(Response.status(404).entity(new ErrorDto("NOT_FOUND", "Invoice not found")).build());
+    }
+
+    @GET
+    @Path("/{id}/pdf")
+    @Operation(summary = "Download invoice as PDF (PP-012)")
+    @Produces("application/pdf")
+    @APIResponses({
+        @APIResponse(responseCode = "200", description = "PDF invoice"),
+        @APIResponse(responseCode = "404", description = "Not found")
+    })
+    public Response pdf(@PathParam("id") String id) {
+        if (pdfDocumentService == null) {
+            return Response.status(503).entity(new ErrorDto("UNAVAILABLE", "PDF service not configured")).build();
+        }
+        var tenantId = TenantContext.getCurrentTenant();
+        var invoiceId = InvoiceId.of(UUID.fromString(id));
+        return getInvoiceUseCase.get(tenantId, invoiceId)
+                .map(inv -> {
+                    Customer customer = null;
+                    if (customerRepository != null && inv.getCustomerId() != null) {
+                        customer = customerRepository.findByTenantAndId(tenantId, inv.getCustomerId()).orElse(null);
+                    }
+                    byte[] bytes = pdfDocumentService.generateInvoicePdf(inv, customer);
+                    return Response.ok(bytes)
+                            .type("application/pdf")
+                            .header("Content-Disposition",
+                                    "attachment; filename=\"invoice-" + inv.getInvoiceNumber() + ".pdf\"")
+                            .build();
+                })
                 .orElse(Response.status(404).entity(new ErrorDto("NOT_FOUND", "Invoice not found")).build());
     }
 

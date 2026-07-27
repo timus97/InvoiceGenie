@@ -1,5 +1,6 @@
 package com.invoicegenie.ar.domain.model.notification;
 
+import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 
 import java.time.LocalDate;
@@ -13,6 +14,7 @@ import java.util.Objects;
  * - INVOICE_ISSUED: no qualifier
  * - PAYMENT_REMINDER: due:yyyy-MM-dd
  * - DUNNING_NOTICE: L{level}
+ * - STATEMENT_SEND: notify:STATEMENT_SEND:{customerId}:{asOf}:{channel}
  * </pre>
  */
 public final class NotificationIdempotencyKeys {
@@ -30,6 +32,13 @@ public final class NotificationIdempotencyKeys {
 
     public static String forDunningNotice(InvoiceId invoiceId, NotificationChannel channel, int level) {
         return base(NotificationEventType.DUNNING_NOTICE, invoiceId, channel) + ":L" + level;
+    }
+
+    public static String forStatementSend(CustomerId customerId, LocalDate asOf, NotificationChannel channel) {
+        Objects.requireNonNull(customerId);
+        Objects.requireNonNull(asOf);
+        Objects.requireNonNull(channel);
+        return "notify:STATEMENT_SEND:" + customerId.getValue() + ":" + asOf + ":" + channel.name();
     }
 
     public static String build(NotificationEventType eventType, InvoiceId invoiceId,

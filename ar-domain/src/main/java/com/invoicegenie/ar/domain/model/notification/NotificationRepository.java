@@ -1,6 +1,5 @@
 package com.invoicegenie.ar.domain.model.notification;
 
-import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
 import com.invoicegenie.shared.domain.TenantId;
 
 import java.time.Instant;
@@ -21,7 +20,7 @@ public interface NotificationRepository {
 
     List<Notification> findByTenant(TenantId tenantId, int limit);
 
-    List<Notification> findByInvoice(TenantId tenantId, InvoiceId invoiceId, int limit);
+    List<Notification> findByInvoice(TenantId tenantId, com.invoicegenie.ar.domain.model.invoice.InvoiceId invoiceId, int limit);
 
     /**
      * Cross-tenant poll for due PENDING/QUEUED notifications.
@@ -39,4 +38,11 @@ public interface NotificationRepository {
      * Delete a SKIPPED row so a recoverable skip can be re-enqueued under the same key.
      */
     void delete(TenantId tenantId, UUID id);
+
+    /**
+     * Aggregate counts by status, channel, eventType for metrics (PP-015).
+     */
+    List<NotificationMetricRow> countMetrics(TenantId tenantId, Instant since);
+
+    record NotificationMetricRow(String status, String channel, String eventType, long count) {}
 }

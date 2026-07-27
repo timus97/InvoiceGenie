@@ -128,6 +128,25 @@ public class NotificationRepositoryAdapter implements NotificationRepository {
         }
     }
 
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<NotificationMetricRow> countMetrics(TenantId tenantId, Instant since) {
+        List<Object[]> rows = em.createQuery(
+                        "SELECT n.status, n.channel, n.eventType, COUNT(n) FROM NotificationEntity n "
+                                + "WHERE n.tenantId = :tid AND n.createdAt >= :since "
+                                + "GROUP BY n.status, n.channel, n.eventType")
+                .setParameter("tid", tenantId.getValue())
+                .setParameter("since", since)
+                .getResultList();
+        return rows.stream()
+                .map(r -> new NotificationMetricRow(
+                        String.valueOf(r[0]),
+                        String.valueOf(r[1]),
+                        String.valueOf(r[2]),
+                        ((Number) r[3]).longValue()))
+                .toList();
+    }
+
     private NotificationEntity toEntity(Notification n) {
         NotificationEntity e = new NotificationEntity();
         e.setId(n.getId());

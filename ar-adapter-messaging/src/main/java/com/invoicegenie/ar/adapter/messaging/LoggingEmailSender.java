@@ -7,6 +7,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -22,18 +23,26 @@ public class LoggingEmailSender implements EmailSender {
 
     @Override
     public SendResult send(Notification notification) {
+        return send(notification, List.of());
+    }
+
+    @Override
+    public SendResult send(Notification notification, List<Attachment> attachments) {
         String messageId = "log-email-" + UUID.randomUUID();
+        int attachCount = attachments != null ? attachments.size() : 0;
         if (logPayloads) {
-            LOG.infof("[EMAIL-LOG] id=%s to=%s subject=%s body=%s",
+            LOG.infof("[EMAIL-LOG] id=%s to=%s subject=%s body=%s attachments=%d",
                     notification.getId(),
                     notification.getDestination(),
                     notification.getSubject(),
-                    truncate(notification.getBody()));
+                    truncate(notification.getBody()),
+                    attachCount);
         } else {
-            LOG.infof("[EMAIL-LOG] id=%s to=%s subject=%s (payload redacted; set log-payloads=true for demo)",
+            LOG.infof("[EMAIL-LOG] id=%s to=%s subject=%s attachments=%d (payload redacted; set log-payloads=true for demo)",
                     notification.getId(),
                     NotificationDestinationValidator.mask(notification.getDestination()),
-                    notification.getSubject());
+                    notification.getSubject(),
+                    attachCount);
         }
         return SendResult.ok(messageId);
     }

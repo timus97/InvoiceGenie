@@ -24,7 +24,9 @@ import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -68,6 +70,50 @@ public class NotificationResource {
             stream = stream.filter(n -> n.getEventType().name().equals(e));
         }
         return Response.ok(stream.map(this::toDto).collect(Collectors.toList())).build();
+    }
+
+    @GET
+    @Path("/notifications/metrics")
+    @Operation(summary = "Notification metrics by status/channel/eventType (PP-015)")
+    @RequireRoles({ArRoles.AR_CLERK, ArRoles.AR_CONTROLLER, ArRoles.AR_AUDITOR, ArRoles.TENANT_ADMIN})
+    public Response metrics(@QueryParam("days") @DefaultValue("7") int days) {
+        var tenantId = TenantContext.getCurrentTenant();
+        NotificationUseCase.MetricsResult m = notificationUseCase.metrics(tenantId, days);
+        return Response.ok(new MetricsDto(
+                m.days(),
+                m.total(),
+                m.byStatus().stream().map(b -> new MetricBucketDto(b.key(), b.count())).toList(),
+                m.byChannel().stream().map(b -> new MetricBucketDto(b.key(), b.count())).toList(),
+                m.byEventType().stream().map(b -> new MetricBucketDto(b.key(), b.count())).toList(),
+                m.details().stream().map(d -> new MetricDetailDto(d.status(), d.channel(), d.eventType(), d.count())).toList()
+        )).build();
+    }
+
+    @POST
+    @Path("/notifications/templates/preview")
+    @Operation(summary = "Preview rendered notification template (no send) (PP-014)")
+    @RequireRoles({ArRoles.AR_CLERK, ArRoles.AR_CONTROLLER, ArRoles.TENANT_ADMIN})
+    public Response preview(PreviewRequestDto dto) {
+        try {
+            if (dto == null) {
+                return Response.status(400).entity(new ErrorResponse("VALIDATION_ERROR", "body required")).build();
+            }
+            NotificationEventType eventType = dto.eventType() != null && !dto.eventType().isBlank()
+                    ? NotificationEventType.valueOf(dto.eventType().trim().toUpperCase())
+                    : NotificationEventType.INVOICE_ISSUED;
+            NotificationChannel channel = dto.channel() != null && !dto.channel().isBlank()
+                    ? NotificationChannel.valueOf(dto.channel().trim().toUpperCase())
+                    : NotificationChannel.EMAIL;
+            Map<String, String> vars = dto.variables() != null ? dto.variables() : Map.of();
+            var tenantId = TenantContext.getCurrentTenant();
+            NotificationUseCase.PreviewResult r = notificationUseCase.preview(tenantId, eventType, channel, vars);
+            return Response.ok(new PreviewResponseDto(r.eventType(), r.channel(), r.subject(), r.body(), r.templateId())).build();
+        } catch (IllegalArgumentException e) {
+            if ("NO_TEMPLATE".equals(e.getMessage())) {
+                return Response.status(404).entity(new ErrorResponse("NOT_FOUND", "No active template")).build();
+            }
+            return Response.status(400).entity(new ErrorResponse("VALIDATION_ERROR", e.getMessage())).build();
+        }
     }
 
     @GET
@@ -133,7 +179,6 @@ public class NotificationResource {
                     ? NotificationEventType.valueOf(dto.eventType().trim().toUpperCase())
                     : NotificationEventType.INVOICE_ISSUED;
             List<NotificationChannel> channels = parseChannels(dto.channels());
-            // force defaults false — only overrides event auto-flags, not master/channel policy
             boolean force = dto.force() != null && dto.force();
             List<Notification> results = notificationUseCase.sendForInvoice(
                     tenantId, InvoiceId.of(invoiceUuid), eventType, channels, force);
@@ -232,7 +277,11 @@ public class NotificationResource {
                     dto.dunningNoticeEnabled(),
                     dto.channelsInvoiceIssued(),
                     dto.channelsPaymentReminder(),
-                    dto.channelsDunningNotice()
+                    dto.channelsDunningNotice(),
+                    dto.quietHoursStart(),
+                    dto.quietHoursEnd(),
+                    dto.timezone(),
+                    dto.attachPdfOnIssue()
             ));
             return Response.ok(toPolicyDto(updated)).build();
         } catch (IllegalArgumentException e) {
@@ -323,7 +372,11 @@ public class NotificationResource {
                 p.isDunningNoticeEnabled(),
                 p.getChannelsInvoiceIssued(),
                 p.getChannelsPaymentReminder(),
-                p.getChannelsDunningNotice()
+                p.getChannelsDunningNotice(),
+                p.getQuietHoursStart(),
+                p.getQuietHoursEnd(),
+                p.getTimezone(),
+                p.isAttachPdfOnIssue()
         );
     }
 
@@ -337,5 +390,12 @@ public class NotificationResource {
     public record PreferenceDto(String channel, boolean enabled, String destinationOverride, String optedOutAt) {}
     public record PolicyDto(boolean enabled, boolean emailEnabled, boolean whatsappEnabled, boolean autoSendOnIssue,
                             boolean preDueReminderEnabled, int preDueDays, boolean dunningNoticeEnabled,
-                            String channelsInvoiceIssued, String channelsPaymentReminder, String channelsDunningNotice) {}
+                            String channelsInvoiceIssued, String channelsPaymentReminder, String channelsDunningNotice,
+                            Integer quietHoursStart, Integer quietHoursEnd, String timezone, boolean attachPdfOnIssue) {}
+    public record PreviewRequestDto(String eventType, String channel, Map<String, String> variables) {}
+    public record PreviewResponseDto(String eventType, String channel, String subject, String body, String templateId) {}
+    public record MetricsDto(int days, long total, List<MetricBucketDto> byStatus, List<MetricBucketDto> byChannel,
+                             List<MetricBucketDto> byEventType, List<MetricDetailDto> details) {}
+    public record MetricBucketDto(String key, long count) {}
+    public record MetricDetailDto(String status, String channel, String eventType, long count) {}
 }

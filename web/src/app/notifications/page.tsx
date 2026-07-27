@@ -1,18 +1,22 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/input";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { TableSkeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useTenant } from "@/components/tenant-provider";
 import { useAuth } from "@/components/auth-provider";
-import { ApiError } from "@/lib/errors";
+import {
+  logClientError,
+  USER_ACTION_FAILED,
+  USER_LOAD_FAILED,
+} from "@/lib/log-client-error";
 import {
   getNotificationMetrics,
   listNotificationAttempts,
@@ -41,7 +45,7 @@ export default function NotificationsPage() {
     subject?: string | null;
     body?: string | null;
   } | null>(null);
-  const [previewUnavailable, setPreviewUnavailable] = useState(false);
+  const [previewNote, setPreviewNote] = useState<string | null>(null);
 
   const list = useQuery({
     queryKey: ["notifications", tenantId, statusFilter, eventFilter],
@@ -57,8 +61,22 @@ export default function NotificationsPage() {
     refetchInterval: 30000,
   });
 
-  const metrics = normalizeMetricsCounts(metricsQ.data ?? null);
-  const metricsUnavailable = metricsQ.isSuccess && metricsQ.data === null;
+  // Log load failures; never surface technical messages in the UI.
+  useEffect(() => {
+    if (list.isError) {
+      logClientError("NotificationsPage.list", list.error);
+    }
+  }, [list.isError, list.error]);
+
+  useEffect(() => {
+    if (metricsQ.isError) {
+      logClientError("NotificationsPage.metrics", metricsQ.error);
+    }
+  }, [metricsQ.isError, metricsQ.error]);
+
+  const metrics = normalizeMetricsCounts(
+    metricsQ.isError ? null : (metricsQ.data ?? null),
+  );
 
   const attempts = useQuery({
     queryKey: ["notification-attempts", tenantId, expandedId],
@@ -66,6 +84,14 @@ export default function NotificationsPage() {
     queryFn: ({ signal }) =>
       listNotificationAttempts(tenantId, expandedId!, signal),
   });
+
+  useEffect(() => {
+    if (attempts.isError) {
+      logClientError("NotificationsPage.attempts", attempts.error, {
+        notificationId: expandedId,
+      });
+    }
+  }, [attempts.isError, attempts.error, expandedId]);
 
   const previewMut = useMutation({
     mutationFn: async () => {
@@ -80,12 +106,11 @@ export default function NotificationsPage() {
             ]),
           );
         } else {
-          throw new Error("Variables must be a JSON object");
+          throw new Error("INVALID_VARS_SHAPE");
         }
       } catch (e) {
-        throw new Error(
-          e instanceof Error ? e.message : "Invalid JSON for sample variables",
-        );
+        logClientError("NotificationsPage.previewVars", e);
+        throw new Error("INVALID_VARS");
       }
       return previewNotificationTemplate(tenantId, {
         eventType: previewEvent,
@@ -95,28 +120,38 @@ export default function NotificationsPage() {
     },
     onSuccess: (data) => {
       if (data === null) {
-        setPreviewUnavailable(true);
         setPreviewResult(null);
-        toast.message("Template preview API is not available yet");
+        setPreviewNote(
+          "Preview is temporarily unavailable. You can still send notifications from invoice detail.",
+        );
         return;
       }
-      setPreviewUnavailable(false);
+      setPreviewNote(null);
       setPreviewResult(data);
-      toast.success("Preview rendered");
     },
-    onError: (e: Error) =>
-      toast.error(e instanceof ApiError ? e.message : e.message),
+    onError: (e: Error) => {
+      logClientError("NotificationsPage.preview", e);
+      setPreviewResult(null);
+      if (e.message === "INVALID_VARS") {
+        setPreviewNote(
+          "Sample variables must be valid JSON object text. Check the format and try again.",
+        );
+      } else {
+        setPreviewNote(USER_ACTION_FAILED);
+      }
+    },
   });
 
   const rows = useMemo(() => {
-    let data = list.data ?? [];
+    const data = Array.isArray(list.data) ? list.data : [];
+    let filtered = data;
     if (statusFilter) {
-      data = data.filter((n) => n.status === statusFilter);
+      filtered = filtered.filter((n) => n.status === statusFilter);
     }
     if (eventFilter) {
-      data = data.filter((n) => n.eventType === eventFilter);
+      filtered = filtered.filter((n) => n.eventType === eventFilter);
     }
-    return data;
+    return filtered;
   }, [list.data, statusFilter, eventFilter]);
 
   return (
@@ -138,22 +173,11 @@ export default function NotificationsPage() {
           </Card>
         ))}
       </div>
-      {metricsUnavailable ? (
-        <p className="text-xs text-zinc-500">
-          Metrics API not available yet — counts shown as zero. Endpoint:{" "}
-          <code className="font-mono">GET /api/v1/notifications/metrics</code>
-        </p>
-      ) : metricsQ.isError ? (
-        <p className="text-xs text-rose-600">
-          {(metricsQ.error as Error)?.message ?? "Failed to load metrics"}
-        </p>
-      ) : null}
 
       <Card className="space-y-3 p-4">
         <h2 className="text-sm font-semibold">Template preview</h2>
         <p className="text-xs text-zinc-500">
-          Render subject/body with sample variables (no send). Graceful empty
-          state if the backend preview endpoint is not merged yet.
+          Render subject/body with sample variables (no send).
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
@@ -211,14 +235,8 @@ export default function NotificationsPage() {
         >
           {previewMut.isPending ? "Rendering…" : "Preview template"}
         </Button>
-        {previewUnavailable ? (
-          <p className="text-xs text-zinc-500">
-            Preview API not available. Expected{" "}
-            <code className="font-mono">
-              POST /api/v1/notifications/templates/preview
-            </code>
-            .
-          </p>
+        {previewNote ? (
+          <p className="text-xs text-zinc-500">{previewNote}</p>
         ) : null}
         {previewResult ? (
           <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900/40">
@@ -243,13 +261,19 @@ export default function NotificationsPage() {
             onChange={(e) => setStatusFilter(e.target.value)}
           >
             <option value="">All</option>
-            {["PENDING", "QUEUED", "SENDING", "SENT", "FAILED", "SKIPPED", "CANCELLED"].map(
-              (s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ),
-            )}
+            {[
+              "PENDING",
+              "QUEUED",
+              "SENDING",
+              "SENT",
+              "FAILED",
+              "SKIPPED",
+              "CANCELLED",
+            ].map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
           </select>
         </label>
         <label className="text-xs">
@@ -260,7 +284,12 @@ export default function NotificationsPage() {
             onChange={(e) => setEventFilter(e.target.value)}
           >
             <option value="">All</option>
-            {["INVOICE_ISSUED", "PAYMENT_REMINDER", "DUNNING_NOTICE", "STATEMENT_SEND"].map((s) => (
+            {[
+              "INVOICE_ISSUED",
+              "PAYMENT_REMINDER",
+              "DUNNING_NOTICE",
+              "STATEMENT_SEND",
+            ].map((s) => (
               <option key={s} value={s}>
                 {s}
               </option>
@@ -275,9 +304,21 @@ export default function NotificationsPage() {
             <TableSkeleton rows={6} />
           </div>
         ) : list.isError ? (
-          <p className="p-4 text-sm text-rose-600">
-            {(list.error as Error)?.message ?? "Failed to load notifications"}
-          </p>
+          <div className="p-6">
+            <EmptyState
+              title="Notifications unavailable"
+              description={USER_LOAD_FAILED}
+              action={
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void list.refetch()}
+                >
+                  Retry
+                </Button>
+              }
+            />
+          </div>
         ) : (
           <table className="w-full text-sm">
             <thead className="border-b bg-zinc-50 text-left dark:bg-zinc-900">
@@ -321,11 +362,6 @@ export default function NotificationsPage() {
                             ({n.skipReason})
                           </span>
                         ) : null}
-                        {n.errorMessage ? (
-                          <p className="mt-0.5 max-w-xs truncate text-xs text-rose-600">
-                            {n.errorMessage}
-                          </p>
-                        ) : null}
                       </td>
                       <td className="max-w-[10rem] truncate px-4 py-2 font-mono text-xs">
                         {n.destination ?? "—"}
@@ -351,7 +387,9 @@ export default function NotificationsPage() {
                           size="sm"
                           variant="secondary"
                           onClick={() =>
-                            setExpandedId((cur) => (cur === n.id ? null : n.id))
+                            setExpandedId((cur) =>
+                              cur === n.id ? null : n.id,
+                            )
                           }
                         >
                           {expandedId === n.id ? "Hide" : "Show"}
@@ -362,19 +400,26 @@ export default function NotificationsPage() {
                       <tr className="bg-zinc-50 dark:bg-zinc-900/40">
                         <td colSpan={8} className="px-4 py-3">
                           {attempts.isLoading ? (
-                            <p className="text-xs text-zinc-500">Loading attempts…</p>
+                            <p className="text-xs text-zinc-500">
+                              Loading attempts…
+                            </p>
                           ) : attempts.isError ? (
-                            <p className="text-xs text-rose-600">
-                              {(attempts.error as Error).message}
+                            <p className="text-xs text-zinc-500">
+                              {USER_LOAD_FAILED}
                             </p>
                           ) : !(attempts.data ?? []).length ? (
-                            <p className="text-xs text-zinc-500">No attempts yet</p>
+                            <p className="text-xs text-zinc-500">
+                              No attempts yet
+                            </p>
                           ) : (
                             <ul className="space-y-1 text-xs font-mono">
                               {(attempts.data ?? []).map((a) => (
                                 <li key={a.id}>
-                                  #{a.attemptNumber} {a.status} {a.provider}{" "}
-                                  {a.errorMessage ?? a.providerMessageId ?? ""}{" "}
+                                  #{a.attemptNumber} {a.status}{" "}
+                                  {a.provider ?? ""}{" "}
+                                  {a.providerMessageId
+                                    ? `msg=${a.providerMessageId}`
+                                    : ""}{" "}
                                   {a.attemptedAt
                                     ? new Date(a.attemptedAt).toLocaleString()
                                     : ""}

@@ -1,12 +1,15 @@
 import { apiFetch } from "@/lib/api/client";
 import { apiPaths } from "@/lib/api/paths";
 import { ApiError } from "@/lib/errors";
+import { logClientError } from "@/lib/log-client-error";
 import type {
   NotificationDto,
+  NotificationPageDto,
   NotificationAttemptDto,
   NotificationPreferenceDto,
   NotificationPolicyDto,
   NotificationMetricsDto,
+  NotificationMetricBucketDto,
   NotificationTemplatePreviewRequest,
   NotificationTemplatePreviewDto,
   SendNotificationRequest,
@@ -14,6 +17,7 @@ import type {
 
 export type {
   NotificationDto,
+  NotificationPageDto,
   NotificationAttemptDto,
   NotificationPreferenceDto,
   NotificationPolicyDto,
@@ -23,16 +27,27 @@ export type {
   SendNotificationRequest,
 };
 
-export function listNotifications(
+/** Unwrap list response: page envelope `{ items }` (current) or bare array (legacy). */
+export function unwrapNotificationList(
+  data: NotificationPageDto | NotificationDto[] | null | undefined,
+): NotificationDto[] {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data.items)) return data.items;
+  return [];
+}
+
+export async function listNotifications(
   tenantId: string,
   limit = 100,
   signal?: AbortSignal,
-) {
+): Promise<NotificationDto[]> {
   const q = new URLSearchParams({ limit: String(limit) });
-  return apiFetch<NotificationDto[]>(
+  const data = await apiFetch<NotificationPageDto | NotificationDto[]>(
     `${apiPaths.notifications}?${q.toString()}`,
     { tenantId, signal },
   );
+  return unwrapNotificationList(data);
 }
 
 export function getNotification(
@@ -122,7 +137,8 @@ export function putNotificationPolicy(
 }
 
 /**
- * Notification delivery metrics. Returns null when endpoint is not yet available (404/501).
+ * Notification delivery metrics.
+ * Returns null on missing endpoint or soft failures (logged); rethrows aborts only.
  */
 export async function getNotificationMetrics(
   tenantId: string,
@@ -134,15 +150,21 @@ export async function getNotificationMetrics(
       signal,
     });
   } catch (e) {
-    if (e instanceof ApiError && (e.status === 404 || e.status === 501)) {
-      return null;
+    if (
+      (e instanceof DOMException && e.name === "AbortError") ||
+      (e instanceof Error && e.name === "AbortError")
+    ) {
+      throw e;
     }
-    throw e;
+    logClientError("getNotificationMetrics", e);
+    // Soft-fail: UI shows zeros instead of an error banner
+    return null;
   }
 }
 
 /**
- * Render a template with sample variables (no send). Returns null if API missing.
+ * Render a template with sample variables (no send).
+ * Returns null if API missing or failed (logged); rethrows only invalid-request handling upstream.
  */
 export async function previewNotificationTemplate(
   tenantId: string,
@@ -154,11 +176,38 @@ export async function previewNotificationTemplate(
       { method: "POST", tenantId, body },
     );
   } catch (e) {
+    if (
+      (e instanceof DOMException && e.name === "AbortError") ||
+      (e instanceof Error && e.name === "AbortError")
+    ) {
+      throw e;
+    }
     if (e instanceof ApiError && (e.status === 404 || e.status === 501)) {
       return null;
     }
-    throw e;
+    logClientError("previewNotificationTemplate", e);
+    return null;
   }
+}
+
+function bucketMap(
+  byStatus: NotificationMetricsDto["byStatus"] | undefined,
+): Record<string, number> {
+  if (!byStatus) return {};
+  if (Array.isArray(byStatus)) {
+    const out: Record<string, number> = {};
+    for (const b of byStatus as NotificationMetricBucketDto[]) {
+      if (b && typeof b.key === "string") {
+        out[b.key.toUpperCase()] = Number(b.count) || 0;
+      }
+    }
+    return out;
+  }
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(byStatus)) {
+    if (typeof v === "number") out[k.toUpperCase()] = v;
+  }
+  return out;
 }
 
 /** Normalize metrics DTO into SENT/FAILED/PENDING/SKIPPED counts. */
@@ -171,23 +220,30 @@ export function normalizeMetricsCounts(m: NotificationMetricsDto | null | undefi
   if (!m) {
     return { SENT: 0, FAILED: 0, PENDING: 0, SKIPPED: 0 };
   }
-  const by = m.byStatus ?? m.last24h ?? {};
-  const pick = (key: string, alt?: number) => {
-    const upper = key.toUpperCase();
-    const lower = key.toLowerCase();
-    const fromBy = by[upper] ?? by[lower];
-    if (typeof fromBy === "number") return fromBy;
-    if (typeof alt === "number") return alt;
-    const rec = m as Record<string, unknown>;
-    const v = rec[upper] ?? rec[lower];
-    return typeof v === "number" ? v : 0;
-  };
-  return {
-    SENT: pick("SENT", m.sent ?? m.SENT),
-    FAILED: pick("FAILED", m.failed ?? m.FAILED),
-    PENDING: pick("PENDING", m.pending ?? m.PENDING),
-    SKIPPED: pick("SKIPPED", m.skipped ?? m.SKIPPED),
-  };
+  try {
+    const by = {
+      ...bucketMap(m.last24h as NotificationMetricsDto["byStatus"]),
+      ...bucketMap(m.byStatus),
+    };
+    const pick = (key: string, alt?: number) => {
+      const upper = key.toUpperCase();
+      const fromBy = by[upper];
+      if (typeof fromBy === "number") return fromBy;
+      if (typeof alt === "number") return alt;
+      const rec = m as Record<string, unknown>;
+      const v = rec[upper] ?? rec[key.toLowerCase()];
+      return typeof v === "number" ? v : 0;
+    };
+    return {
+      SENT: pick("SENT", m.sent ?? m.SENT),
+      FAILED: pick("FAILED", m.failed ?? m.FAILED),
+      PENDING: pick("PENDING", m.pending ?? m.PENDING),
+      SKIPPED: pick("SKIPPED", m.skipped ?? m.SKIPPED),
+    };
+  } catch (e) {
+    logClientError("normalizeMetricsCounts", e, { metrics: m });
+    return { SENT: 0, FAILED: 0, PENDING: 0, SKIPPED: 0 };
+  }
 }
 
 /**

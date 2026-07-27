@@ -476,8 +476,23 @@ export type SendNotificationRequest = {
   force?: boolean;
 };
 
-/** GET /api/v1/notifications/metrics — flexible shape; prefer explicit counts. */
+/** GET /api/v1/notifications list page (PP-023 cursor envelope). */
+export type NotificationPageDto = {
+  items: NotificationDto[];
+  nextCursor?: string | null;
+  count?: number;
+};
+
+/** Metrics bucket from backend MetricBucketDto. */
+export type NotificationMetricBucketDto = {
+  key: string;
+  count: number;
+};
+
+/** GET /api/v1/notifications/metrics — supports array buckets (current API) and legacy maps. */
 export type NotificationMetricsDto = {
+  days?: number;
+  total?: number;
   sent?: number;
   failed?: number;
   pending?: number;
@@ -486,7 +501,10 @@ export type NotificationMetricsDto = {
   FAILED?: number;
   PENDING?: number;
   SKIPPED?: number;
-  byStatus?: Record<string, number>;
+  /** Current backend: list of { key, count }; legacy: Record */
+  byStatus?: NotificationMetricBucketDto[] | Record<string, number>;
+  byChannel?: NotificationMetricBucketDto[] | Record<string, number>;
+  byEventType?: NotificationMetricBucketDto[] | Record<string, number>;
   window?: string | null;
   last24h?: Partial<Record<string, number>> | null;
   last7d?: Partial<Record<string, number>> | null;

@@ -1,4 +1,5 @@
 import { ApiError, parseApiError } from "@/lib/errors";
+import { logClientError } from "@/lib/log-client-error";
 
 export type ApiRequestOptions = {
   method?: string;
@@ -91,7 +92,8 @@ export async function apiFetch<T>(
     ) {
       throw e;
     }
-    throw e;
+    logClientError("apiFetch.network", e, { path, method });
+    throw new ApiError(0, "NETWORK_ERROR", "Network request failed");
   }
 
   if (res.status === 401) {
@@ -100,7 +102,9 @@ export async function apiFetch<T>(
   }
 
   if (!res.ok) {
-    throw await parseApiError(res);
+    const err = await parseApiError(res);
+    logClientError("apiFetch.http", err, { path, method, status: res.status });
+    throw err;
   }
 
   if (res.status === 204) {
@@ -109,7 +113,12 @@ export async function apiFetch<T>(
 
   const text = await res.text();
   if (!text) return undefined as T;
-  return JSON.parse(text) as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch (e) {
+    logClientError("apiFetch.json", e, { path, method, preview: text.slice(0, 200) });
+    throw new ApiError(res.status, "PARSE_ERROR", "Invalid response from server");
+  }
 }
 
 export async function checkBackendHealth(): Promise<{

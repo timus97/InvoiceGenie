@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api/client";
+import { apiDownload, apiFetch } from "@/lib/api/client";
 import { apiPaths } from "@/lib/api/paths";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import type {
@@ -118,5 +118,17 @@ export function updateInvoiceDueDate(
     method: "PATCH",
     tenantId,
     body: { dueDate },
+  });
+}
+
+/** Download invoice PDF via BFF blob proxy (PP-033). */
+export function downloadInvoicePdf(
+  tenantId: string,
+  id: string,
+  filename?: string,
+) {
+  return apiDownload(apiPaths.invoicePdf(id), {
+    tenantId,
+    filename: filename ?? `invoice-${id}.pdf`,
   });
 }

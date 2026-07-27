@@ -7,7 +7,7 @@ import { Topbar } from "@/components/layout/topbar";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const bare = pathname === "/login";
+  const bare = pathname === "/login" || pathname === "/unsubscribe";
 
   if (bare) {
     return (

@@ -43,7 +43,16 @@ export default function SettingsPage() {
 
   const [policy, setPolicy] = useState<NotificationPolicyDto | null>(null);
   useEffect(() => {
-    if (policyQ.data) setPolicy(policyQ.data);
+    if (policyQ.data) {
+      // Merge optional PP-032 fields so UI state survives backends that omit them.
+      setPolicy({
+        ...policyQ.data,
+        quietHoursStart: policyQ.data.quietHoursStart ?? null,
+        quietHoursEnd: policyQ.data.quietHoursEnd ?? null,
+        attachPdfOnIssue: policyQ.data.attachPdfOnIssue ?? false,
+        channelFallbackEnabled: policyQ.data.channelFallbackEnabled ?? false,
+      });
+    }
   }, [policyQ.data]);
 
   const policyMut = useMutation({
@@ -52,7 +61,19 @@ export default function SettingsPage() {
       return putNotificationPolicy(tenantId, policy);
     },
     onSuccess: (saved) => {
-      setPolicy(saved);
+      // Preserve optional PP-032 fields when backend response omits them.
+      setPolicy((prev) => ({
+        ...saved,
+        quietHoursStart:
+          saved.quietHoursStart ?? prev?.quietHoursStart ?? null,
+        quietHoursEnd: saved.quietHoursEnd ?? prev?.quietHoursEnd ?? null,
+        attachPdfOnIssue:
+          saved.attachPdfOnIssue ?? prev?.attachPdfOnIssue ?? false,
+        channelFallbackEnabled:
+          saved.channelFallbackEnabled ??
+          prev?.channelFallbackEnabled ??
+          false,
+      }));
       toast.success("Notification policy saved");
       void queryClient.invalidateQueries({
         queryKey: ["notification-policy", tenantId],
@@ -358,6 +379,66 @@ export default function SettingsPage() {
                     }
                   />
                 </div>
+                <div className="grid gap-3 border-t border-zinc-200 pt-3 sm:grid-cols-2 dark:border-zinc-800">
+                  <div>
+                    <Label htmlFor="quietStart">Quiet hours start (HH:mm)</Label>
+                    <Input
+                      id="quietStart"
+                      type="time"
+                      value={policy.quietHoursStart ?? ""}
+                      onChange={(e) =>
+                        setPolicy({
+                          ...policy,
+                          quietHoursStart: e.target.value || null,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="quietEnd">Quiet hours end (HH:mm)</Label>
+                    <Input
+                      id="quietEnd"
+                      type="time"
+                      value={policy.quietHoursEnd ?? ""}
+                      onChange={(e) =>
+                        setPolicy({
+                          ...policy,
+                          quietHoursEnd: e.target.value || null,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-zinc-500">
+                  During quiet hours, dispatch defers sends. Leave blank to
+                  disable. Backend documents timezone (tenant local or UTC).
+                </p>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={policy.attachPdfOnIssue ?? false}
+                    onChange={(e) =>
+                      setPolicy({
+                        ...policy,
+                        attachPdfOnIssue: e.target.checked,
+                      })
+                    }
+                  />
+                  Attach PDF on invoice issue
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={policy.channelFallbackEnabled ?? false}
+                    onChange={(e) =>
+                      setPolicy({
+                        ...policy,
+                        channelFallbackEnabled: e.target.checked,
+                      })
+                    }
+                  />
+                  Channel fallback (e.g. email after WhatsApp fail)
+                </label>
                 <Button
                   type="button"
                   disabled={policyMut.isPending}

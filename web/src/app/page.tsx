@@ -57,7 +57,7 @@ export default function DashboardPage() {
     <div>
       <PageHeader
         title="Dashboard"
-        description="Multi-tenant AR overview. Start the Quarkus API (default :8080, or BACKEND_URL / :8082 if occupied) so this page can load live data."
+        description="Multi-tenant AR overview. Start the Quarkus API (default :8082, or set BACKEND_URL) so this page can load live data."
         actions={
           <span
             className={`rounded-full px-2.5 py-1 text-xs font-medium ${

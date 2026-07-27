@@ -129,3 +129,74 @@ export async function checkBackendHealth(): Promise<{
     };
   }
 }
+
+/**
+ * Download a binary response (PDF, CSV, etc.) via the BFF proxy.
+ * Triggers a browser file save with the given filename.
+ */
+export async function apiDownload(
+  path: string,
+  options: ApiRequestOptions & { filename: string },
+): Promise<void> {
+  const { method = "GET", body, tenantId, idempotencyKey, signal, query, filename } =
+    options;
+
+  if (!tenantId?.trim()) {
+    throw new ApiError(400, "TENANT_ERROR", "Tenant ID is required");
+  }
+
+  const headers: Record<string, string> = {
+    Accept: "*/*",
+    "X-Tenant-Id": tenantId.trim(),
+  };
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
+  if (idempotencyKey) {
+    headers["Idempotency-Key"] = idempotencyKey;
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(buildUrl(path, query), {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
+      cache: "no-store",
+      credentials: "include",
+    });
+  } catch (e) {
+    if (
+      (e instanceof DOMException && e.name === "AbortError") ||
+      (e instanceof Error && e.name === "AbortError") ||
+      signal?.aborted
+    ) {
+      throw e;
+    }
+    throw e;
+  }
+
+  if (res.status === 401) {
+    redirectToLogin();
+    throw new ApiError(401, "UNAUTHORIZED", "Sign in required");
+  }
+
+  if (!res.ok) {
+    throw await parseApiError(res);
+  }
+
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}

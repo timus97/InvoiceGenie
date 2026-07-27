@@ -70,6 +70,21 @@ public class NotificationEnqueueService {
                 invoiceRepository, customerRepository, null, globalEnabled, maxAttempts, null, null, null);
     }
 
+    /** Test/helper overload with suppression service only. */
+    public NotificationEnqueueService(NotificationRepository notificationRepository,
+                                      NotificationPolicyRepository policyRepository,
+                                      NotificationPreferenceRepository preferenceRepository,
+                                      NotificationTemplateRepository templateRepository,
+                                      InvoiceRepository invoiceRepository,
+                                      CustomerRepository customerRepository,
+                                      NotificationSuppressionService suppressionService,
+                                      boolean globalEnabled,
+                                      int maxAttempts) {
+        this(notificationRepository, policyRepository, preferenceRepository, templateRepository,
+                invoiceRepository, customerRepository, suppressionService, globalEnabled, maxAttempts,
+                null, null, null);
+    }
+
     public NotificationEnqueueService(NotificationRepository notificationRepository,
                                       NotificationPolicyRepository policyRepository,
                                       NotificationPreferenceRepository preferenceRepository,

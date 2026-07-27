@@ -95,4 +95,27 @@ test.describe("InvoiceGenie AR console smoke (authenticated)", () => {
     await expect(page.getByText(/Settings|Session/i).first()).toBeVisible();
     await expect(page.getByText(/admin/i).first()).toBeVisible();
   });
+
+  test("notifications page loads metrics shell", async ({ page }) => {
+    await page.goto("/notifications");
+    await expect(page.getByText(/Notifications/i).first()).toBeVisible();
+    // Metric tiles are always present (zeros if API missing)
+    await expect(page.getByText(/^SENT$/i).first()).toBeVisible();
+    await expect(page.getByText(/^FAILED$/i).first()).toBeVisible();
+  });
+});
+
+test.describe("Public pages", () => {
+  test("login page loads", async ({ page }) => {
+    await page.goto("/login");
+    await expect(page.getByRole("heading", { name: /Sign in/i })).toBeVisible();
+  });
+
+  test("unsubscribe page loads without auth", async ({ page }) => {
+    await page.goto("/unsubscribe");
+    await expect(
+      page.getByRole("heading", { name: /Notification preferences/i }),
+    ).toBeVisible();
+    await expect(page.getByText(/missing a token/i)).toBeVisible();
+  });
 });

@@ -359,6 +359,21 @@ export type WebhookDto = {
   createdAt?: string | null;
 };
 
+/** Webhook delivery log entry (GET /api/v1/webhooks/deliveries). */
+export type WebhookDeliveryDto = {
+  id: string;
+  subscriptionId: string;
+  outboxId?: string | null;
+  eventType: string;
+  url: string;
+  status: string;
+  attemptCount: number;
+  httpStatus?: number | null;
+  errorMessage?: string | null;
+  nextAttemptAt?: string | null;
+  createdAt?: string | null;
+};
+
 export type ExtractedChequeDto = {
   sourceFile?: string | null;
   segmentIndex?: number;
@@ -444,6 +459,14 @@ export type NotificationPolicyDto = {
   channelsInvoiceIssued: string;
   channelsPaymentReminder: string;
   channelsDunningNotice: string;
+  /** HH:mm quiet hours start (tenant local or UTC — backend documents). Optional until BE merges. */
+  quietHoursStart?: string | null;
+  /** HH:mm quiet hours end. Optional until BE merges. */
+  quietHoursEnd?: string | null;
+  /** Attach invoice PDF on INVOICE_ISSUED. Optional until BE merges. */
+  attachPdfOnIssue?: boolean;
+  /** Channel fallback after primary fails. Optional until BE merges. */
+  channelFallbackEnabled?: boolean;
 };
 
 export type SendNotificationRequest = {
@@ -451,4 +474,33 @@ export type SendNotificationRequest = {
   eventType?: string;
   channels?: string[];
   force?: boolean;
+};
+
+/** GET /api/v1/notifications/metrics — flexible shape; prefer explicit counts. */
+export type NotificationMetricsDto = {
+  sent?: number;
+  failed?: number;
+  pending?: number;
+  skipped?: number;
+  SENT?: number;
+  FAILED?: number;
+  PENDING?: number;
+  SKIPPED?: number;
+  byStatus?: Record<string, number>;
+  window?: string | null;
+  last24h?: Partial<Record<string, number>> | null;
+  last7d?: Partial<Record<string, number>> | null;
+};
+
+export type NotificationTemplatePreviewRequest = {
+  eventType: string;
+  channel?: string;
+  variables?: Record<string, string>;
+};
+
+export type NotificationTemplatePreviewDto = {
+  subject?: string | null;
+  body?: string | null;
+  channel?: string | null;
+  eventType?: string | null;
 };

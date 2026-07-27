@@ -5,7 +5,7 @@ Next.js 15 (App Router) + TypeScript + Tailwind console for the InvoiceGenie Qua
 ## Prerequisites
 
 - **Node.js 20+** (22/24 fine)
-- Backend running on **http://localhost:8080** (Quarkus `dev` profile recommended)
+- Backend running on **http://localhost:8082** (Quarkus `dev` profile recommended)
 
 ## Setup
 
@@ -24,7 +24,7 @@ Next.js **rewrites** same-origin paths to Quarkus:
 
 | Browser path | Proxied to |
 |--------------|------------|
-| `/api/*` | `BACKEND_URL/api/*` (default `http://localhost:8080`) |
+| `/api/v1/*` | BFF route → `BACKEND_URL/api/v1/*` (default `http://localhost:8082`) |
 | `/q/*` | `BACKEND_URL/q/*` (health, OpenAPI, Swagger) |
 
 Every AR request sends **`X-Tenant-Id`** (from login session in prod, or Settings in dev) plus optional **`Authorization: Bearer`** / **`X-API-Key`** from the session stored in `sessionStorage`.

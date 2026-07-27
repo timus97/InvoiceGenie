@@ -55,12 +55,32 @@ public class NotificationRepositoryAdapter implements NotificationRepository {
 
     @Override
     public List<Notification> findByTenant(TenantId tenantId, int limit) {
-        return em.createQuery(
-                        "SELECT n FROM NotificationEntity n WHERE n.tenantId = :tid ORDER BY n.createdAt DESC",
-                        NotificationEntity.class)
+        return findByTenant(tenantId, limit, null).items();
+    }
+
+    @Override
+    public Page findByTenant(TenantId tenantId, int limit, PageCursor cursor) {
+        int capped = Math.min(Math.max(limit, 1), 500);
+        String jpql = "SELECT n FROM NotificationEntity n WHERE n.tenantId = :tid";
+        if (cursor != null) {
+            jpql += " AND (n.createdAt < :createdAt OR (n.createdAt = :createdAt AND n.id < :id))";
+        }
+        jpql += " ORDER BY n.createdAt DESC, n.id DESC";
+        var query = em.createQuery(jpql, NotificationEntity.class)
                 .setParameter("tid", tenantId.getValue())
-                .setMaxResults(Math.min(Math.max(limit, 1), 500))
-                .getResultStream().map(this::toDomain).toList();
+                .setMaxResults(capped + 1);
+        if (cursor != null) {
+            query.setParameter("createdAt", cursor.createdAt())
+                    .setParameter("id", cursor.id());
+        }
+        List<NotificationEntity> list = query.getResultList();
+        boolean hasMore = list.size() > capped;
+        List<Notification> items = list.stream().limit(capped).map(this::toDomain).toList();
+        Optional<PageCursor> next = hasMore && !items.isEmpty()
+                ? Optional.of(new PageCursor(items.get(items.size() - 1).getCreatedAt(),
+                        items.get(items.size() - 1).getId()))
+                : Optional.empty();
+        return new Page(items, next);
     }
 
     @Override

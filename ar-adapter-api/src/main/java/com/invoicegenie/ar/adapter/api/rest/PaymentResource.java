@@ -102,14 +102,15 @@ public class PaymentResource {
     }
 
     @GET
-    @Operation(summary = "List payments with optional filters")
+    @Operation(summary = "List payments with optional filters and cursor pagination (PP-023)")
     public Response list(
             @QueryParam("customerId") String customerId,
             @QueryParam("status") String status,
             @QueryParam("fromDate") LocalDate fromDate,
             @QueryParam("toDate") LocalDate toDate,
             @QueryParam("unallocatedOnly") @DefaultValue("false") boolean unallocatedOnly,
-            @QueryParam("limit") @DefaultValue("50") int limit) {
+            @QueryParam("limit") @DefaultValue("50") int limit,
+            @QueryParam("cursor") String cursor) {
         if (paymentQueryUseCase == null) {
             return Response.status(501).entity(new ErrorDto("NOT_IMPLEMENTED", "Payment query not wired")).build();
         }
@@ -120,11 +121,16 @@ public class PaymentResource {
         }
         UUID cust = customerId != null && !customerId.isBlank() ? UUID.fromString(customerId) : null;
         var result = paymentQueryUseCase.list(tenantId, new PaymentQueryUseCase.PaymentListFilter(
-                cust, st, fromDate, toDate, unallocatedOnly, limit));
-        return Response.ok(new PaymentListDto(
+                cust, st, fromDate, toDate, unallocatedOnly, limit, cursor));
+        Response.ResponseBuilder rb = Response.ok(new PaymentListDto(
                 result.items().stream().map(this::toPaymentDto).toList(),
-                result.count()
-        )).build();
+                result.count(),
+                result.nextCursor()
+        ));
+        if (result.nextCursor() != null && !result.nextCursor().isBlank()) {
+            rb.header("X-Next-Cursor", result.nextCursor());
+        }
+        return rb.build();
     }
 
     @GET
@@ -361,7 +367,11 @@ public class PaymentResource {
             long version,
             List<AllocationDetailDto> allocations
     ) {}
-    public record PaymentListDto(List<PaymentDto> items, int count) {}
+    public record PaymentListDto(List<PaymentDto> items, int count, String nextCursor) {
+        public PaymentListDto(List<PaymentDto> items, int count) {
+            this(items, count, null);
+        }
+    }
     public record ReasonDto(String reason) {}
     public record ReversalDto(String paymentId, String status, List<String> affectedInvoiceIds, String message) {}
     public record UnallocateRequestDto(List<String> invoiceIds, String reason, Long expectedVersion) {}

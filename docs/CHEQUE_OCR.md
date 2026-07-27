@@ -1,4 +1,4 @@
-﻿# Cheque OCR production path (STORY-018)
+# Cheque OCR production path (STORY-018)
 
 ## Supported modes
 

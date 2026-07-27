@@ -15,11 +15,13 @@ import com.invoicegenie.ar.domain.model.payment.Payment;
 import com.invoicegenie.ar.domain.model.payment.PaymentId;
 import com.invoicegenie.ar.domain.model.payment.PaymentRepository;
 import com.invoicegenie.ar.domain.service.LedgerService;
+import com.invoicegenie.ar.application.port.inbound.PostingPeriodUseCase;
 import com.invoicegenie.shared.domain.TenantId;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.LocalDate;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
@@ -42,6 +44,7 @@ public class RecordPaymentService implements RecordPaymentUseCase {
     private final LedgerService ledgerService;
     private final LedgerRepository ledgerRepository;
     private final IdempotencyStore idempotencyStore;
+    private final PostingPeriodUseCase postingPeriodUseCase;
 
     public RecordPaymentService(PaymentRepository paymentRepository,
                                 CustomerRepository customerRepository,
@@ -51,6 +54,19 @@ public class RecordPaymentService implements RecordPaymentUseCase {
                                 LedgerService ledgerService,
                                 LedgerRepository ledgerRepository,
                                 IdempotencyStore idempotencyStore) {
+        this(paymentRepository, customerRepository, idGenerator, auditRepository, eventPublisher,
+                ledgerService, ledgerRepository, idempotencyStore, null);
+    }
+
+    public RecordPaymentService(PaymentRepository paymentRepository,
+                                CustomerRepository customerRepository,
+                                IdGenerator idGenerator,
+                                AuditRepository auditRepository,
+                                EventPublisher eventPublisher,
+                                LedgerService ledgerService,
+                                LedgerRepository ledgerRepository,
+                                IdempotencyStore idempotencyStore,
+                                PostingPeriodUseCase postingPeriodUseCase) {
         this.paymentRepository = paymentRepository;
         this.customerRepository = customerRepository;
         this.idGenerator = idGenerator;
@@ -59,6 +75,7 @@ public class RecordPaymentService implements RecordPaymentUseCase {
         this.ledgerService = ledgerService;
         this.ledgerRepository = ledgerRepository;
         this.idempotencyStore = idempotencyStore;
+        this.postingPeriodUseCase = postingPeriodUseCase;
     }
 
     @Override
@@ -81,6 +98,12 @@ public class RecordPaymentService implements RecordPaymentUseCase {
                 }
                 return PaymentId.of(UUID.fromString(existingKey.get().responseJson()));
             }
+        }
+
+        // PP-025: reject payment record outside open posting period (if periods configured)
+        if (postingPeriodUseCase != null) {
+            LocalDate paymentDate = command.paymentDate() != null ? command.paymentDate() : LocalDate.now();
+            postingPeriodUseCase.assertOpenFor(tenantId, paymentDate);
         }
 
         // Validate customer exists

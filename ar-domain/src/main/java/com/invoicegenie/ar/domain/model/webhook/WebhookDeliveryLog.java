@@ -91,6 +91,28 @@ public final class WebhookDeliveryLog {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * Re-queue a DEAD or RETRY delivery for another attempt (PP-026).
+     * Resets status to RETRY and schedules next attempt immediately.
+     *
+     * @throws IllegalStateException if delivery is SUCCESS or BLOCKED_SSRF
+     */
+    public void redrive() {
+        if (status == WebhookDeliveryStatus.SUCCESS) {
+            throw new IllegalStateException("Cannot redrive a SUCCESS delivery");
+        }
+        if (status == WebhookDeliveryStatus.BLOCKED_SSRF) {
+            throw new IllegalStateException("Cannot redrive a BLOCKED_SSRF delivery; fix the URL first");
+        }
+        if (status != WebhookDeliveryStatus.DEAD && status != WebhookDeliveryStatus.RETRY) {
+            throw new IllegalStateException("Cannot redrive delivery in status " + status);
+        }
+        this.status = WebhookDeliveryStatus.RETRY;
+        this.nextAttemptAt = Instant.now();
+        this.errorMessage = truncate("Redriven at " + this.nextAttemptAt);
+        this.updatedAt = Instant.now();
+    }
+
     private static String truncate(String s) {
         if (s == null) return null;
         return s.length() <= 2000 ? s : s.substring(0, 2000);

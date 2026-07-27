@@ -22,6 +22,7 @@ import com.invoicegenie.ar.application.port.inbound.PaymentAllocationUseCase;
 import com.invoicegenie.ar.application.port.inbound.PaymentQueryUseCase;
 import com.invoicegenie.ar.application.port.inbound.PaymentReversalUseCase;
 import com.invoicegenie.ar.application.port.inbound.PaymentUnallocateUseCase;
+import com.invoicegenie.ar.application.port.inbound.PostingPeriodUseCase;
 import com.invoicegenie.ar.application.port.inbound.RecordPaymentUseCase;
 import com.invoicegenie.ar.application.port.inbound.StatementUseCase;
 import com.invoicegenie.ar.application.port.inbound.TenantUseCase;
@@ -54,10 +55,12 @@ import com.invoicegenie.ar.application.service.PaymentAllocationService;
 import com.invoicegenie.ar.application.service.PaymentQueryService;
 import com.invoicegenie.ar.application.service.PaymentReversalService;
 import com.invoicegenie.ar.application.service.PaymentUnallocateService;
+import com.invoicegenie.ar.application.service.PostingPeriodService;
 import com.invoicegenie.ar.application.service.RecordPaymentService;
 import com.invoicegenie.ar.application.service.StatementApplicationService;
 import com.invoicegenie.ar.application.service.TenantManagementService;
 import com.invoicegenie.ar.application.service.WebhookApplicationService;
+import com.invoicegenie.ar.application.service.WebhookRedriveService;
 import com.invoicegenie.ar.domain.model.customer.CustomerRepository;
 import com.invoicegenie.ar.domain.model.fx.ExchangeRateRepository;
 import com.invoicegenie.ar.domain.model.invoice.InvoiceId;
@@ -74,7 +77,9 @@ import com.invoicegenie.ar.domain.model.payment.ChequeRepository;
 import com.invoicegenie.ar.domain.model.payment.CreditNoteRepository;
 import com.invoicegenie.ar.domain.model.payment.PaymentId;
 import com.invoicegenie.ar.domain.model.payment.PaymentRepository;
+import com.invoicegenie.ar.domain.model.period.PostingPeriodRepository;
 import com.invoicegenie.ar.domain.model.tenant.TenantRepository;
+import com.invoicegenie.ar.domain.model.webhook.WebhookDeliveryRepository;
 import com.invoicegenie.ar.domain.model.webhook.WebhookRepository;
 import com.invoicegenie.ar.domain.service.AgingService;
 import com.invoicegenie.ar.domain.service.ChequeService;
@@ -94,6 +99,12 @@ public class ArApplication {
 
     @Produces
     @ApplicationScoped
+    public PostingPeriodUseCase postingPeriodUseCase(PostingPeriodRepository postingPeriodRepository) {
+        return new PostingPeriodService(postingPeriodRepository);
+    }
+
+    @Produces
+    @ApplicationScoped
     public IssueInvoiceUseCase issueInvoiceUseCase(InvoiceRepository invoiceRepository,
                                                    CustomerRepository customerRepository,
                                                    IdGenerator idGenerator,
@@ -102,9 +113,11 @@ public class ArApplication {
                                                    LedgerService ledgerService,
                                                    LedgerRepository ledgerRepository,
                                                    IdempotencyStore idempotencyStore,
-                                                   InvoiceVersionRepository invoiceVersionRepository) {
+                                                   InvoiceVersionRepository invoiceVersionRepository,
+                                                   PostingPeriodUseCase postingPeriodUseCase) {
         return new IssueInvoiceService(invoiceRepository, customerRepository, idGenerator, eventPublisher,
-                auditRepository, ledgerService, ledgerRepository, idempotencyStore, invoiceVersionRepository);
+                auditRepository, ledgerService, ledgerRepository, idempotencyStore, invoiceVersionRepository,
+                null, postingPeriodUseCase);
     }
 
     @Produces
@@ -128,9 +141,11 @@ public class ArApplication {
                                                      LedgerRepository ledgerRepository,
                                                      InvoiceVersionRepository invoiceVersionRepository,
                                                      CustomerRepository customerRepository,
-                                                     CustomerService customerService) {
+                                                     CustomerService customerService,
+                                                     PostingPeriodUseCase postingPeriodUseCase) {
         return new InvoiceLifecycleService(invoiceRepository, auditRepository, applyInvoicePaymentUseCase,
-                ledgerService, ledgerRepository, invoiceVersionRepository, customerRepository, customerService);
+                ledgerService, ledgerRepository, invoiceVersionRepository, customerRepository, customerService,
+                postingPeriodUseCase);
     }
 
     @Produces
@@ -144,8 +159,13 @@ public class ArApplication {
     public PaymentAllocationUseCase paymentAllocationUseCase(PaymentRepository paymentRepository,
                                                              InvoiceRepository invoiceRepository,
                                                              EventPublisher eventPublisher,
-                                                             IdempotencyStore idempotencyStore) {
-        return new PaymentAllocationService(paymentRepository, invoiceRepository, eventPublisher, idempotencyStore);
+                                                             IdempotencyStore idempotencyStore,
+                                                             CurrencyConversionService currencyConversionService,
+                                                             @org.eclipse.microprofile.config.inject.ConfigProperty(
+                                                                     name = "invoicegenie.payments.allow-fx-allocation",
+                                                                     defaultValue = "false") boolean allowFxAllocation) {
+        return new PaymentAllocationService(paymentRepository, invoiceRepository, eventPublisher, idempotencyStore,
+                currencyConversionService, allowFxAllocation);
     }
 
     @Produces
@@ -157,9 +177,10 @@ public class ArApplication {
                                                      EventPublisher eventPublisher,
                                                      LedgerService ledgerService,
                                                      LedgerRepository ledgerRepository,
-                                                     IdempotencyStore idempotencyStore) {
+                                                     IdempotencyStore idempotencyStore,
+                                                     PostingPeriodUseCase postingPeriodUseCase) {
         return new RecordPaymentService(paymentRepository, customerRepository, idGenerator, auditRepository,
-                eventPublisher, ledgerService, ledgerRepository, idempotencyStore);
+                eventPublisher, ledgerService, ledgerRepository, idempotencyStore, postingPeriodUseCase);
     }
 
     @Produces
@@ -307,6 +328,12 @@ public class ArApplication {
     @ApplicationScoped
     public WebhookUseCase webhookUseCase(WebhookRepository webhookRepository) {
         return new WebhookApplicationService(webhookRepository);
+    }
+
+    @Produces
+    @ApplicationScoped
+    public WebhookRedriveService webhookRedriveService(WebhookDeliveryRepository deliveryRepository) {
+        return new WebhookRedriveService(deliveryRepository);
     }
 
     @Produces

@@ -19,7 +19,14 @@ public interface NotificationUseCase {
 
     List<Notification> list(TenantId tenantId, int limit);
 
+    /**
+     * Cursor-paginated list (PP-023). {@code nextCursor} empty when no more pages.
+     */
+    PageResult list(TenantId tenantId, int limit, String cursor);
+
     Optional<Notification> get(TenantId tenantId, UUID id);
+
+    record PageResult(List<Notification> items, Optional<String> nextCursor) {}
 
     List<Notification> listByInvoice(TenantId tenantId, InvoiceId invoiceId, int limit);
 

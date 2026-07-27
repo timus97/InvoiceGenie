@@ -3,6 +3,7 @@ package com.invoicegenie.ar.adapter.api.filter;
 import com.invoicegenie.ar.adapter.api.dto.ErrorResponse;
 import com.invoicegenie.ar.adapter.api.security.ApiKeyRegistry;
 import com.invoicegenie.ar.adapter.api.security.ArRoles;
+import com.invoicegenie.ar.adapter.api.security.OidcJwtValidator;
 import com.invoicegenie.ar.adapter.api.security.SecurityConstants;
 import com.invoicegenie.shared.tenant.ActorContext;
 import jakarta.annotation.PostConstruct;
@@ -28,6 +29,8 @@ import org.jboss.logging.Logger;
  *   <li>{@code jwt} mode - require HS256 JWT (Bearer) with {@code tenant_id} claim,
  *       optional {@code roles[]} claim, signed with {@code invoicegenie.security.jwt.secret}</li>
  *   <li>{@code hybrid} mode - accept either Bearer JWT or {@code X-API-Key} (web + M2M)</li>
+ *   <li>{@code oidc} mode - validate Bearer JWT via configured issuer JWKS (RS256)</li>
+ *   <li>{@code hybrid-oidc} mode - OIDC JWT, then local HS256 JWT, then API key</li>
  * </ul>
  *
  * <p>Public paths (health) always bypass. OpenAPI/Swagger bypass only when
@@ -62,13 +65,36 @@ public class AuthFilter implements ContainerRequestFilter {
     @ConfigProperty(name = "invoicegenie.security.allow-openapi", defaultValue = "true")
     boolean allowOpenApi;
 
+    @ConfigProperty(name = "invoicegenie.security.oidc.issuer", defaultValue = "none")
+    String oidcIssuer;
+
+    @ConfigProperty(name = "invoicegenie.security.oidc.audience", defaultValue = "none")
+    String oidcAudience;
+
+    @ConfigProperty(name = "invoicegenie.security.oidc.jwks-uri", defaultValue = "none")
+    String oidcJwksUri;
+
+    @ConfigProperty(name = "invoicegenie.security.oidc.tenant-claim", defaultValue = "tenant_id")
+    String oidcTenantClaim;
+
+    @ConfigProperty(name = "invoicegenie.security.oidc.roles-claim", defaultValue = "groups")
+    String oidcRolesClaim;
+
     private ApiKeyRegistry apiKeyRegistry = new ApiKeyRegistry("");
+    private OidcJwtValidator oidcJwtValidator;
 
     @PostConstruct
     void init() {
         apiKeyRegistry = new ApiKeyRegistry(normalizeConfig(apiKeysConfig));
+        oidcJwtValidator = new OidcJwtValidator(
+                normalizeConfig(oidcIssuer),
+                normalizeConfig(oidcAudience),
+                normalizeConfig(oidcJwksUri),
+                oidcTenantClaim,
+                oidcRolesClaim);
         if (securityEnabled) {
-            LOG.infof("API security enabled (mode=%s, apiKeys=%d)", mode, apiKeyRegistry.size());
+            LOG.infof("API security enabled (mode=%s, apiKeys=%d, oidcConfigured=%s)",
+                    mode, apiKeyRegistry.size(), oidcJwtValidator.isConfigured());
         }
     }
 
@@ -90,6 +116,8 @@ public class AuthFilter implements ContainerRequestFilter {
             case "jwt" -> authenticateJwt(requestContext);
             case "api-key" -> authenticateApiKey(requestContext);
             case "hybrid", "api-key-or-jwt", "both" -> authenticateHybrid(requestContext);
+            case "oidc" -> authenticateOidc(requestContext);
+            case "hybrid-oidc", "oidc-hybrid" -> authenticateHybridOidc(requestContext);
             default -> {
                 LOG.warnf("Unknown security mode '%s' - rejecting request", mode);
                 yield Optional.empty();
@@ -112,11 +140,23 @@ public class AuthFilter implements ContainerRequestFilter {
         // STORY-012: bind actor for audit writers
         String ip = clientIp(requestContext);
         String ua = requestContext.getHeaderString("User-Agent");
-        String actorType = "jwt".equals(result.method()) ? "USER" : "API";
+        String actorType = ("jwt".equals(result.method()) || "oidc".equals(result.method())) ? "USER" : "API";
         ActorContext.set(ActorContext.Actor.of(result.subject(), actorType, ip, ua));
     }
 
     private Optional<AuthResult> authenticateHybrid(ContainerRequestContext ctx) {
+        Optional<AuthResult> jwt = authenticateJwt(ctx);
+        if (jwt.isPresent()) {
+            return jwt;
+        }
+        return authenticateApiKey(ctx);
+    }
+
+    private Optional<AuthResult> authenticateHybridOidc(ContainerRequestContext ctx) {
+        Optional<AuthResult> oidc = authenticateOidc(ctx);
+        if (oidc.isPresent()) {
+            return oidc;
+        }
         Optional<AuthResult> jwt = authenticateJwt(ctx);
         if (jwt.isPresent()) {
             return jwt;
@@ -148,6 +188,24 @@ public class AuthFilter implements ContainerRequestFilter {
                         roles = Set.of(ArRoles.AR_CLERK);
                     }
                     return new AuthResult(c.tenantId(), c.subject(), "jwt", roles);
+                });
+    }
+
+    private Optional<AuthResult> authenticateOidc(ContainerRequestContext ctx) {
+        if (oidcJwtValidator == null || !oidcJwtValidator.isConfigured()) {
+            return Optional.empty();
+        }
+        String auth = ctx.getHeaderString(SecurityConstants.HEADER_AUTHORIZATION);
+        if (auth == null || auth.isBlank()) {
+            return Optional.empty();
+        }
+        return oidcJwtValidator.validate(auth)
+                .map(c -> {
+                    Set<String> roles = c.roles();
+                    if (roles == null || roles.isEmpty()) {
+                        roles = Set.of(ArRoles.AR_CLERK);
+                    }
+                    return new AuthResult(c.tenantId(), c.subject(), "oidc", roles);
                 });
     }
 

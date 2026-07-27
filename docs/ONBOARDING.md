@@ -15,6 +15,7 @@
 | [PRODUCTION_READINESS.md](./PRODUCTION_READINESS.md) | Prod requirements + machine verification |
 | [SCHEMA.md](./SCHEMA.md) | Data model commentary |
 | [README.md](../README.md) | Quick start + API catalog |
+| [deploy/OIDC.md](./deploy/OIDC.md) | Optional OIDC / JWKS resource-server path (PP-020) |
 
 ---
 
@@ -34,7 +35,7 @@ InvoiceGenie is a production-oriented multi-tenant AR stack:
 | **Idempotency** | DB-backed store + retention cleanup job | Wired |
 | **Outbox + Kafka** | Transactional outbox; optional `SmallRyeOutboxKafkaSender` when `OUTBOX_KAFKA_ENABLED=true` | Optional emit |
 | **Webhooks** | Subscriptions + HTTP delivery worker (HMAC, SSRF guard, retries, delivery log) | Wired |
-| **Auth** | API-key and HS256 JWT gate; JWT `roles[]` + path RBAC; prod fail-closed | Phase-1 |
+| **Auth** | API-key and HS256 JWT gate; JWT `roles[]` + path RBAC; optional OIDC JWKS path (`oidc` / `hybrid-oidc`); prod fail-closed | Phase-1 + PP-020 |
 | **Multi-tenancy** | `X-Tenant-Id`, app filters, Postgres RLS GUC + Agroal pool interceptor | Hardened |
 | **Web UI** | Next.js console: customers, invoices, payments, cheques, aging, ledger, audit, webhooks, settings | Present |
 | **Migrations** | Flyway `V1`–`V7` under `ar-bootstrap/.../db/migration` | Prod default |

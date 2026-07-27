@@ -83,7 +83,7 @@ webhook:
     retry-batch: ${WEBHOOK_DELIVERY_RETRY_BATCH:50}
 
 # API security (disabled by default for local/dev/test)
-# mode: api-key | jwt | hybrid (Bearer JWT or X-API-Key)
+# mode: api-key | jwt | hybrid | oidc | hybrid-oidc
 invoicegenie:
   security:
     enabled: ${INVOICEGENIE_SECURITY_ENABLED:false}
@@ -100,6 +100,13 @@ invoicegenie:
       refresh-ttl-seconds: ${INVOICEGENIE_JWT_REFRESH_TTL_SECONDS:604800}
       # Legacy alias (prefer access-ttl-seconds)
       ttl-seconds: ${INVOICEGENIE_JWT_TTL_SECONDS:900}
+    # OIDC resource-server path (PP-020): JWKS RS256 validation when mode=oidc|hybrid-oidc
+    oidc:
+      issuer: ${INVOICEGENIE_OIDC_ISSUER:none}
+      audience: ${INVOICEGENIE_OIDC_AUDIENCE:none}
+      jwks-uri: ${INVOICEGENIE_OIDC_JWKS_URI:none}
+      tenant-claim: ${INVOICEGENIE_OIDC_TENANT_CLAIM:tenant_id}
+      roles-claim: ${INVOICEGENIE_OIDC_ROLES_CLAIM:groups}
     # First-boot admin (only when ar_app_user is empty)
     bootstrap:
       email: ${INVOICEGENIE_BOOTSTRAP_EMAIL:admin@invoicegenie.local}
@@ -107,6 +114,9 @@ invoicegenie:
       display-name: ${INVOICEGENIE_BOOTSTRAP_DISPLAY_NAME:System Admin}
       tenant-id: ${INVOICEGENIE_BOOTSTRAP_TENANT_ID:00000000-0000-0000-0000-000000000001}
     allow-openapi: ${INVOICEGENIE_SECURITY_ALLOW_OPENAPI:true}
+  # PP-024: allow cross-currency allocation via exchange rates (default reject)
+  payments:
+    allow-fx-allocation: ${INVOICEGENIE_PAYMENTS_ALLOW_FX_ALLOCATION:false}
   # Cheque OCR (STORY-018) — reject bulk create when ocrConfidence is present and below this floor
   ocr:
     min-confidence: ${INVOICEGENIE_OCR_MIN_CONFIDENCE:0.45}

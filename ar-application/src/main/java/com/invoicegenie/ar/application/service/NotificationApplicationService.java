@@ -10,6 +10,7 @@ import com.invoicegenie.ar.domain.model.notification.NotificationEventType;
 import com.invoicegenie.ar.domain.model.notification.NotificationRepository;
 import com.invoicegenie.shared.domain.TenantId;
 
+import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,6 +35,37 @@ public class NotificationApplicationService implements NotificationUseCase {
     @Override
     public List<Notification> list(TenantId tenantId, int limit) {
         return notificationRepository.findByTenant(tenantId, limit);
+    }
+
+    @Override
+    public PageResult list(TenantId tenantId, int limit, String cursor) {
+        int safe = Math.min(Math.max(limit, 1), 500);
+        NotificationRepository.PageCursor pageCursor = decodeCursor(cursor);
+        NotificationRepository.Page page = notificationRepository.findByTenant(tenantId, safe, pageCursor);
+        String next = page.nextCursor().map(this::encodeCursor).orElse(null);
+        return new PageResult(page.items(), Optional.ofNullable(next));
+    }
+
+    private NotificationRepository.PageCursor decodeCursor(String cursor) {
+        if (cursor == null || cursor.isBlank()) {
+            return null;
+        }
+        try {
+            String decoded = new String(Base64.getUrlDecoder().decode(cursor));
+            String[] parts = decoded.split("\\|", 2);
+            if (parts.length == 2) {
+                return new NotificationRepository.PageCursor(
+                        java.time.Instant.parse(parts[0]),
+                        UUID.fromString(parts[1]));
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private String encodeCursor(NotificationRepository.PageCursor c) {
+        String raw = c.createdAt().toString() + "|" + c.id().toString();
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(raw.getBytes());
     }
 
     @Override

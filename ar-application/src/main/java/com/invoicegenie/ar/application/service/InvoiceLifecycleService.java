@@ -18,6 +18,7 @@ import com.invoicegenie.ar.domain.model.ledger.LedgerRepository;
 import com.invoicegenie.ar.domain.model.outbox.AuditEntry;
 import com.invoicegenie.ar.domain.model.outbox.AuditRepository;
 import com.invoicegenie.ar.domain.service.LedgerService;
+import com.invoicegenie.ar.application.port.inbound.PostingPeriodUseCase;
 import com.invoicegenie.shared.domain.TenantId;
 
 import java.math.BigDecimal;
@@ -39,6 +40,7 @@ public class InvoiceLifecycleService implements InvoiceLifecycleUseCase {
     private final InvoiceVersionRepository invoiceVersionRepository;
     private final CustomerRepository customerRepository;
     private final CustomerService customerService;
+    private final PostingPeriodUseCase postingPeriodUseCase;
 
     public InvoiceLifecycleService(InvoiceRepository invoiceRepository,
                                    AuditRepository auditRepository,
@@ -47,7 +49,7 @@ public class InvoiceLifecycleService implements InvoiceLifecycleUseCase {
                                    LedgerRepository ledgerRepository,
                                    InvoiceVersionRepository invoiceVersionRepository) {
         this(invoiceRepository, auditRepository, applyInvoicePaymentUseCase, ledgerService,
-                ledgerRepository, invoiceVersionRepository, null, null);
+                ledgerRepository, invoiceVersionRepository, null, null, null);
     }
 
     public InvoiceLifecycleService(InvoiceRepository invoiceRepository,
@@ -58,6 +60,19 @@ public class InvoiceLifecycleService implements InvoiceLifecycleUseCase {
                                    InvoiceVersionRepository invoiceVersionRepository,
                                    CustomerRepository customerRepository,
                                    CustomerService customerService) {
+        this(invoiceRepository, auditRepository, applyInvoicePaymentUseCase, ledgerService,
+                ledgerRepository, invoiceVersionRepository, customerRepository, customerService, null);
+    }
+
+    public InvoiceLifecycleService(InvoiceRepository invoiceRepository,
+                                   AuditRepository auditRepository,
+                                   ApplyInvoicePaymentUseCase applyInvoicePaymentUseCase,
+                                   LedgerService ledgerService,
+                                   LedgerRepository ledgerRepository,
+                                   InvoiceVersionRepository invoiceVersionRepository,
+                                   CustomerRepository customerRepository,
+                                   CustomerService customerService,
+                                   PostingPeriodUseCase postingPeriodUseCase) {
         this.invoiceRepository = invoiceRepository;
         this.auditRepository = auditRepository;
         this.applyInvoicePaymentUseCase = applyInvoicePaymentUseCase;
@@ -66,6 +81,7 @@ public class InvoiceLifecycleService implements InvoiceLifecycleUseCase {
         this.invoiceVersionRepository = invoiceVersionRepository;
         this.customerRepository = customerRepository;
         this.customerService = customerService != null ? customerService : new CustomerService();
+        this.postingPeriodUseCase = postingPeriodUseCase;
     }
 
     private void snapshot(TenantId tenantId, Invoice inv, String reason) {
@@ -76,6 +92,9 @@ public class InvoiceLifecycleService implements InvoiceLifecycleUseCase {
     public Optional<Invoice> issue(TenantId tenantId, InvoiceId invoiceId) {
         return invoiceRepository.findByTenantAndId(tenantId, invoiceId)
                 .map(inv -> {
+                    if (postingPeriodUseCase != null) {
+                        postingPeriodUseCase.assertOpenFor(tenantId, LocalDate.now());
+                    }
                     enforceCustomerCanBeIssued(tenantId, inv);
                     String before = String.format("{\"status\":\"%s\"}", inv.getStatus());
                     inv.issue();

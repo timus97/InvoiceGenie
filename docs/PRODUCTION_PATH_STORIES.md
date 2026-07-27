@@ -116,3 +116,15 @@
 - [ ] Stakeholder doc §7 residuals updated to Done/Partial new truth
 - [ ] PROJECT_STATUS updated
 
+
+## Integration status (2026-07-27)
+
+| Stream | Status | Notes |
+|--------|--------|-------|
+| WS-MSG PP-001..004 | **Done** | Merged on feat/production-path-integration |
+| WS-COL PP-010..016 | **Done** | V14 quiet hours + PDF |
+| WS-SEC PP-020..026 | **Done** | V15 posting period; OIDC JWKS |
+| WS-FE PP-022,030..036 | **Done** | Console + public unsub |
+| WS-OPS PP-040..043 | **Done** | Runbooks + .env.example |
+| WS-QA | **Partial** | Unit green; bootstrap E2E needs Postgres |
+

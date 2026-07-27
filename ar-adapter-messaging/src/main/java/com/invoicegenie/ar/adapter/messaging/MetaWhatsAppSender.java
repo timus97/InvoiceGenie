@@ -113,6 +113,7 @@ public class MetaWhatsAppSender implements WhatsAppSender {
             case INVOICE_ISSUED -> "invoice_issued_en";
             case PAYMENT_REMINDER -> "payment_reminder_en";
             case DUNNING_NOTICE -> "dunning_notice_en";
+            case STATEMENT_SEND -> "statement_send_en";
         };
     }
 

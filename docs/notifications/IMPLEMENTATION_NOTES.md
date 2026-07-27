@@ -1,7 +1,7 @@
 # Implementation Notes — Customer Notifications (P0 MVP)
 
-**Date:** 2026-07-25  
-**Status:** Implemented (logging providers)
+**Date:** 2026-07-25 (ops addendum 2026-07-27)  
+**Status:** Implemented (logging providers); production provider runbooks documented (PP-040…043)
 
 ## What was built
 
@@ -65,9 +65,14 @@ PUT  /api/v1/notification-policy
 | `INVOICEGENIE_NOTIFICATIONS_ENABLED` | true |
 | `INVOICEGENIE_NOTIFICATIONS_EMAIL_ENABLED` | true |
 | `INVOICEGENIE_NOTIFICATIONS_WHATSAPP_ENABLED` | false |
-| `INVOICEGENIE_NOTIFICATIONS_EMAIL_PROVIDER` | logging |
+| `INVOICEGENIE_NOTIFICATIONS_EMAIL_PROVIDER` | logging (`smtp` = fail-closed until PP-001) |
+| `INVOICEGENIE_NOTIFICATIONS_WHATSAPP_PROVIDER` | logging (`meta` = fail-closed until PP-002) |
 | `INVOICEGENIE_NOTIFICATIONS_PRE_DUE_DAYS` | 3 |
-| `INVOICEGENIE_SMTP_*` | empty (smtp stub needs host) |
+| `INVOICEGENIE_SMTP_*` | host=`none` until configured |
+| `INVOICEGENIE_WHATSAPP_*` | token/phone-number-id=`none` until Meta setup |
+| `INVOICEGENIE_PUBLIC_BASE_URL` | public HTTPS base for links/webhooks (ops) |
+
+Full list: repo root `.env.example`.
 
 ## QA fixes applied (2026-07-26)
 
@@ -92,3 +97,42 @@ See `QA_FIX_STATUS.md`.
 ## RLS note (workers)
 
 `findDue` is cross-tenant. Migration comments document that table owner (`ar`) bypasses RLS unless `FORCE ROW LEVEL SECURITY` is enabled. If FORCE is turned on later, grant a worker bypass role or add a due-dispatch policy.
+
+---
+
+## Addendum — Production providers (PP-040…PP-043, 2026-07-27)
+
+Ops runbooks and env keys are documented for production path readiness **without** requiring live SES/Meta deploy in this pass.
+
+### Provider reality check
+
+| Provider flag | Class | Production readiness |
+|---------------|-------|----------------------|
+| `email.provider=logging` | `LoggingEmailSender` | Demo only — marks SENT without external mail |
+| `email.provider=smtp` | `SmtpEmailSender` | **Fail-closed** until PP-001 wires Jakarta Mail / Quarkus Mailer; host=`none` also fails |
+| `whatsapp.provider=logging` | `LoggingWhatsAppSender` | Demo only |
+| `whatsapp.provider=meta` | `FailClosedWhatsAppSender` | **Fail-closed** until PP-002 `MetaWhatsAppSender` |
+
+Do not set `smtp` / `meta` in customer-facing environments until the corresponding PP stories land and staging probes pass.
+
+### Ops docs
+
+| Doc | Content |
+|-----|---------|
+| `docs/deploy/EMAIL_DELIVERABILITY.md` | SPF/DKIM/DMARC, SES-as-SMTP or generic SMTP, env matrix, logging vs smtp testing, fail-closed |
+| `docs/deploy/WHATSAPP_META_SETUP.md` | Meta Business, template names (`invoice_issued_en`, …), token/phone-number-id, webhook secret placeholders |
+| `docs/deploy/PRODUCTION_PATH_RUNBOOK.md` | Staging secrets checklist, smoke (health → login → issue → notify), backup/restore pointers to AWS docs |
+
+### Env keys (see `.env.example`)
+
+- Notifications master + channel: `INVOICEGENIE_NOTIFICATIONS_*`
+- SMTP: `INVOICEGENIE_SMTP_HOST|PORT|USERNAME|PASSWORD|FROM|STARTTLS`
+- Meta: `INVOICEGENIE_WHATSAPP_ACCESS_TOKEN|PHONE_NUMBER_ID|API_VERSION` (+ planned webhook verify/app secret)
+- Public links / callbacks: `INVOICEGENIE_PUBLIC_BASE_URL`
+- OIDC placeholders: `INVOICEGENIE_OIDC_*` / `QUARKUS_OIDC_*` / `NEXT_PUBLIC_OIDC_*` (PP-020)
+
+### Staging recommendation
+
+1. Soak with **logging** email, WhatsApp **off**, `LOG_PAYLOADS=false`.
+2. Validate SPF/DKIM and Meta templates in vendor consoles **before** flipping providers.
+3. After PP-001/PP-002: promote provider flags only in staging first; watch attempt table + provider dashboards.

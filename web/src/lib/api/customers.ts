@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api/client";
+import { apiDownload, apiFetch } from "@/lib/api/client";
 import { apiPaths } from "@/lib/api/paths";
 import type {
   CreateCustomerRequest,
@@ -118,5 +118,27 @@ export function customerStats(tenantId: string, signal?: AbortSignal) {
   return apiFetch<CustomerStatsDto>(apiPaths.customerStats, {
     tenantId,
     signal,
+  });
+}
+
+/** Download customer statement PDF (or backend-negotiated format). */
+export function downloadCustomerStatementPdf(
+  tenantId: string,
+  customerId: string,
+  filename?: string,
+) {
+  return apiDownload(apiPaths.customerStatement(customerId), {
+    tenantId,
+    filename: filename ?? `statement-${customerId}.pdf`,
+    query: { format: "pdf" },
+  });
+}
+
+/** Enqueue statement send notification (PP-034). */
+export function sendCustomerStatement(tenantId: string, customerId: string) {
+  return apiFetch<unknown>(apiPaths.customerStatementSend(customerId), {
+    method: "POST",
+    tenantId,
+    body: {},
   });
 }

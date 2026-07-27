@@ -16,8 +16,10 @@ import {
   blockCustomer,
   creditCheck,
   deleteCustomer,
+  downloadCustomerStatementPdf,
   getCustomer,
   getCustomerArSummary,
+  sendCustomerStatement,
   unblockCustomer,
   updateCustomer,
 } from "@/lib/api/customers";
@@ -193,6 +195,28 @@ export default function CustomerDetailPage() {
     onError: onErr,
   });
 
+  const statementPdfMut = useMutation({
+    mutationFn: () =>
+      downloadCustomerStatementPdf(
+        tenantId,
+        id,
+        `statement-${c?.customerCode ?? id}.pdf`,
+      ),
+    onSuccess: () => toast.success("Statement PDF download started"),
+    onError: onErr,
+  });
+
+  const statementSendMut = useMutation({
+    mutationFn: () => sendCustomerStatement(tenantId, id),
+    onSuccess: () => {
+      toast.success("Statement send enqueued");
+      void queryClient.invalidateQueries({
+        queryKey: ["notifications", tenantId],
+      });
+    },
+    onError: onErr,
+  });
+
   if (customerQ.isLoading) {
     return <p className="text-sm text-zinc-500">Loading customer…</p>;
   }
@@ -231,6 +255,30 @@ export default function CustomerDetailPage() {
         description={`${c.customerCode} · ${c.currency}`}
         actions={
           <div className="flex flex-wrap gap-2">
+            {!isDeleted ? (
+              <>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={statementPdfMut.isPending}
+                  onClick={() => statementPdfMut.mutate()}
+                >
+                  {statementPdfMut.isPending
+                    ? "Downloading…"
+                    : "Download statement PDF"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={statementSendMut.isPending}
+                  onClick={() => statementSendMut.mutate()}
+                >
+                  {statementSendMut.isPending
+                    ? "Sending…"
+                    : "Send statement"}
+                </Button>
+              </>
+            ) : null}
             {isActive ? (
               <Button
                 type="button"

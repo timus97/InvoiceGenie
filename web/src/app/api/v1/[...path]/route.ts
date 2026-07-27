@@ -62,6 +62,62 @@ async function tryRefresh(sessionId: string | undefined): Promise<boolean> {
   }
 }
 
+function isPublicUnsubscribePath(path: string, method: string): boolean {
+  return (
+    method === "POST" &&
+    (path === "notifications/unsubscribe" ||
+      path.startsWith("notifications/unsubscribe/"))
+  );
+}
+
+async function proxyPublic(
+  req: NextRequest,
+  path: string,
+  method: string,
+): Promise<NextResponse> {
+  const url = new URL(req.url);
+  const target = `${backendBaseUrl()}/api/v1/${path}${url.search}`;
+  const headers = new Headers();
+  headers.set("Accept", req.headers.get("Accept") || "application/json");
+  const contentType = req.headers.get("Content-Type");
+  if (contentType) headers.set("Content-Type", contentType);
+
+  const hasBody = !["GET", "HEAD"].includes(method);
+  const body = hasBody ? await req.arrayBuffer() : undefined;
+
+  try {
+    const upstream = await fetch(target, {
+      method,
+      headers,
+      body: body && body.byteLength > 0 ? body : undefined,
+      cache: "no-store",
+      redirect: "manual",
+    });
+    const responseHeaders = new Headers();
+    upstream.headers.forEach((value, key) => {
+      const lower = key.toLowerCase();
+      if (HOP_BY_HOP.has(lower)) return;
+      if (lower === "set-cookie") return;
+      responseHeaders.set(key, value);
+    });
+    responseHeaders.set("Cache-Control", "no-store");
+    const buf = await upstream.arrayBuffer();
+    return new NextResponse(buf, {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers: responseHeaders,
+    });
+  } catch (e) {
+    return NextResponse.json(
+      {
+        error: "UPSTREAM_ERROR",
+        message: e instanceof Error ? e.message : "Backend unreachable",
+      },
+      { status: 502 },
+    );
+  }
+}
+
 async function proxy(req: NextRequest, pathParts: string[]) {
   const path = pathParts.map(encodeURIComponent).join("/");
   if (path === "auth/login" || path.startsWith("auth/login/")) {
@@ -72,6 +128,12 @@ async function proxy(req: NextRequest, pathParts: string[]) {
       },
       { status: 400 },
     );
+  }
+
+  const method = req.method.toUpperCase();
+  // PP-036: public tokenized unsubscribe — no session cookies required.
+  if (isPublicUnsubscribePath(path, method)) {
+    return proxyPublic(req, path, method);
   }
 
   let bundle = await readAuthCookies();
@@ -140,7 +202,6 @@ async function proxy(req: NextRequest, pathParts: string[]) {
     );
   }
 
-  const method = req.method.toUpperCase();
   const hasBody = !["GET", "HEAD"].includes(method);
   const body = hasBody ? await req.arrayBuffer() : undefined;
 

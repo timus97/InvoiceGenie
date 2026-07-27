@@ -15,6 +15,7 @@ import { TableSkeleton } from "@/components/ui/skeleton";
 import { useTenant } from "@/components/tenant-provider";
 import {
   applyInvoicePayment,
+  downloadInvoicePdf,
   getInvoice,
   issueInvoice,
   markInvoiceOverdue,
@@ -156,6 +157,17 @@ export default function InvoiceDetailPage() {
       toast.success(`Notification enqueued: ${statuses || "ok"}`);
       void queryClient.invalidateQueries({ queryKey: ["notifications", tenantId] });
     },
+    onError: onErr,
+  });
+
+  const pdfMut = useMutation({
+    mutationFn: () =>
+      downloadInvoicePdf(
+        tenantId,
+        id,
+        `invoice-${invQ.data?.invoiceNumber ?? id}.pdf`,
+      ),
+    onSuccess: () => toast.success("PDF download started"),
     onError: onErr,
   });
 
@@ -304,6 +316,14 @@ export default function InvoiceDetailPage() {
                 {notifyMut.isPending ? "Sending…" : "Send notification (email)"}
               </Button>
             ) : null}
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={pdfMut.isPending}
+              onClick={() => pdfMut.mutate()}
+            >
+              {pdfMut.isPending ? "Downloading…" : "Download PDF"}
+            </Button>
             {status === "ISSUED" || status === "PARTIALLY_PAID" ? (
               <Button
                 type="button"

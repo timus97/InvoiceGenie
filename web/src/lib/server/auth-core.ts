@@ -34,7 +34,7 @@ export type BackendLoginResponse = {
 };
 
 export function backendBaseUrl(): string {
-  return (process.env.BACKEND_URL ?? "http://localhost:8080").replace(/\/$/, "");
+  return (process.env.BACKEND_URL ?? "http://localhost:8082").replace(/\/$/, "");
 }
 
 export function isSecureCookie(): boolean {

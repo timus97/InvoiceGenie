@@ -1,5 +1,6 @@
 package com.invoicegenie.ar.application.service;
 
+import com.invoicegenie.ar.application.port.inbound.StatementUseCase;
 import com.invoicegenie.ar.domain.model.customer.Customer;
 import com.invoicegenie.ar.domain.model.customer.CustomerId;
 import com.invoicegenie.ar.domain.model.customer.CustomerRepository;
@@ -25,6 +26,7 @@ import com.invoicegenie.shared.domain.TenantId;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
@@ -52,6 +54,9 @@ public class NotificationEnqueueService {
     private final NotificationSuppressionService suppressionService;
     private final boolean globalEnabled;
     private final int maxAttempts;
+    private final UnsubscribeTokenService unsubscribeTokenService;
+    private final String publicBaseUrl;
+    private final PdfDocumentService pdfDocumentService;
 
     public NotificationEnqueueService(NotificationRepository notificationRepository,
                                       NotificationPolicyRepository policyRepository,
@@ -62,7 +67,7 @@ public class NotificationEnqueueService {
                                       boolean globalEnabled,
                                       int maxAttempts) {
         this(notificationRepository, policyRepository, preferenceRepository, templateRepository,
-                invoiceRepository, customerRepository, null, globalEnabled, maxAttempts);
+                invoiceRepository, customerRepository, null, globalEnabled, maxAttempts, null, null, null);
     }
 
     public NotificationEnqueueService(NotificationRepository notificationRepository,
@@ -73,7 +78,10 @@ public class NotificationEnqueueService {
                                       CustomerRepository customerRepository,
                                       NotificationSuppressionService suppressionService,
                                       boolean globalEnabled,
-                                      int maxAttempts) {
+                                      int maxAttempts,
+                                      UnsubscribeTokenService unsubscribeTokenService,
+                                      String publicBaseUrl,
+                                      PdfDocumentService pdfDocumentService) {
         this.notificationRepository = notificationRepository;
         this.policyRepository = policyRepository;
         this.preferenceRepository = preferenceRepository;
@@ -83,6 +91,9 @@ public class NotificationEnqueueService {
         this.suppressionService = suppressionService;
         this.globalEnabled = globalEnabled;
         this.maxAttempts = maxAttempts > 0 ? maxAttempts : 5;
+        this.unsubscribeTokenService = unsubscribeTokenService;
+        this.publicBaseUrl = publicBaseUrl;
+        this.pdfDocumentService = pdfDocumentService;
     }
 
     /**
@@ -115,13 +126,11 @@ public class NotificationEnqueueService {
             targetChannels = policy.channelsFor(eventType);
         }
 
-        // Auto-fill idempotency qualifiers for reminder/dunning when caller omitted them (QA-NOTIFY-007)
         String effectiveQualifier = qualifier;
         if (effectiveQualifier == null || effectiveQualifier.isBlank()) {
             if (eventType == NotificationEventType.PAYMENT_REMINDER) {
                 effectiveQualifier = qualifierFor(eventType, invoice.getDueDate(), null);
             } else if (eventType == NotificationEventType.DUNNING_NOTICE) {
-                // Default level 1 if not provided; jobs pass explicit level
                 effectiveQualifier = qualifierFor(eventType, null, 1);
             }
         }
@@ -133,19 +142,21 @@ public class NotificationEnqueueService {
         return results;
     }
 
-    public Notification enqueueOne(TenantId tenantId, Invoice invoice, Customer customer,
-                                   NotificationEventType eventType, NotificationChannel channel,
-                                   String qualifier, Map<String, String> extraVars,
-                                   boolean force, boolean respectAutoPolicy,
-                                   NotificationPolicy policy) {
-        InvoiceId invoiceId = invoice.getId();
-        CustomerId customerId = invoice.getCustomerId();
-        String idempotencyKey = NotificationIdempotencyKeys.build(eventType, invoiceId, channel, qualifier);
+    /**
+     * Enqueue statement email for a customer (PP-013). Optionally attaches statement PDF bytes
+     * in metadata when {@link PdfDocumentService} is available.
+     */
+    public Notification enqueueStatementSend(TenantId tenantId, Customer customer,
+                                             StatementUseCase.CustomerStatement statement,
+                                             boolean attachPdf) {
+        CustomerId customerId = customer.getId();
+        NotificationChannel channel = NotificationChannel.EMAIL;
+        LocalDate asOf = statement.asOfDate();
+        String idempotencyKey = NotificationIdempotencyKeys.forStatementSend(customerId, asOf, channel);
 
         Optional<Notification> existing = notificationRepository.findByIdempotencyKey(tenantId, idempotencyKey);
         if (existing.isPresent()) {
             Notification prev = existing.get();
-            // SENT (and in-flight) still de-dupe. SKIPPED is recoverable (QA-NOTIFY-001).
             if (prev.getStatus().isTerminalSuccess()
                     || prev.getStatus() == NotificationStatus.PENDING
                     || prev.getStatus() == NotificationStatus.QUEUED
@@ -160,7 +171,109 @@ public class NotificationEnqueueService {
             }
         }
 
-        // Master switches — never bypassed by force
+        NotificationPolicy policy = policyRepository.findByTenant(tenantId)
+                .orElseGet(() -> NotificationPolicy.defaults(tenantId));
+
+        if (!globalEnabled) {
+            return saveSkipped(tenantId, customerId, null, NotificationEventType.STATEMENT_SEND, channel,
+                    idempotencyKey, NotificationSkipReason.GLOBAL_DISABLED);
+        }
+        if (!policy.isEnabled() || !policy.isChannelGloballyEnabled(channel)) {
+            return saveSkipped(tenantId, customerId, null, NotificationEventType.STATEMENT_SEND, channel,
+                    idempotencyKey, !policy.isEnabled()
+                            ? NotificationSkipReason.POLICY_DISABLED
+                            : NotificationSkipReason.CHANNEL_DISABLED);
+        }
+
+        Optional<NotificationPreference> pref =
+                preferenceRepository.findByCustomerAndChannel(tenantId, customerId, channel);
+        if (pref.isPresent() && !pref.get().isEnabled()) {
+            return saveSkipped(tenantId, customerId, null, NotificationEventType.STATEMENT_SEND, channel,
+                    idempotencyKey, NotificationSkipReason.OPTED_OUT);
+        }
+
+        String destination = resolveDestination(customer, customerId, tenantId, channel);
+        if (destination == null || destination.isBlank()) {
+            return saveSkipped(tenantId, customerId, null, NotificationEventType.STATEMENT_SEND, channel,
+                    idempotencyKey, NotificationSkipReason.NO_DESTINATION);
+        }
+        try {
+            NotificationDestinationValidator.validateOrThrow(channel, destination);
+        } catch (IllegalArgumentException ex) {
+            return saveSkipped(tenantId, customerId, null, NotificationEventType.STATEMENT_SEND, channel,
+                    idempotencyKey, NotificationSkipReason.NO_DESTINATION);
+        }
+
+        Optional<NotificationTemplate> templateOpt =
+                templateRepository.findActive(tenantId, NotificationEventType.STATEMENT_SEND, channel, "en");
+        if (templateOpt.isEmpty()) {
+            return saveSkipped(tenantId, customerId, null, NotificationEventType.STATEMENT_SEND, channel,
+                    idempotencyKey, NotificationSkipReason.NO_TEMPLATE);
+        }
+        NotificationTemplate template = templateOpt.get();
+
+        Map<String, String> vars = new HashMap<>();
+        vars.put("customerName", customer.getDisplayName());
+        vars.put("asOfDate", asOf != null ? asOf.toString() : "");
+        vars.put("totalBalance", statement.totalBalance() != null
+                ? statement.totalBalance().toPlainString() : "0");
+        vars.put("currency", statement.currency() != null ? statement.currency() : "");
+        vars.put("openItemCount", String.valueOf(statement.openItems() != null ? statement.openItems().size() : 0));
+        vars.put("statementSummary", buildStatementSummary(statement));
+
+        String subject = NotificationTemplateRenderer.render(template.getSubject(), vars);
+        String body = NotificationTemplateRenderer.render(template.getBody(), vars);
+        body = appendUnsubscribeFooter(tenantId, customerId, channel, body);
+
+        String metadata = null;
+        if (attachPdf && pdfDocumentService != null) {
+            try {
+                byte[] pdf = pdfDocumentService.generateStatementPdf(statement);
+                metadata = "{\"attachments\":[{\"filename\":\"statement-" + asOf + ".pdf\","
+                        + "\"contentType\":\"application/pdf\","
+                        + "\"base64\":\"" + Base64.getEncoder().encodeToString(pdf) + "\"}]}";
+            } catch (Exception ignored) {
+                // best effort — still send email without attachment
+            }
+        }
+
+        Notification n = Notification.enqueue(tenantId, customerId, null,
+                NotificationEventType.STATEMENT_SEND, channel, idempotencyKey, destination,
+                subject, body, template.getId(), metadata, maxAttempts);
+        try {
+            notificationRepository.save(n);
+            return n;
+        } catch (RuntimeException e) {
+            return notificationRepository.findByIdempotencyKey(tenantId, idempotencyKey).orElse(n);
+        }
+    }
+
+    public Notification enqueueOne(TenantId tenantId, Invoice invoice, Customer customer,
+                                   NotificationEventType eventType, NotificationChannel channel,
+                                   String qualifier, Map<String, String> extraVars,
+                                   boolean force, boolean respectAutoPolicy,
+                                   NotificationPolicy policy) {
+        InvoiceId invoiceId = invoice.getId();
+        CustomerId customerId = invoice.getCustomerId();
+        String idempotencyKey = NotificationIdempotencyKeys.build(eventType, invoiceId, channel, qualifier);
+
+        Optional<Notification> existing = notificationRepository.findByIdempotencyKey(tenantId, idempotencyKey);
+        if (existing.isPresent()) {
+            Notification prev = existing.get();
+            if (prev.getStatus().isTerminalSuccess()
+                    || prev.getStatus() == NotificationStatus.PENDING
+                    || prev.getStatus() == NotificationStatus.QUEUED
+                    || prev.getStatus() == NotificationStatus.SENDING
+                    || prev.getStatus() == NotificationStatus.FAILED) {
+                return prev;
+            }
+            if (prev.getStatus().isRecoverableSkip()) {
+                notificationRepository.delete(tenantId, prev.getId());
+            } else {
+                return prev;
+            }
+        }
+
         if (!globalEnabled) {
             return saveSkipped(tenantId, customerId, invoiceId, eventType, channel, idempotencyKey,
                     NotificationSkipReason.GLOBAL_DISABLED);
@@ -175,7 +288,6 @@ public class NotificationEnqueueService {
                     NotificationSkipReason.POLICY_DISABLED);
         }
 
-        // force only skips event auto-flags (issue/reminder/dunning toggles)
         if (respectAutoPolicy && !force && !policy.isEventEnabled(eventType)) {
             return saveSkipped(tenantId, customerId, invoiceId, eventType, channel, idempotencyKey,
                     NotificationSkipReason.EVENT_DISABLED);
@@ -191,7 +303,6 @@ public class NotificationEnqueueService {
                     NotificationSkipReason.INVALID_STATUS);
         }
 
-        // Preferences / opt-out — always honored (including force)
         if (customerId != null) {
             Optional<NotificationPreference> pref =
                     preferenceRepository.findByCustomerAndChannel(tenantId, customerId, channel);
@@ -230,9 +341,28 @@ public class NotificationEnqueueService {
         Map<String, String> vars = buildVars(invoice, customer, extraVars);
         String subject = NotificationTemplateRenderer.render(template.getSubject(), vars);
         String body = NotificationTemplateRenderer.render(template.getBody(), vars);
+        if (channel == NotificationChannel.EMAIL && customerId != null) {
+            body = appendUnsubscribeFooter(tenantId, customerId, channel, body);
+        }
+
+        String metadata = null;
+        if (channel == NotificationChannel.EMAIL
+                && eventType == NotificationEventType.INVOICE_ISSUED
+                && policy.isAttachPdfOnIssue()
+                && pdfDocumentService != null) {
+            try {
+                byte[] pdf = pdfDocumentService.generateInvoicePdf(invoice, customer);
+                String filename = "invoice-" + invoice.getInvoiceNumber() + ".pdf";
+                metadata = "{\"attachments\":[{\"filename\":\"" + escapeJson(filename) + "\","
+                        + "\"contentType\":\"application/pdf\","
+                        + "\"base64\":\"" + Base64.getEncoder().encodeToString(pdf) + "\"}]}";
+            } catch (Exception ignored) {
+                // best effort
+            }
+        }
 
         Notification n = Notification.enqueue(tenantId, customerId, invoiceId, eventType, channel,
-                idempotencyKey, destination, subject, body, template.getId(), null, maxAttempts);
+                idempotencyKey, destination, subject, body, template.getId(), metadata, maxAttempts);
         try {
             notificationRepository.save(n);
             return n;
@@ -243,6 +373,51 @@ public class NotificationEnqueueService {
             }
             throw e;
         }
+    }
+
+    private String appendUnsubscribeFooter(TenantId tenantId, CustomerId customerId,
+                                           NotificationChannel channel, String body) {
+        if (unsubscribeTokenService == null || publicBaseUrl == null || publicBaseUrl.isBlank()
+                || "none".equalsIgnoreCase(publicBaseUrl.trim())) {
+            return body;
+        }
+        try {
+            String token = unsubscribeTokenService.generate(tenantId, customerId, channel);
+            String base = publicBaseUrl.endsWith("/")
+                    ? publicBaseUrl.substring(0, publicBaseUrl.length() - 1)
+                    : publicBaseUrl.trim();
+            String url = base + "/api/v1/public/unsubscribe?token=" + token;
+            String footer = "\n\n---\nTo unsubscribe from these emails, visit: " + url
+                    + "\nOr POST to the same URL.";
+            return (body != null ? body : "") + footer;
+        } catch (Exception e) {
+            return body;
+        }
+    }
+
+    private static String buildStatementSummary(StatementUseCase.CustomerStatement statement) {
+        if (statement.openItems() == null || statement.openItems().isEmpty()) {
+            return "(no open items)";
+        }
+        StringBuilder sb = new StringBuilder();
+        int n = 0;
+        for (StatementUseCase.OpenItem item : statement.openItems()) {
+            if (n >= 20) {
+                sb.append("... and ").append(statement.openItems().size() - n).append(" more\n");
+                break;
+            }
+            sb.append("- ").append(item.invoiceNumber())
+                    .append(" due ").append(item.dueDate())
+                    .append(": ").append(item.balanceDue()).append(' ').append(item.currency())
+                    .append('\n');
+            n++;
+        }
+        return sb.toString();
+    }
+
+    private static String escapeJson(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private Notification saveSkipped(TenantId tenantId, CustomerId customerId, InvoiceId invoiceId,
@@ -305,7 +480,7 @@ public class NotificationEnqueueService {
 
     public static String qualifierFor(NotificationEventType eventType, LocalDate dueDate, Integer dunningLevel) {
         return switch (eventType) {
-            case INVOICE_ISSUED -> null;
+            case INVOICE_ISSUED, STATEMENT_SEND -> null;
             case PAYMENT_REMINDER -> dueDate != null ? "due:" + dueDate : null;
             case DUNNING_NOTICE -> dunningLevel != null ? "L" + dunningLevel : null;
         };

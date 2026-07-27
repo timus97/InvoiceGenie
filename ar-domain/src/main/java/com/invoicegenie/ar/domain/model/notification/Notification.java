@@ -125,6 +125,29 @@ public final class Notification {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * Defer dispatch without consuming an attempt (e.g. quiet hours).
+     * Restores QUEUED status after a claim that had set SENDING.
+     */
+    public void deferUntil(Instant nextAt) {
+        this.status = NotificationStatus.QUEUED;
+        this.nextAttemptAt = Objects.requireNonNull(nextAt);
+        this.updatedAt = Instant.now();
+    }
+
+    public void appendBody(String suffix) {
+        if (suffix == null || suffix.isEmpty()) {
+            return;
+        }
+        this.body = (this.body != null ? this.body : "") + suffix;
+        this.updatedAt = Instant.now();
+    }
+
+    public void setMetadataJson(String metadataJson) {
+        this.metadataJson = metadataJson;
+        this.updatedAt = Instant.now();
+    }
+
     private static String truncate(String s) {
         if (s == null) return null;
         return s.length() <= 2000 ? s : s.substring(0, 2000);

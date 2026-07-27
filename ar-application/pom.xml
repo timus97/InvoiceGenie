@@ -10,7 +10,7 @@
     </parent>
     <artifactId>ar-application</artifactId>
     <name>AR Application</name>
-    <description>Use cases and ports — no infrastructure</description>
+    <description>Use cases and ports - no infrastructure</description>
     <dependencies>
         <dependency>
             <groupId>com.invoicegenie</groupId>
@@ -32,5 +32,11 @@
             <artifactId>mockito-junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
+            <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>2.0.31</version>
+        </dependency>
     </dependencies>
 </project>
+

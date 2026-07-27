@@ -9,11 +9,12 @@ import com.invoicegenie.ar.domain.model.notification.NotificationEventType;
 import com.invoicegenie.shared.domain.TenantId;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Inbound port: customer notifications history + manual send.
+ * Inbound port: customer notifications history + manual send + preview + metrics.
  */
 public interface NotificationUseCase {
 
@@ -33,6 +34,27 @@ public interface NotificationUseCase {
                                       List<NotificationChannel> channels,
                                       boolean force);
 
+    /**
+     * Render template subject/body without enqueueing (PP-014).
+     */
+    PreviewResult preview(TenantId tenantId, NotificationEventType eventType,
+                          NotificationChannel channel, Map<String, String> variables);
+
+    /**
+     * Counts by status/channel/eventType over the last {@code days} (PP-015).
+     */
+    MetricsResult metrics(TenantId tenantId, int days);
+
     record SendCommand(InvoiceId invoiceId, NotificationEventType eventType,
                        List<NotificationChannel> channels, boolean force) {}
+
+    record PreviewResult(String eventType, String channel, String subject, String body, String templateId) {}
+
+    record MetricsResult(int days, long total, List<MetricBucket> byStatus,
+                         List<MetricBucket> byChannel, List<MetricBucket> byEventType,
+                         List<MetricDetail> details) {}
+
+    record MetricBucket(String key, long count) {}
+
+    record MetricDetail(String status, String channel, String eventType, long count) {}
 }

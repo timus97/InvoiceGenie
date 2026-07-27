@@ -126,6 +126,11 @@ invoicegenie:
     log-payloads: ${INVOICEGENIE_NOTIFICATIONS_LOG_PAYLOADS:false}
     # Manual send rate limit per tenant (QA-NOTIFY-014)
     send-rate-per-minute: ${INVOICEGENIE_NOTIFICATIONS_SEND_RATE_PER_MINUTE:30}
+    # Public base URL for unsubscribe links in email footers (PP-011)
+    public-base-url: ${INVOICEGENIE_NOTIFICATIONS_PUBLIC_BASE_URL:http://localhost:8080}
+    unsubscribe:
+      # HMAC secret for unsubscribe tokens; falls back to jwt.secret when "none"
+      secret: ${INVOICEGENIE_NOTIFICATIONS_UNSUBSCRIBE_SECRET:none}
     email:
       enabled: ${INVOICEGENIE_NOTIFICATIONS_EMAIL_ENABLED:true}
       provider: ${INVOICEGENIE_NOTIFICATIONS_EMAIL_PROVIDER:logging}

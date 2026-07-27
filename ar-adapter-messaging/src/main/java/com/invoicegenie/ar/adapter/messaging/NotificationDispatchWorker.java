@@ -8,6 +8,8 @@ import com.invoicegenie.ar.domain.model.notification.Notification;
 import com.invoicegenie.ar.domain.model.notification.NotificationAttempt;
 import com.invoicegenie.ar.domain.model.notification.NotificationAttemptRepository;
 import com.invoicegenie.ar.domain.model.notification.NotificationChannel;
+import com.invoicegenie.ar.domain.model.notification.NotificationPolicy;
+import com.invoicegenie.ar.domain.model.notification.NotificationPolicyRepository;
 import com.invoicegenie.ar.domain.model.notification.NotificationRepository;
 import com.invoicegenie.ar.domain.model.notification.NotificationStatus;
 import com.invoicegenie.shared.tenant.TenantContext;
@@ -20,12 +22,17 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Polls due notifications and dispatches via Email/WhatsApp senders with exponential retry.
  * Uses claimDue (FOR UPDATE SKIP LOCKED) for multi-instance safety (QA-NOTIFY-004/012).
  * PP-004: optional EMAIL fallback when WhatsApp fails permanently.
+ * Defers sends during tenant quiet hours (PP-010).
  */
 @ApplicationScoped
 public class NotificationDispatchWorker {
@@ -33,11 +40,18 @@ public class NotificationDispatchWorker {
     private static final Logger LOG = Logger.getLogger(NotificationDispatchWorker.class);
     static final String FALLBACK_QUALIFIER = "fallback:wa";
 
+    private static final Pattern ATTACH_PATTERN = Pattern.compile(
+            "\"filename\"\\s*:\\s*\"([^\"]+)\".*?\"contentType\"\\s*:\\s*\"([^\"]+)\".*?\"base64\"\\s*:\\s*\"([^\"]+)\"",
+            Pattern.DOTALL);
+
     @Inject
     NotificationRepository notificationRepository;
 
     @Inject
     NotificationAttemptRepository attemptRepository;
+
+    @Inject
+    Instance<NotificationPolicyRepository> policyRepository;
 
     @Inject
     Instance<EmailSender> emailSender;
@@ -121,10 +135,22 @@ public class NotificationDispatchWorker {
         }
         try {
             TenantContext.setCurrentTenant(n.getTenantId());
-            // Already claimed as SENDING; refresh domain state if needed
             if (n.getStatus() != NotificationStatus.SENDING) {
                 n.markSending();
                 saveTx(n);
+            }
+
+            // PP-010: quiet hours — defer without consuming attempt
+            if (policyRepository.isResolvable()) {
+                NotificationPolicy policy = policyRepository.get().findByTenant(n.getTenantId())
+                        .orElse(null);
+                if (policy != null && policy.isInQuietHours(Instant.now())) {
+                    Instant resume = policy.nextQuietHoursEnd(Instant.now());
+                    n.deferUntil(resume);
+                    saveTx(n);
+                    LOG.infof("Notification deferred for quiet hours id=%s until=%s", n.getId(), resume);
+                    return;
+                }
             }
 
             int attempt = n.getAttemptCount() + 1;
@@ -146,7 +172,10 @@ public class NotificationDispatchWorker {
             if (n.getChannel() == NotificationChannel.EMAIL) {
                 EmailSender sender = resolveEmailSender();
                 providerName = emailProvider;
-                EmailSender.SendResult r = sender.send(n);
+                List<EmailSender.Attachment> attachments = parseAttachments(n.getMetadataJson());
+                EmailSender.SendResult r = attachments.isEmpty()
+                        ? sender.send(n)
+                        : sender.send(n, attachments);
                 success = r.success();
                 providerMessageId = r.providerMessageId();
                 error = r.errorMessage();
@@ -182,6 +211,25 @@ public class NotificationDispatchWorker {
         } finally {
             TenantContext.clear();
         }
+    }
+
+    static List<EmailSender.Attachment> parseAttachments(String metadataJson) {
+        List<EmailSender.Attachment> list = new ArrayList<>();
+        if (metadataJson == null || metadataJson.isBlank()) {
+            return list;
+        }
+        Matcher m = ATTACH_PATTERN.matcher(metadataJson);
+        while (m.find()) {
+            try {
+                String filename = m.group(1);
+                String contentType = m.group(2);
+                byte[] content = Base64.getDecoder().decode(m.group(3));
+                list.add(new EmailSender.Attachment(filename, contentType, content));
+            } catch (Exception ignored) {
+                // skip malformed attachment
+            }
+        }
+        return list;
     }
 
     @Transactional

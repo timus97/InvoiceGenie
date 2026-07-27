@@ -34,6 +34,10 @@ public class NotificationPolicyRepositoryAdapter implements NotificationPolicyRe
         e.setChannelsInvoiceIssued(policy.getChannelsInvoiceIssued());
         e.setChannelsPaymentReminder(policy.getChannelsPaymentReminder());
         e.setChannelsDunningNotice(policy.getChannelsDunningNotice());
+        e.setQuietHoursStart(policy.getQuietHoursStart());
+        e.setQuietHoursEnd(policy.getQuietHoursEnd());
+        e.setTimezone(policy.getTimezone() != null ? policy.getTimezone() : "UTC");
+        e.setAttachPdfOnIssue(policy.isAttachPdfOnIssue());
         e.setCreatedAt(policy.getCreatedAt());
         e.setUpdatedAt(policy.getUpdatedAt());
         em.merge(e);
@@ -64,6 +68,10 @@ public class NotificationPolicyRepositoryAdapter implements NotificationPolicyRe
                 e.getChannelsInvoiceIssued(),
                 e.getChannelsPaymentReminder(),
                 e.getChannelsDunningNotice(),
+                e.getQuietHoursStart(),
+                e.getQuietHoursEnd(),
+                e.getTimezone(),
+                e.isAttachPdfOnIssue(),
                 e.getCreatedAt(),
                 e.getUpdatedAt()
         );

@@ -185,6 +185,12 @@ public class AuthFilter implements ContainerRequestFilter {
         if (path.startsWith("/api/v1/notifications/provider-webhooks")) {
             return true;
         }
+        // PP-011: public unsubscribe (tokenized, rate-limited)
+        if (path.equals("/api/v1/public/unsubscribe") || path.startsWith("/api/v1/public/unsubscribe/")
+                || path.equals("/api/v1/notifications/unsubscribe")
+                || path.startsWith("/api/v1/notifications/unsubscribe/")) {
+            return true;
+        }
         if (allowOpenApi && (path.startsWith("/q/swagger")
                 || path.startsWith("/q/openapi")
                 || path.startsWith("/q/dev"))) {

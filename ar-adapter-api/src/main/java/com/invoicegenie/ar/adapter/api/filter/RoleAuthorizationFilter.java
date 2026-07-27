@@ -99,8 +99,9 @@ public class RoleAuthorizationFilter implements ContainerRequestFilter {
         String method = ctx.getMethod() != null ? ctx.getMethod().toUpperCase(Locale.ROOT) : "GET";
         String path = normalize(ctx.getUriInfo() != null ? ctx.getUriInfo().getPath() : "");
 
-        if (path.startsWith("/api/v1/auth") || path.startsWith("/api/v1/users")) {
-            // /users uses @RequireRoles(TENANT_ADMIN); auth paths are public or any authenticated
+        if (path.startsWith("/api/v1/auth") || path.startsWith("/api/v1/users")
+                || path.startsWith("/api/v1/notifications/provider-webhooks")) {
+            // /users uses @RequireRoles(TENANT_ADMIN); auth + provider webhooks are public/self-secured
             if (path.startsWith("/api/v1/users")) {
                 return Set.of(); // class-level @RequireRoles handles it
             }

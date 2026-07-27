@@ -49,6 +49,7 @@ class NotificationEnqueueServiceTest {
     @Mock NotificationTemplateRepository templateRepository;
     @Mock InvoiceRepository invoiceRepository;
     @Mock CustomerRepository customerRepository;
+    @Mock NotificationSuppressionService suppressionService;
 
     NotificationEnqueueService service;
     TenantId tenantId;
@@ -60,7 +61,7 @@ class NotificationEnqueueServiceTest {
     @BeforeEach
     void setUp() {
         service = new NotificationEnqueueService(notificationRepository, policyRepository, preferenceRepository,
-                templateRepository, invoiceRepository, customerRepository, true, 5);
+                templateRepository, invoiceRepository, customerRepository, suppressionService, true, 5);
         tenantId = TenantId.of(UUID.fromString("00000000-0000-0000-0000-000000000001"));
         customerId = CustomerId.of(UUID.fromString("22222222-2222-2222-2222-222222222222"));
         invoiceId = InvoiceId.of(UUID.fromString("33333333-3333-3333-3333-333333333333"));
@@ -209,5 +210,27 @@ class NotificationEnqueueServiceTest {
                 service.enqueueForInvoice(tenantId, invoiceId, NotificationEventType.INVOICE_ISSUED,
                         List.of(NotificationChannel.EMAIL), null, null, false, true));
         assertEquals("INVOICE_NOT_FOUND", ex.getMessage());
+    }
+
+    @Test
+    @DisplayName("skips when destination is suppressed (PP-003)")
+    void skipSuppressed() {
+        when(invoiceRepository.findByTenantAndId(tenantId, invoiceId)).thenReturn(Optional.of(invoice));
+        when(customerRepository.findByTenantAndId(tenantId, customerId)).thenReturn(Optional.of(customer));
+        when(policyRepository.findByTenant(tenantId)).thenReturn(Optional.of(NotificationPolicy.defaults(tenantId)));
+        when(notificationRepository.findByIdempotencyKey(eq(tenantId), anyString())).thenReturn(Optional.empty());
+        when(preferenceRepository.findByCustomerAndChannel(tenantId, customerId, NotificationChannel.EMAIL))
+                .thenReturn(Optional.empty());
+        when(suppressionService.isSuppressed(eq(tenantId), eq(NotificationChannel.EMAIL), anyString()))
+                .thenReturn(true);
+
+        List<Notification> result = service.enqueueForInvoice(tenantId, invoiceId,
+                NotificationEventType.INVOICE_ISSUED, List.of(NotificationChannel.EMAIL),
+                null, null, false, true);
+
+        assertEquals(1, result.size());
+        assertEquals(NotificationStatus.SKIPPED, result.get(0).getStatus());
+        assertEquals(NotificationSkipReason.SUPPRESSED, result.get(0).getSkipReason());
+        verify(templateRepository, never()).findActive(any(), any(), any(), any());
     }
 }

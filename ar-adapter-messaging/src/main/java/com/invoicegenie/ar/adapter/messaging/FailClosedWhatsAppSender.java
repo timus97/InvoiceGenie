@@ -7,7 +7,7 @@ import jakarta.enterprise.inject.Typed;
 import org.jboss.logging.Logger;
 
 /**
- * Used when whatsapp.provider=meta until Meta Cloud API client is implemented.
+ * Last-resort fail-closed sender when provider=meta but MetaWhatsAppSender is unavailable.
  */
 @ApplicationScoped
 @Typed(FailClosedWhatsAppSender.class)
@@ -17,9 +17,9 @@ public class FailClosedWhatsAppSender implements WhatsAppSender {
 
     @Override
     public SendResult send(Notification notification) {
-        LOG.warnf("[WHATSAPP-META] client not implemented — failing closed id=%s", notification.getId());
+        LOG.warnf("[WHATSAPP-META] fail-closed fallback — Meta client unavailable id=%s", notification.getId());
         return SendResult.fail(
-                "WhatsApp Meta provider not implemented; set whatsapp.provider=logging for demo",
+                "WhatsApp Meta provider unavailable; set whatsapp.provider=logging for demo",
                 null);
     }
 }

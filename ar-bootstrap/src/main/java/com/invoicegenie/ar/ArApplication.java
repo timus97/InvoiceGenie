@@ -311,6 +311,13 @@ public class ArApplication {
 
     @Produces
     @ApplicationScoped
+    public com.invoicegenie.ar.application.service.NotificationSuppressionService notificationSuppressionService(
+            com.invoicegenie.ar.domain.model.notification.NotificationSuppressionRepository suppressionRepository) {
+        return new com.invoicegenie.ar.application.service.NotificationSuppressionService(suppressionRepository);
+    }
+
+    @Produces
+    @ApplicationScoped
     public NotificationEnqueueService notificationEnqueueService(
             NotificationRepository notificationRepository,
             NotificationPolicyRepository policyRepository,
@@ -318,12 +325,13 @@ public class ArApplication {
             NotificationTemplateRepository templateRepository,
             InvoiceRepository invoiceRepository,
             CustomerRepository customerRepository,
+            com.invoicegenie.ar.application.service.NotificationSuppressionService suppressionService,
             @org.eclipse.microprofile.config.inject.ConfigProperty(
                     name = "invoicegenie.notifications.enabled", defaultValue = "true") boolean enabled,
             @org.eclipse.microprofile.config.inject.ConfigProperty(
                     name = "invoicegenie.notifications.max-attempts", defaultValue = "5") int maxAttempts) {
         return new NotificationEnqueueService(notificationRepository, policyRepository, preferenceRepository,
-                templateRepository, invoiceRepository, customerRepository, enabled, maxAttempts);
+                templateRepository, invoiceRepository, customerRepository, suppressionService, enabled, maxAttempts);
     }
 
     @Produces

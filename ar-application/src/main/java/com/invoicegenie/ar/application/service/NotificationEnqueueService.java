@@ -49,6 +49,7 @@ public class NotificationEnqueueService {
     private final NotificationTemplateRepository templateRepository;
     private final InvoiceRepository invoiceRepository;
     private final CustomerRepository customerRepository;
+    private final NotificationSuppressionService suppressionService;
     private final boolean globalEnabled;
     private final int maxAttempts;
 
@@ -60,12 +61,26 @@ public class NotificationEnqueueService {
                                       CustomerRepository customerRepository,
                                       boolean globalEnabled,
                                       int maxAttempts) {
+        this(notificationRepository, policyRepository, preferenceRepository, templateRepository,
+                invoiceRepository, customerRepository, null, globalEnabled, maxAttempts);
+    }
+
+    public NotificationEnqueueService(NotificationRepository notificationRepository,
+                                      NotificationPolicyRepository policyRepository,
+                                      NotificationPreferenceRepository preferenceRepository,
+                                      NotificationTemplateRepository templateRepository,
+                                      InvoiceRepository invoiceRepository,
+                                      CustomerRepository customerRepository,
+                                      NotificationSuppressionService suppressionService,
+                                      boolean globalEnabled,
+                                      int maxAttempts) {
         this.notificationRepository = notificationRepository;
         this.policyRepository = policyRepository;
         this.preferenceRepository = preferenceRepository;
         this.templateRepository = templateRepository;
         this.invoiceRepository = invoiceRepository;
         this.customerRepository = customerRepository;
+        this.suppressionService = suppressionService;
         this.globalEnabled = globalEnabled;
         this.maxAttempts = maxAttempts > 0 ? maxAttempts : 5;
     }
@@ -196,6 +211,12 @@ public class NotificationEnqueueService {
         } catch (IllegalArgumentException ex) {
             return saveSkipped(tenantId, customerId, invoiceId, eventType, channel, idempotencyKey,
                     NotificationSkipReason.NO_DESTINATION);
+        }
+
+        // Bounce / complaint suppression (PP-003)
+        if (suppressionService != null && suppressionService.isSuppressed(tenantId, channel, destination)) {
+            return saveSkipped(tenantId, customerId, invoiceId, eventType, channel, idempotencyKey,
+                    NotificationSkipReason.SUPPRESSED);
         }
 
         Optional<NotificationTemplate> templateOpt =

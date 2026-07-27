@@ -3,6 +3,7 @@ package com.invoicegenie.ar.adapter.messaging;
 import com.invoicegenie.ar.application.port.outbound.EmailSender;
 import com.invoicegenie.ar.application.port.outbound.WhatsAppSender;
 import com.invoicegenie.ar.application.service.NotificationDestinationValidator;
+import com.invoicegenie.ar.application.service.NotificationEnqueueService;
 import com.invoicegenie.ar.domain.model.notification.Notification;
 import com.invoicegenie.ar.domain.model.notification.NotificationAttempt;
 import com.invoicegenie.ar.domain.model.notification.NotificationAttemptRepository;
@@ -24,11 +25,13 @@ import java.util.List;
 /**
  * Polls due notifications and dispatches via Email/WhatsApp senders with exponential retry.
  * Uses claimDue (FOR UPDATE SKIP LOCKED) for multi-instance safety (QA-NOTIFY-004/012).
+ * PP-004: optional EMAIL fallback when WhatsApp fails permanently.
  */
 @ApplicationScoped
 public class NotificationDispatchWorker {
 
     private static final Logger LOG = Logger.getLogger(NotificationDispatchWorker.class);
+    static final String FALLBACK_QUALIFIER = "fallback:wa";
 
     @Inject
     NotificationRepository notificationRepository;
@@ -52,7 +55,13 @@ public class NotificationDispatchWorker {
     Instance<LoggingWhatsAppSender> loggingWhatsAppSender;
 
     @Inject
+    Instance<MetaWhatsAppSender> metaWhatsAppSender;
+
+    @Inject
     Instance<FailClosedWhatsAppSender> failClosedWhatsAppSender;
+
+    @Inject
+    Instance<NotificationEnqueueService> enqueueService;
 
     @ConfigProperty(name = "invoicegenie.notifications.enabled", defaultValue = "true")
     boolean enabled;
@@ -74,6 +83,9 @@ public class NotificationDispatchWorker {
 
     @ConfigProperty(name = "invoicegenie.notifications.log-payloads", defaultValue = "false")
     boolean logPayloads;
+
+    @ConfigProperty(name = "invoicegenie.notifications.channel-fallback-enabled", defaultValue = "false")
+    boolean channelFallbackEnabled;
 
     @Scheduled(every = "${invoicegenie.notifications.dispatch.interval:15s}", delayed = "25s")
     public void processDue() {
@@ -189,6 +201,7 @@ public class NotificationDispatchWorker {
             saveAttemptTx(NotificationAttempt.failure(
                     n.getTenantId(), n.getId(), attempt, provider, http, error));
             LOG.warnf("Notification FAILED after %d attempts id=%s: %s", attempt, n.getId(), error);
+            maybeEnqueueChannelFallback(n);
             return;
         }
         long backoffSec = (long) Math.min(3600, Math.pow(2, attempt) * 5L);
@@ -198,6 +211,41 @@ public class NotificationDispatchWorker {
         saveAttemptTx(NotificationAttempt.failure(
                 n.getTenantId(), n.getId(), attempt, provider, http, error));
         LOG.infof("Notification RETRY attempt=%d next=%s id=%s", attempt, next, n.getId());
+    }
+
+    /**
+     * PP-004: when WhatsApp fails permanently and fallback is enabled, enqueue EMAIL once.
+     */
+    private void maybeEnqueueChannelFallback(Notification n) {
+        if (!channelFallbackEnabled) {
+            return;
+        }
+        if (n.getChannel() != NotificationChannel.WHATSAPP) {
+            return;
+        }
+        if (n.getInvoiceId() == null) {
+            return;
+        }
+        if (enqueueService == null || !enqueueService.isResolvable()) {
+            LOG.warnf("Channel fallback skipped: NotificationEnqueueService unavailable id=%s", n.getId());
+            return;
+        }
+        try {
+            List<Notification> fallback = enqueueService.get().enqueueForInvoice(
+                    n.getTenantId(),
+                    n.getInvoiceId(),
+                    n.getEventType(),
+                    List.of(NotificationChannel.EMAIL),
+                    FALLBACK_QUALIFIER,
+                    null,
+                    true,   // force: bypass event auto-policy for fallback
+                    false); // already forced path
+            LOG.infof("Channel fallback EMAIL enqueued for failed WhatsApp id=%s fallback=%s",
+                    n.getId(),
+                    fallback.isEmpty() ? "none" : fallback.get(0).getId() + "/" + fallback.get(0).getStatus());
+        } catch (Exception e) {
+            LOG.warnf(e, "Channel fallback enqueue failed for notification %s", n.getId());
+        }
     }
 
     private EmailSender resolveEmailSender() {
@@ -216,12 +264,15 @@ public class NotificationDispatchWorker {
 
     private WhatsAppSender resolveWhatsAppSender() {
         if ("meta".equalsIgnoreCase(whatsappProvider)) {
-            // Fail closed until Meta Cloud client is implemented (QA-NOTIFY-013)
+            if (metaWhatsAppSender.isResolvable()) {
+                return metaWhatsAppSender.get();
+            }
+            // Fail closed if Meta bean missing
             if (failClosedWhatsAppSender.isResolvable()) {
                 return failClosedWhatsAppSender.get();
             }
             return notification -> WhatsAppSender.SendResult.fail(
-                    "WhatsApp provider=meta is not implemented; use logging for demo", null);
+                    "WhatsApp provider=meta selected but MetaWhatsAppSender unavailable", null);
         }
         if (loggingWhatsAppSender.isResolvable()) {
             return loggingWhatsAppSender.get();

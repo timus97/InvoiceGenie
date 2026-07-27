@@ -181,6 +181,10 @@ public class AuthFilter implements ContainerRequestFilter {
                 || path.equals("/api/v1/auth/refresh") || path.startsWith("/api/v1/auth/refresh/")) {
             return true;
         }
+        // Provider bounce/complaint webhooks — secured by X-Provider-Webhook-Secret (PP-003)
+        if (path.startsWith("/api/v1/notifications/provider-webhooks")) {
+            return true;
+        }
         if (allowOpenApi && (path.startsWith("/q/swagger")
                 || path.startsWith("/q/openapi")
                 || path.startsWith("/q/dev"))) {

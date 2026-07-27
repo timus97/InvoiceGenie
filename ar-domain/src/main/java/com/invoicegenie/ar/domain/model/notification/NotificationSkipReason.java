@@ -13,5 +13,7 @@ public enum NotificationSkipReason {
     DUPLICATE,
     EVENT_DISABLED,
     /** Invoice not in a status that allows customer messaging (e.g. DRAFT). */
-    INVALID_STATUS
+    INVALID_STATUS,
+    /** Destination suppressed after hard bounce / complaint (PP-003). */
+    SUPPRESSED
 }

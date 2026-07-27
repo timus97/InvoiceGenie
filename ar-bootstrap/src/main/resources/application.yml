@@ -139,8 +139,13 @@ invoicegenie:
       batch: ${INVOICEGENIE_NOTIFICATIONS_DISPATCH_BATCH:50}
     reminder:
       job-interval: ${INVOICEGENIE_NOTIFICATIONS_REMINDER_JOB_INTERVAL:1h}
+    # PP-004: enqueue EMAIL once when WhatsApp fails permanently
+    channel-fallback-enabled: ${INVOICEGENIE_NOTIFICATIONS_CHANNEL_FALLBACK_ENABLED:false}
+    # PP-003: shared secret for provider bounce/complaint webhooks
+    provider-webhook-secret: ${INVOICEGENIE_NOTIFICATIONS_PROVIDER_WEBHOOK_SECRET:none}
     smtp:
       # Use "none" not empty — SmallRye rejects empty String defaults
+      # Set email.provider=smtp and real host/credentials for production (PP-001)
       host: ${INVOICEGENIE_SMTP_HOST:none}
       port: ${INVOICEGENIE_SMTP_PORT:587}
       username: ${INVOICEGENIE_SMTP_USERNAME:none}
@@ -148,9 +153,11 @@ invoicegenie:
       from: ${INVOICEGENIE_SMTP_FROM:noreply@invoicegenie.local}
       starttls: ${INVOICEGENIE_SMTP_STARTTLS:true}
     whatsapp-meta:
+      # Set whatsapp.provider=meta and real token/phone-number-id (PP-002)
       access-token: ${INVOICEGENIE_WHATSAPP_ACCESS_TOKEN:none}
       phone-number-id: ${INVOICEGENIE_WHATSAPP_PHONE_NUMBER_ID:none}
       api-version: ${INVOICEGENIE_WHATSAPP_API_VERSION:v18.0}
+      language-code: ${INVOICEGENIE_WHATSAPP_LANGUAGE_CODE:en}
 
 # Local / developer profile — PostgreSQL only (Docker: docker compose up -d postgres).
 # Preferred: -Dquarkus.profile=dev

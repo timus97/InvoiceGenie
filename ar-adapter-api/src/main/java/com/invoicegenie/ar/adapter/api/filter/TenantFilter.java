@@ -121,7 +121,9 @@ public class TenantFilter implements ContainerRequestFilter {
 
     private static boolean isAuthPublicPath(String path) {
         return path.equals("/api/v1/auth/login") || path.startsWith("/api/v1/auth/login/")
-                || path.equals("/api/v1/auth/refresh") || path.startsWith("/api/v1/auth/refresh/");
+                || path.equals("/api/v1/auth/refresh") || path.startsWith("/api/v1/auth/refresh/")
+                // Provider webhooks resolve tenant from body/header themselves (PP-003)
+                || path.startsWith("/api/v1/notifications/provider-webhooks");
     }
 
     private static String normalizePath(String path) {

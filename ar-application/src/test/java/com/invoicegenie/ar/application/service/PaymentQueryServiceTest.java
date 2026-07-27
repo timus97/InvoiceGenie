@@ -76,13 +76,15 @@ class PaymentQueryServiceTest {
         @DisplayName("lists by tenant when no customer filter")
         void byTenant() {
             Payment p = payment("PAY-T", LocalDate.now(), Money.of("100.00", "USD"));
-            when(paymentRepository.findByTenant(eq(tenantId), eq(50))).thenReturn(List.of(p));
+            when(paymentRepository.findByTenant(eq(tenantId), eq(50), isNull()))
+                    .thenReturn(new PaymentRepository.Page(List.of(p), Optional.empty()));
 
             var result = service.list(tenantId, new PaymentQueryUseCase.PaymentListFilter(
                     null, null, null, null, false, 50));
 
             assertEquals(1, result.count());
-            verify(paymentRepository).findByTenant(tenantId, 50);
+            assertNull(result.nextCursor());
+            verify(paymentRepository).findByTenant(tenantId, 50, null);
         }
 
         @Test
@@ -154,15 +156,32 @@ class PaymentQueryServiceTest {
         @Test
         @DisplayName("limit defaults and caps")
         void limitBounds() {
-            when(paymentRepository.findByTenant(eq(tenantId), eq(50))).thenReturn(List.of());
+            when(paymentRepository.findByTenant(eq(tenantId), eq(50), isNull()))
+                    .thenReturn(new PaymentRepository.Page(List.of(), Optional.empty()));
             service.list(tenantId, new PaymentQueryUseCase.PaymentListFilter(
                     null, null, null, null, false, 0));
-            verify(paymentRepository).findByTenant(tenantId, 50);
+            verify(paymentRepository).findByTenant(tenantId, 50, null);
 
-            when(paymentRepository.findByTenant(eq(tenantId), eq(200))).thenReturn(List.of());
+            when(paymentRepository.findByTenant(eq(tenantId), eq(200), isNull()))
+                    .thenReturn(new PaymentRepository.Page(List.of(), Optional.empty()));
             service.list(tenantId, new PaymentQueryUseCase.PaymentListFilter(
                     null, null, null, null, false, 500));
-            verify(paymentRepository).findByTenant(tenantId, 200);
+            verify(paymentRepository).findByTenant(tenantId, 200, null);
+        }
+
+        @Test
+        @DisplayName("returns nextCursor from repository page")
+        void nextCursor() {
+            Payment p = payment("PAY-C1", LocalDate.now(), Money.of("10.00", "USD"));
+            PaymentRepository.PageCursor next = new PaymentRepository.PageCursor(p.getCreatedAt(), p.getId());
+            when(paymentRepository.findByTenant(eq(tenantId), eq(1), isNull()))
+                    .thenReturn(new PaymentRepository.Page(List.of(p), Optional.of(next)));
+
+            var result = service.list(tenantId, new PaymentQueryUseCase.PaymentListFilter(
+                    null, null, null, null, false, 1));
+
+            assertNotNull(result.nextCursor());
+            assertFalse(result.nextCursor().isBlank());
         }
     }
 }

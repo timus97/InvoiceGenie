@@ -21,7 +21,7 @@
 | DEF-BE-003 | Major | Build / DX | Concurrent WIP incomplete `target/classes` breaks `quarkus:dev` | **OPEN** (PROCESS) | Not re-triggered this pass; multi-agent risk remains | STORY-QA-001 |
 | DEF-BE-004 | Major | Tests | Application tests fail to load after constructor expansion | **CLOSED** | `mvn test` **758** tests, 0 fail, 0 error | STORY-001, STORY-002 |
 | DEF-BE-005 | Minor | Invoices | Missing `dueDate` → 400 before credit/block semantics | **OPEN** | Still requires dueDate for STORY-001 API probes | STORY-001, STORY-QA-005 |
-| DEF-BE-006 | Minor | Config | Unrecognized `%dev` keys `quarkus.datasource.jdbc.username/password` | **OPEN** | WARN still observed in test/dev logs | STORY-022 |
+| DEF-BE-006 | Minor | Config | Unrecognized `%dev` keys `quarkus.datasource.jdbc.username/password` | **FIXED** | `%dev` uses `quarkus.datasource.username/password` (not under `jdbc.*`) | STORY-022 / PP-021 |
 | DEF-BE-007 | Minor | Ops | Packaged jar cannot switch to H2 via runtime profile alone | **OPEN** (documented) | Documented in ONBOARDING §8 + `docs/deploy/PROD_EDGE_TLS.md`; smoke must use `quarkus:dev` | STORY-017 |
 | DEF-FE-001 | Major | Payments UI | `Button` had no `size` prop → tsc fail | **CLOSED** | `Button` now has `size?: sm|md|lg`; `npx tsc --noEmit` exit 0 | STORY-006, STORY-QA-003 |
 | DEF-FE-002 | Minor | Web DX | Settings/rewrites default `BACKEND_URL` → :8080 | **OPEN** | Port 8080 occupied by Apache this session; used 8082 for API | STORY-021, STORY-QA-004 |

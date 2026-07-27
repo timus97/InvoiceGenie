@@ -1,4 +1,4 @@
-﻿# InvoiceGenie AR — AWS Hosting Design
+# InvoiceGenie AR — AWS Hosting Design
 
 > **Status:** Design complete (implementation not started)  
 > **Audience:** Engineering, product, ops, leadership  

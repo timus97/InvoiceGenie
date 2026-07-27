@@ -1,4 +1,4 @@
-﻿# AWS Deployment Checklist — InvoiceGenie AR
+# AWS Deployment Checklist — InvoiceGenie AR
 
 > First production (or staging-as-prod) deploy.  
 > Pair with [AWS_HOSTING_DESIGN.md](./AWS_HOSTING_DESIGN.md).  

@@ -54,13 +54,15 @@ public class NotificationResource {
 
     @GET
     @Path("/notifications")
-    @Operation(summary = "List recent notifications for tenant")
+    @Operation(summary = "List recent notifications for tenant (cursor pagination PP-023)")
     @RequireRoles({ArRoles.AR_CLERK, ArRoles.AR_CONTROLLER, ArRoles.AR_AUDITOR, ArRoles.TENANT_ADMIN})
     public Response list(@QueryParam("limit") @DefaultValue("100") int limit,
+                         @QueryParam("cursor") String cursor,
                          @QueryParam("status") String status,
                          @QueryParam("eventType") String eventType) {
         var tenantId = TenantContext.getCurrentTenant();
-        var stream = notificationUseCase.list(tenantId, limit).stream();
+        var page = notificationUseCase.list(tenantId, limit, cursor);
+        var stream = page.items().stream();
         if (status != null && !status.isBlank()) {
             String s = status.trim().toUpperCase();
             stream = stream.filter(n -> n.getStatus().name().equals(s));
@@ -69,7 +71,13 @@ public class NotificationResource {
             String e = eventType.trim().toUpperCase();
             stream = stream.filter(n -> n.getEventType().name().equals(e));
         }
-        return Response.ok(stream.map(this::toDto).collect(Collectors.toList())).build();
+        List<NotificationDto> items = stream.map(this::toDto).collect(Collectors.toList());
+        String next = page.nextCursor().orElse(null);
+        Response.ResponseBuilder rb = Response.ok(new NotificationPageDto(items, next, items.size()));
+        if (next != null && !next.isBlank()) {
+            rb.header("X-Next-Cursor", next);
+        }
+        return rb.build();
     }
 
     @GET
@@ -381,6 +389,7 @@ public class NotificationResource {
     }
 
     public record SendNotificationDto(String invoiceId, String eventType, List<String> channels, Boolean force) {}
+    public record NotificationPageDto(List<NotificationDto> items, String nextCursor, int count) {}
     public record NotificationDto(String id, String customerId, String invoiceId, String eventType, String channel,
                                   String status, String idempotencyKey, String destination, String subject,
                                   String skipReason, String errorMessage, int attemptCount,

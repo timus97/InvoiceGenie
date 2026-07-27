@@ -34,7 +34,16 @@ public interface PaymentRepository {
     List<Payment> findByTenant(TenantId tenantId, int limit);
 
     /**
+     * Cursor page: created_at DESC, id DESC (PP-023).
+     */
+    Page findByTenant(TenantId tenantId, int limit, PageCursor cursor);
+
+    /**
      * Finds all allocations for a given invoice.
      */
     List<PaymentAllocation> findAllocationsByTenantAndInvoice(TenantId tenantId, InvoiceId invoiceId);
+
+    record PageCursor(java.time.Instant createdAt, PaymentId id) {}
+
+    record Page(List<Payment> items, java.util.Optional<PageCursor> nextCursor) {}
 }

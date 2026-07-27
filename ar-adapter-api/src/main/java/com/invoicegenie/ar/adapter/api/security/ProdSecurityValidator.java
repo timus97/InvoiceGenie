@@ -58,6 +58,12 @@ public class ProdSecurityValidator {
     @ConfigProperty(name = "quarkus.datasource.username", defaultValue = "ar")
     String datasourceUsername;
 
+    @ConfigProperty(name = "invoicegenie.security.oidc.issuer", defaultValue = "none")
+    String oidcIssuer;
+
+    @ConfigProperty(name = "invoicegenie.security.oidc.jwks-uri", defaultValue = "none")
+    String oidcJwksUri;
+
     void onStart(@Observes StartupEvent event) {
         String p = profile == null ? "" : profile.toLowerCase(Locale.ROOT);
         // Quarkus may list multiple active profiles; treat presence of "prod" as production.
@@ -70,41 +76,68 @@ public class ProdSecurityValidator {
         }
         rejectDefaultDatasourceCredentials();
         String m = mode == null ? "api-key" : mode.trim().toLowerCase(Locale.ROOT);
-        if ("api-key".equals(m) || "hybrid".equals(m)) {
-            if (isBlankSecret(apiKeys)) {
-                throw new IllegalStateException(
-                        "Production startup aborted: invoicegenie.security.api-keys required for " + m + " mode");
+        switch (m) {
+            case "api-key" -> {
+                requireApiKeys(m);
             }
-            rejectDemoApiKeys(apiKeys);
-            if ("hybrid".equals(m)) {
-                if (isBlankSecret(jwtSecret)) {
-                    throw new IllegalStateException(
-                            "Production startup aborted: invoicegenie.security.jwt.secret required for hybrid mode");
+            case "jwt" -> requireLocalJwtSecret();
+            case "hybrid" -> {
+                requireApiKeys(m);
+                requireLocalJwtSecret();
+            }
+            case "oidc" -> requireOidcConfig();
+            case "hybrid-oidc", "oidc-hybrid" -> {
+                // OIDC required; local JWT / API keys optional but validated when present
+                requireOidcConfig();
+                if (!isBlankSecret(apiKeys)) {
+                    rejectDemoApiKeys(apiKeys);
                 }
-                if (jwtSecret.trim().length() < 16) {
-                    throw new IllegalStateException(
-                            "Production startup aborted: JWT secret must be at least 16 characters");
+                if (!isBlankSecret(jwtSecret)) {
+                    if (jwtSecret.trim().length() < 16) {
+                        throw new IllegalStateException(
+                                "Production startup aborted: JWT secret must be at least 16 characters");
+                    }
                 }
             }
-        } else if ("jwt".equals(m)) {
-            if (isBlankSecret(jwtSecret)) {
-                throw new IllegalStateException(
-                        "Production startup aborted: invoicegenie.security.jwt.secret required for jwt mode");
-            }
-            if (jwtSecret.trim().length() < 16) {
-                throw new IllegalStateException(
-                        "Production startup aborted: JWT secret must be at least 16 characters");
-            }
-            if (FORBIDDEN_PASSWORDS.contains(jwtSecret.trim().toLowerCase(Locale.ROOT))) {
-                throw new IllegalStateException(
-                        "Production startup aborted: JWT secret looks like a demo/default value");
-            }
-        } else {
-            throw new IllegalStateException(
+            default -> throw new IllegalStateException(
                     "Production startup aborted: unknown invoicegenie.security.mode=" + mode
-                            + " (expected api-key, jwt, or hybrid)");
+                            + " (expected api-key, jwt, hybrid, oidc, or hybrid-oidc)");
         }
         LOG.info("Production security validation passed (mode=" + m + ")");
+    }
+
+    private void requireApiKeys(String m) {
+        if (isBlankSecret(apiKeys)) {
+            throw new IllegalStateException(
+                    "Production startup aborted: invoicegenie.security.api-keys required for " + m + " mode");
+        }
+        rejectDemoApiKeys(apiKeys);
+    }
+
+    private void requireLocalJwtSecret() {
+        if (isBlankSecret(jwtSecret)) {
+            throw new IllegalStateException(
+                    "Production startup aborted: invoicegenie.security.jwt.secret required");
+        }
+        if (jwtSecret.trim().length() < 16) {
+            throw new IllegalStateException(
+                    "Production startup aborted: JWT secret must be at least 16 characters");
+        }
+        if (FORBIDDEN_PASSWORDS.contains(jwtSecret.trim().toLowerCase(Locale.ROOT))) {
+            throw new IllegalStateException(
+                    "Production startup aborted: JWT secret looks like a demo/default value");
+        }
+    }
+
+    private void requireOidcConfig() {
+        if (isBlankSecret(oidcIssuer)) {
+            throw new IllegalStateException(
+                    "Production startup aborted: invoicegenie.security.oidc.issuer required for OIDC mode");
+        }
+        if (isBlankSecret(oidcJwksUri)) {
+            throw new IllegalStateException(
+                    "Production startup aborted: invoicegenie.security.oidc.jwks-uri required for OIDC mode");
+        }
     }
 
     private void rejectDefaultDatasourceCredentials() {

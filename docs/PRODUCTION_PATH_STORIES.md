@@ -1,4 +1,4 @@
-﻿# Production Path — Engineering Stories (Active Implementation)
+# Production Path — Engineering Stories (Active Implementation)
 
 **Program owner:** Engineering Team Lead  
 **Date:** 2026-07-27  

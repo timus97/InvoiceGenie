@@ -20,7 +20,16 @@ public interface NotificationRepository {
 
     List<Notification> findByTenant(TenantId tenantId, int limit);
 
+    /**
+     * Cursor page: created_at DESC, id DESC (PP-023).
+     */
+    Page findByTenant(TenantId tenantId, int limit, PageCursor cursor);
+
     List<Notification> findByInvoice(TenantId tenantId, com.invoicegenie.ar.domain.model.invoice.InvoiceId invoiceId, int limit);
+
+    record PageCursor(Instant createdAt, UUID id) {}
+
+    record Page(List<Notification> items, Optional<PageCursor> nextCursor) {}
 
     /**
      * Cross-tenant poll for due PENDING/QUEUED notifications.

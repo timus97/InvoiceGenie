@@ -114,16 +114,36 @@ public class PaymentRepositoryAdapter implements PaymentRepository {
 
     @Override
     public List<Payment> findByTenant(TenantId tenantId, int limit) {
+        return findByTenant(tenantId, limit, null).items();
+    }
+
+    @Override
+    public Page findByTenant(TenantId tenantId, int limit, PageCursor cursor) {
         int capped = Math.max(1, Math.min(limit > 0 ? limit : 50, 200));
-        List<PaymentEntity> payments = em.createQuery(
-                        "SELECT p FROM PaymentEntity p WHERE p.tenantId = :tenantId ORDER BY p.paymentDate DESC, p.createdAt DESC",
-                        PaymentEntity.class)
+        String jpql = "SELECT p FROM PaymentEntity p WHERE p.tenantId = :tenantId";
+        if (cursor != null) {
+            jpql += " AND (p.createdAt < :createdAt OR (p.createdAt = :createdAt AND p.id < :id))";
+        }
+        jpql += " ORDER BY p.createdAt DESC, p.id DESC";
+        var query = em.createQuery(jpql, PaymentEntity.class)
                 .setParameter("tenantId", tenantId.getValue())
-                .setMaxResults(capped)
-                .getResultList();
-        return payments.stream()
+                .setMaxResults(capped + 1);
+        if (cursor != null) {
+            query.setParameter("createdAt", cursor.createdAt())
+                    .setParameter("id", cursor.id().getValue());
+        }
+        List<PaymentEntity> list = query.getResultList();
+        boolean hasMore = list.size() > capped;
+        List<Payment> items = list.stream()
+                .limit(capped)
                 .map(p -> mapper.toDomain(p, loadAllocations(tenantId, PaymentId.of(p.getId()))))
                 .toList();
+        java.util.Optional<PageCursor> next = hasMore && !items.isEmpty()
+                ? java.util.Optional.of(new PageCursor(
+                        items.get(items.size() - 1).getCreatedAt(),
+                        items.get(items.size() - 1).getId()))
+                : java.util.Optional.empty();
+        return new Page(items, next);
     }
 
     @Override

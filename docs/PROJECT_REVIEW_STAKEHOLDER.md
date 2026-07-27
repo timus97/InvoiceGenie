@@ -1,4 +1,4 @@
-﻿# InvoiceGenie — Project Review for Product Owner & Business Stakeholders
+# InvoiceGenie — Project Review for Product Owner & Business Stakeholders
 
 **Document type:** Project status & production roadmap  
 **Audience:** Product Owner, business stakeholders, eng leadership  

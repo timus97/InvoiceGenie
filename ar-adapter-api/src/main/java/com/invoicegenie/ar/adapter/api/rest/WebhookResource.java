@@ -4,6 +4,7 @@ import com.invoicegenie.ar.adapter.api.dto.ErrorResponse;
 import com.invoicegenie.ar.adapter.api.security.ArRoles;
 import com.invoicegenie.ar.adapter.api.security.RequireRoles;
 import com.invoicegenie.ar.application.port.inbound.WebhookUseCase;
+import com.invoicegenie.ar.application.service.WebhookRedriveService;
 import com.invoicegenie.ar.domain.model.webhook.WebhookDeliveryLog;
 import com.invoicegenie.ar.domain.model.webhook.WebhookDeliveryRepository;
 import com.invoicegenie.ar.domain.model.webhook.WebhookSubscription;
@@ -27,11 +28,21 @@ public class WebhookResource {
 
     private final WebhookUseCase webhookUseCase;
     private final WebhookDeliveryRepository deliveryRepository;
+    private final WebhookRedriveService redriveService;
 
     @Inject
-    public WebhookResource(WebhookUseCase webhookUseCase, WebhookDeliveryRepository deliveryRepository) {
+    public WebhookResource(WebhookUseCase webhookUseCase,
+                           WebhookDeliveryRepository deliveryRepository,
+                           WebhookRedriveService redriveService) {
         this.webhookUseCase = webhookUseCase;
         this.deliveryRepository = deliveryRepository;
+        this.redriveService = redriveService;
+    }
+
+    /** Backward-compatible ctor for unit tests. */
+    public WebhookResource(WebhookUseCase webhookUseCase, WebhookDeliveryRepository deliveryRepository) {
+        this(webhookUseCase, deliveryRepository,
+                deliveryRepository != null ? new WebhookRedriveService(deliveryRepository) : null);
     }
 
     @POST
@@ -64,6 +75,26 @@ public class WebhookResource {
         var tenantId = TenantContext.getCurrentTenant();
         return Response.ok(deliveryRepository.findRecentByTenant(tenantId, limit).stream()
                 .map(this::toDeliveryDto).collect(Collectors.toList())).build();
+    }
+
+    @POST
+    @Path("/deliveries/{id}/redrive")
+    @Operation(summary = "Re-queue a DEAD or RETRY webhook delivery (PP-026)")
+    public Response redrive(@PathParam("id") String id) {
+        if (redriveService == null) {
+            return Response.status(501).entity(new ErrorResponse("NOT_AVAILABLE", "Redrive not wired")).build();
+        }
+        try {
+            UUID deliveryId = UUID.fromString(id);
+            var tenantId = TenantContext.getCurrentTenant();
+            return redriveService.redrive(tenantId, deliveryId)
+                    .map(d -> Response.ok(toDeliveryDto(d)).build())
+                    .orElse(Response.status(404).entity(new ErrorResponse("NOT_FOUND", "Delivery not found")).build());
+        } catch (IllegalArgumentException e) {
+            return Response.status(400).entity(new ErrorResponse("VALIDATION_ERROR", e.getMessage())).build();
+        } catch (IllegalStateException e) {
+            return Response.status(409).entity(new ErrorResponse("STATE_ERROR", e.getMessage())).build();
+        }
     }
 
     @GET

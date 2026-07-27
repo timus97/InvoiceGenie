@@ -21,6 +21,7 @@ import com.invoicegenie.ar.domain.service.InvoiceSnapshotService;
 import com.invoicegenie.ar.domain.model.outbox.AuditEntry;
 import com.invoicegenie.ar.domain.model.outbox.AuditRepository;
 import com.invoicegenie.ar.domain.service.LedgerService;
+import com.invoicegenie.ar.application.port.inbound.PostingPeriodUseCase;
 import com.invoicegenie.shared.domain.Money;
 import com.invoicegenie.shared.domain.TenantId;
 
@@ -28,6 +29,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.LocalDate;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
@@ -51,6 +53,7 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
     private final IdempotencyStore idempotencyStore;
     private final InvoiceVersionRepository invoiceVersionRepository;
     private final CustomerService customerService;
+    private final PostingPeriodUseCase postingPeriodUseCase;
 
     public IssueInvoiceService(InvoiceRepository invoiceRepository,
                                CustomerRepository customerRepository,
@@ -62,7 +65,7 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
                                IdempotencyStore idempotencyStore,
                                InvoiceVersionRepository invoiceVersionRepository) {
         this(invoiceRepository, customerRepository, idGenerator, eventPublisher, auditRepository,
-                ledgerService, ledgerRepository, idempotencyStore, invoiceVersionRepository, new CustomerService());
+                ledgerService, ledgerRepository, idempotencyStore, invoiceVersionRepository, new CustomerService(), null);
     }
 
     public IssueInvoiceService(InvoiceRepository invoiceRepository,
@@ -75,9 +78,25 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
                                IdempotencyStore idempotencyStore,
                                InvoiceVersionRepository invoiceVersionRepository,
                                CustomerService customerService) {
+        this(invoiceRepository, customerRepository, idGenerator, eventPublisher, auditRepository,
+                ledgerService, ledgerRepository, idempotencyStore, invoiceVersionRepository, customerService, null);
+    }
+
+    public IssueInvoiceService(InvoiceRepository invoiceRepository,
+                               CustomerRepository customerRepository,
+                               IdGenerator idGenerator,
+                               EventPublisher eventPublisher,
+                               AuditRepository auditRepository,
+                               LedgerService ledgerService,
+                               LedgerRepository ledgerRepository,
+                               IdempotencyStore idempotencyStore,
+                               InvoiceVersionRepository invoiceVersionRepository,
+                               CustomerService customerService,
+                               PostingPeriodUseCase postingPeriodUseCase) {
         this.invoiceRepository = invoiceRepository;
         this.customerRepository = customerRepository;
         this.idGenerator = idGenerator;
+        this.postingPeriodUseCase = postingPeriodUseCase;
         this.eventPublisher = eventPublisher;
         this.auditRepository = auditRepository;
         this.ledgerService = ledgerService;
@@ -136,6 +155,10 @@ public class IssueInvoiceService implements IssueInvoiceUseCase {
         BigDecimal outstanding = sumOpenBalance(tenantId, customerId, currency);
 
         if (issueNow) {
+            // PP-025: reject issue when posting period is closed (if periods configured)
+            if (postingPeriodUseCase != null) {
+                postingPeriodUseCase.assertOpenFor(tenantId, LocalDate.now());
+            }
             // Hard-block credit limit on issue (before allocating ids / persisting)
             enforceCreditLimit(tenantId, customerId, outstanding, invoiceAmount);
         } else if (customer.getCreditLimit() != null

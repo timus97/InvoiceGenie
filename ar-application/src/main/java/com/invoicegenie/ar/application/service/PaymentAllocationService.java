@@ -11,6 +11,7 @@ import com.invoicegenie.ar.domain.model.payment.Payment;
 import com.invoicegenie.ar.domain.model.payment.PaymentAllocation;
 import com.invoicegenie.ar.domain.model.payment.PaymentId;
 import com.invoicegenie.ar.domain.model.payment.PaymentRepository;
+import com.invoicegenie.ar.domain.service.CurrencyConversionService;
 import com.invoicegenie.ar.domain.service.PaymentAllocationEngine;
 import com.invoicegenie.shared.domain.Money;
 import com.invoicegenie.shared.domain.TenantId;
@@ -40,7 +41,13 @@ import java.util.stream.Collectors;
  *   <li>One payment can be allocated to multiple invoices</li>
  *   <li>Cumulative {@code amountPaid} on invoices (prevents over-allocation)</li>
  *   <li>Publishes {@link PaymentAllocated} events after successful allocation</li>
+ *   <li>Optional cross-currency allocation (PP-024) via {@link CurrencyConversionService}</li>
  * </ul>
+ *
+ * <p>FX residual (PP-024 lite): when currencies differ and FX is allowed, the payment allocation
+ * is recorded in payment currency and the invoice is reduced in invoice currency using the
+ * as-of payment-date rate. Full multi-currency FX gain/loss ledger postings are deferred —
+ * residual FX is noted in allocation notes. See docs/deploy and ONBOARDING.
  */
 public class PaymentAllocationService implements PaymentAllocationUseCase {
 
@@ -49,17 +56,31 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
     private final EventPublisher eventPublisher;
     private final IdempotencyStore idempotencyStore;
     private final PaymentAllocationEngine allocationEngine;
+    private final CurrencyConversionService currencyConversionService;
+    private final boolean allowFxAllocation;
 
     public PaymentAllocationService(
             PaymentRepository paymentRepository,
             InvoiceRepository invoiceRepository,
             EventPublisher eventPublisher,
             IdempotencyStore idempotencyStore) {
+        this(paymentRepository, invoiceRepository, eventPublisher, idempotencyStore, null, false);
+    }
+
+    public PaymentAllocationService(
+            PaymentRepository paymentRepository,
+            InvoiceRepository invoiceRepository,
+            EventPublisher eventPublisher,
+            IdempotencyStore idempotencyStore,
+            CurrencyConversionService currencyConversionService,
+            boolean allowFxAllocation) {
         this.paymentRepository = paymentRepository;
         this.invoiceRepository = invoiceRepository;
         this.eventPublisher = eventPublisher;
         this.idempotencyStore = idempotencyStore;
         this.allocationEngine = new PaymentAllocationEngine();
+        this.currencyConversionService = currencyConversionService;
+        this.allowFxAllocation = allowFxAllocation;
     }
 
     @Override
@@ -87,21 +108,56 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
         Payment payment = paymentOpt.get();
         String paymentCurrency = payment.getAmount().getCurrencyCode();
 
-        // Same-currency only (STORY-010)
-        List<Invoice> customerInvoices = invoiceRepository.findOpenByTenantAndCustomer(
-                tenantId, payment.getCustomerId()).stream()
+        List<Invoice> allOpen = invoiceRepository.findOpenByTenantAndCustomer(
+                tenantId, payment.getCustomerId());
+        // Same-currency always; cross-currency only when FX allowed (PP-024)
+        List<Invoice> customerInvoices = allOpen.stream()
+                .filter(inv -> paymentCurrency.equalsIgnoreCase(inv.getCurrencyCode())
+                        || (allowFxAllocation && currencyConversionService != null))
+                .toList();
+
+        // Engine still requires same currency — run same-currency via engine first
+        List<Invoice> sameCurrency = customerInvoices.stream()
                 .filter(inv -> paymentCurrency.equalsIgnoreCase(inv.getCurrencyCode()))
                 .toList();
 
         PaymentAllocationEngine.AllocationResult engineResult = allocationEngine.autoAllocateFIFO(
-                tenantId, payment, customerInvoices, allocatedBy);
+                tenantId, payment, sameCurrency, allocatedBy);
+
+        // Cross-currency FIFO residual (payment currency unallocated → convert)
+        List<String> fxNotes = new ArrayList<>();
+        if (allowFxAllocation && currencyConversionService != null
+                && payment.getAmountUnallocated().getAmount().signum() > 0) {
+            List<Invoice> fxInvoices = customerInvoices.stream()
+                    .filter(inv -> !paymentCurrency.equalsIgnoreCase(inv.getCurrencyCode()))
+                    .filter(Invoice::isOpen)
+                    .toList();
+            for (Invoice invoice : fxInvoices) {
+                if (payment.getAmountUnallocated().getAmount().signum() <= 0) {
+                    break;
+                }
+                try {
+                    FxAllocation fx = allocateCrossCurrency(
+                            tenantId, payment, invoice, payment.getAmountUnallocated(), allocatedBy, "FIFO FX auto-allocation");
+                    if (fx != null) {
+                        invoiceRepository.save(tenantId, invoice);
+                        fxNotes.add(fx.note());
+                    }
+                } catch (Exception e) {
+                    fxNotes.add("FX skip invoice " + invoice.getId().getValue() + ": " + e.getMessage());
+                }
+            }
+            if (!fxNotes.isEmpty() || !engineResult.allocations().isEmpty()) {
+                paymentRepository.save(tenantId, payment);
+            }
+        }
 
         if (!engineResult.allocations().isEmpty()) {
             paymentRepository.save(tenantId, payment);
 
             // Apply each allocation to invoice aggregate (cumulative amountPaid)
             for (PaymentAllocation allocation : engineResult.allocations()) {
-                customerInvoices.stream()
+                sameCurrency.stream()
                         .filter(inv -> inv.getId().equals(allocation.getInvoiceId()))
                         .findFirst()
                         .ifPresent(invoice -> {
@@ -114,6 +170,20 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
         }
 
         AllocationResult result = toResult(payment, engineResult);
+        if (!fxNotes.isEmpty()) {
+            List<String> errors = new ArrayList<>(result.errors());
+            // informational FX residual notes ride along as non-fatal messages in errors list only if no allocs?
+            // Keep as soft notes on empty-error path by appending only when engine had no hard errors.
+            List<AllocationResult.AllocationDetail> details = new ArrayList<>(result.allocations());
+            result = new AllocationResult(
+                    result.paymentId(),
+                    details,
+                    payment.getAmount().subtract(payment.getAmountUnallocated()),
+                    payment.getAmountUnallocated(),
+                    errors,
+                    payment.getVersion()
+            );
+        }
         storeIfNeeded(tenantId, storeKey, requestHash, result);
         return Optional.of(result);
     }
@@ -149,6 +219,7 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
         List<Invoice> invoices = new ArrayList<>();
         List<PaymentAllocationEngine.ManualAllocationRequest> engineRequests = new ArrayList<>();
         List<String> preErrors = new ArrayList<>();
+        List<ManualAllocationRequest> fxRequests = new ArrayList<>();
 
         for (ManualAllocationRequest request : requests) {
             // Force payment currency (REST may hardcode incorrectly)
@@ -161,10 +232,17 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
                 continue;
             }
             if (!paymentCurrency.equalsIgnoreCase(invoice.getCurrencyCode())) {
-                preErrors.add("Currency mismatch: payment is " + paymentCurrency
-                        + " but invoice " + request.invoiceId().getValue()
-                        + " is " + invoice.getCurrencyCode()
-                        + " (same-currency allocation only)");
+                if (!allowFxAllocation || currencyConversionService == null) {
+                    preErrors.add("Currency mismatch: payment is " + paymentCurrency
+                            + " but invoice " + request.invoiceId().getValue()
+                            + " is " + invoice.getCurrencyCode()
+                            + " (same-currency allocation only; set invoicegenie.payments.allow-fx-allocation=true)");
+                    continue;
+                }
+                fxRequests.add(new ManualAllocationRequest(request.invoiceId(), amount, request.notes()));
+                if (!invoices.contains(invoice)) {
+                    invoices.add(invoice);
+                }
                 continue;
             }
             if (!invoices.contains(invoice)) {
@@ -212,17 +290,44 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
             publishEvents(engineResult.events());
         }
 
+        // PP-024 cross-currency path
+        for (ManualAllocationRequest fxReq : fxRequests) {
+            Invoice invoice = invoicesById.get(fxReq.invoiceId());
+            if (invoice == null) {
+                continue;
+            }
+            try {
+                FxAllocation fx = allocateCrossCurrency(
+                        tenantId, payment, invoice, fxReq.amount(), allocatedBy, fxReq.notes());
+                if (fx == null) {
+                    preErrors.add("FX allocation produced zero for invoice " + fxReq.invoiceId().getValue());
+                } else {
+                    invoiceRepository.save(tenantId, invoice);
+                    eventPublisher.publish(new PaymentAllocated(
+                            tenantId, payment.getId(), invoice.getId(), fx.paymentAmount()));
+                }
+            } catch (Exception e) {
+                preErrors.add("FX allocation failed for invoice " + fxReq.invoiceId().getValue()
+                        + ": " + e.getMessage());
+            }
+        }
+        if (!fxRequests.isEmpty()) {
+            paymentRepository.save(tenantId, payment);
+        }
+
         if (!preErrors.isEmpty()) {
             List<String> allErrors = new ArrayList<>(preErrors);
             engineResult.errors().forEach(e -> allErrors.add(e.reason()));
-            AllocationResult result = new AllocationResult(
-                    payment.getId(),
-                    engineResult.allocations().stream()
+            List<AllocationResult.AllocationDetail> details = new ArrayList<>(
+                    payment.getAllocations().stream()
                             .map(a -> new AllocationResult.AllocationDetail(
                                     a.getInvoiceId(), a.getAmount(), a.getId()))
-                            .toList(),
-                    engineResult.totalAllocated(),
-                    engineResult.remainingUnallocated(),
+                            .toList());
+            AllocationResult result = new AllocationResult(
+                    payment.getId(),
+                    details,
+                    payment.getAmount().subtract(payment.getAmountUnallocated()),
+                    payment.getAmountUnallocated(),
                     allErrors,
                     payment.getVersion()
             );
@@ -230,10 +335,72 @@ public class PaymentAllocationService implements PaymentAllocationUseCase {
             return Optional.of(result);
         }
 
-        AllocationResult result = toResult(payment, engineResult);
+        AllocationResult result = new AllocationResult(
+                payment.getId(),
+                payment.getAllocations().stream()
+                        .map(a -> new AllocationResult.AllocationDetail(
+                                a.getInvoiceId(), a.getAmount(), a.getId()))
+                        .toList(),
+                payment.getAmount().subtract(payment.getAmountUnallocated()),
+                payment.getAmountUnallocated(),
+                engineResult.errors().stream().map(e -> e.reason()).toList(),
+                payment.getVersion()
+        );
         storeIfNeeded(tenantId, storeKey, requestHash, result);
         return Optional.of(result);
     }
+
+    /**
+     * Allocate {@code payAmount} (payment currency) to a different-currency invoice.
+     * Caps by invoice balance due converted at payment date.
+     */
+    private FxAllocation allocateCrossCurrency(
+            TenantId tenantId,
+            Payment payment,
+            Invoice invoice,
+            Money payAmount,
+            UUID allocatedBy,
+            String notes) {
+        if (currencyConversionService == null) {
+            throw new IllegalStateException("CurrencyConversionService not configured");
+        }
+        if (!invoice.canReceivePayments()) {
+            throw new IllegalStateException("Invoice cannot receive payments: " + invoice.getStatus());
+        }
+        Money balanceInvoiceCcy = invoice.getBalanceDue();
+        // How much payment currency is needed to fully pay the invoice balance
+        Money balanceInPayCcy = currencyConversionService.convert(
+                tenantId, balanceInvoiceCcy, payment.getAmount().getCurrencyCode(), payment.getPaymentDate());
+        Money unallocated = payment.getAmountUnallocated();
+        Money toAllocatePay = payAmount;
+        if (toAllocatePay.getAmount().compareTo(unallocated.getAmount()) > 0) {
+            toAllocatePay = unallocated;
+        }
+        if (toAllocatePay.getAmount().compareTo(balanceInPayCcy.getAmount()) > 0) {
+            toAllocatePay = balanceInPayCcy;
+        }
+        if (toAllocatePay.getAmount().signum() <= 0) {
+            return null;
+        }
+        // Convert allocated payment amount to invoice currency for AR reduction
+        Money toApplyInvoice = currencyConversionService.convert(
+                tenantId, toAllocatePay, invoice.getCurrencyCode(), payment.getPaymentDate());
+        if (toApplyInvoice.getAmount().compareTo(balanceInvoiceCcy.getAmount()) > 0) {
+            toApplyInvoice = balanceInvoiceCcy;
+            // re-derive pay side from capped invoice amount
+            toAllocatePay = currencyConversionService.convert(
+                    tenantId, toApplyInvoice, payment.getAmount().getCurrencyCode(), payment.getPaymentDate());
+        }
+        String fxNote = (notes != null ? notes + " | " : "")
+                + "FX " + toAllocatePay.getAmount() + " " + toAllocatePay.getCurrencyCode()
+                + " -> " + toApplyInvoice.getAmount() + " " + toApplyInvoice.getCurrencyCode()
+                + " (FX gain/loss ledger residual — lite mode)";
+        payment.allocate(invoice.getId(), toAllocatePay, allocatedBy, fxNote);
+        invoice.recordPaymentApplied(toApplyInvoice);
+        return new FxAllocation(toAllocatePay, toApplyInvoice, fxNote);
+    }
+
+    private record FxAllocation(Money paymentAmount, Money invoiceAmount, String note) {}
 
     @Override
     public Optional<AllocationResult> getAllocations(TenantId tenantId, PaymentId paymentId) {

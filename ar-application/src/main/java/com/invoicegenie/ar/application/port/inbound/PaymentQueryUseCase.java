@@ -25,7 +25,8 @@ public interface PaymentQueryUseCase {
             LocalDate fromDate,
             LocalDate toDate,
             boolean unallocatedOnly,
-            int limit
+            int limit,
+            String cursor
     ) {
         public PaymentListFilter {
             if (limit <= 0) {
@@ -35,7 +36,17 @@ public interface PaymentQueryUseCase {
                 limit = 200;
             }
         }
+
+        /** Backward-compatible ctor without cursor. */
+        public PaymentListFilter(UUID customerId, PaymentStatus status, LocalDate fromDate,
+                                 LocalDate toDate, boolean unallocatedOnly, int limit) {
+            this(customerId, status, fromDate, toDate, unallocatedOnly, limit, null);
+        }
     }
 
-    record ListResult(List<Payment> items, int count) {}
+    record ListResult(List<Payment> items, int count, String nextCursor) {
+        public ListResult(List<Payment> items, int count) {
+            this(items, count, null);
+        }
+    }
 }

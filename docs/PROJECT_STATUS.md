@@ -25,7 +25,21 @@ Multi-tenant **Accounts Receivable** platform: customers, invoices, payments/che
 - Notifications: auto on issue, pre-due, dunning, statement send; quiet hours; unsubscribe; metrics; template preview
 - Delivery: **logging** (demo), **SMTP** (Jakarta Mail), **Meta WhatsApp**; bounce suppressions; channel fallback
 - PDF invoice & statement; posting periods; webhook delivery + redrive; cursor pagination; optional FX allocation
-- Flyway V1–V15; Docker Compose; AWS IaC docs
+- Flyway **V1–V16**; Docker Compose; AWS IaC docs
+
+## Last local validation (2026-07-27)
+
+| Check | Result |
+|-------|--------|
+| Postgres + Flyway V16 | Pass |
+| Health / login | Pass |
+| Customer create + contact | Pass |
+| Invoice issue + PDF | Pass |
+| Notification enqueue + EMAIL-LOG dispatch | Pass |
+| Metrics / template preview | Pass |
+| Payment + FIFO allocate | Pass |
+| Aging API | Pass |
+| Web `/login` | Pass |
 
 ## Configure delivery
 

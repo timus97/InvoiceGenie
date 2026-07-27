@@ -13,11 +13,15 @@
 # 1) Database
 docker compose up -d postgres adminer
 
-# 2) API (from repo root) — host Postgres password must match .env
+# 2) API — package then run (Maven 3.8.6+ required for quarkus:dev;
+#    on older Maven use the packaged jar as below)
 $env:QUARKUS_DATASOURCE_JDBC_URL = "jdbc:postgresql://localhost:5432/invoicegenie"
 $env:QUARKUS_DATASOURCE_USERNAME = "ar"
 $env:QUARKUS_DATASOURCE_PASSWORD = "change-me-strong-password"  # match .env
-mvn -pl ar-bootstrap -am quarkus:dev "-Dquarkus.profile=dev" "-Dquarkus.http.port=8082"
+$env:INVOICEGENIE_JWT_SECRET = "dev-only-jwt-secret-change-me"
+$env:INVOICEGENIE_API_KEYS = "dev-local-key:00000000-0000-0000-0000-000000000001"
+mvn -pl ar-bootstrap -am package -DskipTests
+java "-Dquarkus.http.port=8082" "-Dquarkus.profile=dev" -jar ar-bootstrap/target/quarkus-app/quarkus-run.jar
 
 # 3) Console (new terminal)
 cd web
